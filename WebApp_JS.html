@@ -127,6 +127,57 @@ function pintarDashboard() {
   var sinResp = estado.cronograma.filter(d => !d.responsable && String(d.estado).toLowerCase().indexOf('entregado')===-1).length;
   $('cron-resumen').innerText = estado.cronograma.length + ' fichas · ' + sinResp + ' sin resp.';
   pintarChart(); pintarCron(); pintarPan(); pintarCarga();
+  pintarConsolidacion();
+}
+
+/* FIX FASE 8.33: indicador flotante del progreso de la consolidación por lotes.
+   Se crea/actualiza dinámicamente (sin tocar el HTML) leyendo estado.consolidacion.
+   Solo se muestra mientras una corrida está EN_CURSO; ofrece "Cancelar". */
+function pintarConsolidacion() {
+  var c = estado && estado.consolidacion;
+  var banner = document.getElementById('consol-banner');
+  if (!c || !c.enCurso) { if (banner) banner.remove(); return; }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'consol-banner';
+    banner.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:70;' +
+      'background:#131c2e;border:1px solid #283352;border-left:3px solid #f59e0b;border-radius:10px;' +
+      'padding:10px 14px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,0.45);' +
+      'font-size:12px;color:#e8ecf3;max-width:92vw;';
+    document.body.appendChild(banner);
+  }
+  var pct = c.total > 0 ? Math.round((c.procesados / c.total) * 100) : 0;
+  banner.innerHTML =
+    '<span style="font-size:16px;">⏳</span>' +
+    '<div style="min-width:200px;">' +
+      '<div style="font-weight:600;margin-bottom:4px;">Consolidación en curso · ' +
+        c.procesados + '/' + c.total + ' (' + pct + '%)</div>' +
+      '<div style="height:5px;background:#0d1424;border-radius:3px;overflow:hidden;">' +
+        '<div style="height:100%;width:' + pct + '%;background:#f59e0b;transition:width .4s;"></div>' +
+      '</div>' +
+      '<div style="color:#7d8aa8;margin-top:4px;font-size:10.5px;">Termina automáticamente en segundo plano.</div>' +
+    '</div>' +
+    '<button id="consol-resume" style="background:#1d2c3a;color:#93c5fd;border:1px solid #2b485c;' +
+      'padding:5px 10px;border-radius:7px;cursor:pointer;font-size:11px;white-space:nowrap;">Reanudar</button>' +
+    '<button id="consol-cancel" style="background:#3a1d1d;color:#fca5a5;border:1px solid #5c2b2b;' +
+      'padding:5px 10px;border-radius:7px;cursor:pointer;font-size:11px;white-space:nowrap;">Cancelar</button>';
+  var btnR = document.getElementById('consol-resume');
+  if (btnR) btnR.onclick = function() {
+    btnR.disabled = true; btnR.innerText = '…';
+    google.script.run
+      .withSuccessHandler(function(r){ toast((r && r.mensaje) || 'Reanudada', 'info'); cargarDashboard(true); })
+      .withFailureHandler(function(e){ toast('Error: ' + (e.message || e), 'error'); btnR.disabled = false; btnR.innerText = 'Reanudar'; })
+      .dash_continuarConsolidacion();
+  };
+  var btn = document.getElementById('consol-cancel');
+  if (btn) btn.onclick = function() {
+    if (!confirm('¿Cancelar la consolidación en curso? Se conservará lo ya consolidado.')) return;
+    btn.disabled = true; btn.innerText = '…';
+    google.script.run
+      .withSuccessHandler(function(r){ toast((r && r.mensaje) || 'Cancelada', 'info'); cargarDashboard(true); })
+      .withFailureHandler(function(e){ toast('Error: ' + (e.message || e), 'error'); btn.disabled = false; btn.innerText = 'Cancelar'; })
+      .dash_cancelarConsolidacion();
+  };
 }
 
 function pintarChart() {
@@ -845,7 +896,9 @@ function modalConsolidacionAvanzada() {
           toast('⚠ ' + (res && res.mensaje ? res.mensaje : 'Sin datos'), 'error');
           return;
         }
-        var titulo = res.sinEscribir ? '📋 Pre-validación completa' : '✓ Consolidación completa';
+        // FIX FASE 8.33: respuesta de progreso (consolidación por lotes en curso).
+        var titulo = res.enCurso ? '⏳ Consolidación en progreso'
+                   : (res.sinEscribir ? '📋 Pre-validación completa' : '✓ Consolidación completa');
         modalCustom(titulo, '',
           '<pre style="white-space:pre-wrap;font-family:inherit;font-size:12px;color:var(--text);background:var(--panel-2);padding:10px;border-radius:5px;border:1px solid var(--border);">' +
             escapeHtml(res.mensaje) + '</pre>',

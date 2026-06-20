@@ -1960,7 +1960,23 @@ function obtenerEstadoIntegralDashboard() {
     panelUltimos: panelUltimos,
     cargaResp: cargaResp,
     equipo: _listarEquipoActivo(),
-    clientes: clientesLista
+    clientes: clientesLista,
+    // FIX FASE 8.33: estado de la consolidación por lotes (para el indicador del
+    // dashboard). Costo casi nulo: solo lee ScriptProperties.
+    consolidacion: (function(){
+      try {
+        var st = _consolEstadoLeer();
+        return {
+          enCurso:    st.STATUS === "EN_CURSO",
+          status:     st.STATUS || "IDLE",
+          procesados: st.PROCESADOS || 0,
+          total:      st.TOTAL || 0,
+          modo:       st.MODO || ""
+        };
+      } catch (e) {
+        return { enCurso:false, status:"IDLE", procesados:0, total:0, modo:"" };
+      }
+    })()
   };
 }
 
@@ -2788,9 +2804,38 @@ function _detectarColumnasClave(headers) {
 
 function consolidarConAuditoria(opciones) {
   _requiereRol(["Coordinador"]);
+  // FIX FASE 8.33: el gate de rol vive en el punto de entrada público.
+  // El trabajo real se delega al núcleo, que también invoca el trigger de
+  // continuación (_continuarConsolidacion) — ese contexto NO tiene usuario
+  // y por eso no puede pasar por _requiereRol.
+  return _consolidarNucleo(opciones || {});
+}
+
+/* ==========================================================================
+   FIX FASE 8.33 — NÚCLEO DE CONSOLIDACIÓN POR LOTES (checkpoint + trigger)
+   --------------------------------------------------------------------------
+   Problema corregido: con 250+ archivos "Entregado", una sola ejecución se
+   quedaba sin tiempo, limpiaba INVENTARIOS y escribía solo lo parcial; al
+   re-ejecutar arrancaba desde el archivo 1 → nunca llegaba a los últimos.
+
+   Solución:
+   • Snapshot inmutable de la lista de archivos en la hoja oculta
+     __CACHE_CONSOLIDACION (orden del PANEL), inmune a ediciones a mitad.
+   • Checkpoint por archivo en ScriptProperties (CONSOL_NEXT_IDX).
+   • Modo "tolerante"/"reporte_solo": APPEND por lote (no clear-and-rewrite);
+     si se agota el presupuesto de tiempo, se programa un trigger one-time
+     (_continuarConsolidacion, .after(90s)) que reanuda desde el checkpoint.
+   • Modo "estricto": pasada única (no apila); si no alcanza, NO escribe nada
+     y pide usar tolerante o el editor (más seguro que el parcial anterior).
+   • Cada archivo se procesa una sola vez por corrida → totales idénticos a
+     una pasada única; cero duplicados nuevos; cero impacto Power BI.
+   La lógica de validación por archivo se mantiene byte a byte.
+   ========================================================================== */
+function _consolidarNucleo(opciones) {
   // FIX FASE 8.16: acepta opciones = { modo: 'tolerante'|'estricto'|'reporte_solo' }
   // FIX FASE 8.17: acepta opciones = { incluir: 'INV'|'REG'|'ALL' } (default 'ALL')
   opciones = opciones || {};
+  var esContinuacion = !!opciones._continuacion;
   var modo = (opciones.modo || "tolerante").toLowerCase();
   if (["tolerante", "estricto", "reporte_solo"].indexOf(modo) === -1) modo = "tolerante";
   var incluir = (opciones.incluir || "ALL").toUpperCase();
@@ -2813,38 +2858,102 @@ function consolidarConAuditoria(opciones) {
     // FIX FASE 8.17: hoja auditoría específica para REGISTRO (separada de INVENTARIOS)
     var audReg = ss.getSheetByName("AUDITORIA_REGISTRO") || ss.insertSheet("AUDITORIA_REGISTRO");
 
-    aud.clear();
-    aud.appendRow([
-      "Fecha", "Cliente", "ID Archivo", "Filas leídas",
-      "Filas incluidas", "Filas excluidas", "Motivo principal exclusión",
-      "Suma Cantidad", "SKUs únicos", "Posiciones únicas", "Status"
-    ]);
-    aud.getRange(1, 1, 1, 11).setFontWeight("bold")
-       .setBackground("#1a73e8").setFontColor("#ffffff");
-
-    detErr.clear();
-    detErr.appendRow([
-      "Cliente", "ID Archivo", "Link", "Fila", "Columna",
-      "Valor encontrado", "Motivo", "Acción tomada", "Severidad"
-    ]);
-    detErr.getRange(1, 1, 1, 9).setFontWeight("bold")
-          .setBackground("#d93025").setFontColor("#ffffff");
-
-    if (pan.getLastRow() < 2) {
-      return { ok:false, mensaje:"Panel vacío." };
-    }
-    var pData = pan.getRange(2, 1, pan.getLastRow() - 1, 7).getValues();
-    var entries = [];
-    for (var i = 0; i < pData.length; i++) {
-      if (String(pData[i][CRON_CFG.PA_COL_AVANCE - 1] || "").toLowerCase().indexOf("entregado") !== -1) {
-        entries.push({
-          cliente: pData[i][CRON_CFG.PA_COL_CLIENTE - 1],
-          id: extractIdFromUrl(pData[i][CRON_CFG.PA_COL_ID - 1])
-        });
+    // ── FIX FASE 8.33: determinar arranque fresco vs. reanudación ────────────
+    var estPrev = _consolEstadoLeer();
+    var debeReanudar = false;
+    if (estPrev.STATUS === "EN_CURSO") {
+      if (esContinuacion) {
+        // El trigger reanuda desde el checkpoint.
+        debeReanudar = true;
+      } else if (_consolHeartbeatVivo(estPrev.TS)) {
+        // Corrida viva: no permitir doble arranque manual. El dashboard ya
+        // muestra el progreso y el trigger la terminará automáticamente.
+        return { ok:false, enCurso:true, procesados: estPrev.PROCESADOS, total: estPrev.TOTAL,
+          mensaje: "⏳ Ya hay una consolidación en curso (" + estPrev.PROCESADOS + "/" +
+                   estPrev.TOTAL + "). Terminará automáticamente; espera unos minutos " +
+                   "o usa \"Cancelar consolidación\" si quieres detenerla." };
+      } else {
+        // Cadena muerta (sin latido) + llamada manual → arrancar fresco con el
+        // modo pedido. El arranque fresco limpia INVENTARIOS desde la fila 2,
+        // así que no hay riesgo de duplicar lo parcial de la corrida abandonada.
+        _consolEstadoReset();
       }
+    } else if (esContinuacion) {
+      // El trigger disparó pero el estado ya no está EN_CURSO (completado/cancelado).
+      return { ok:true, noop:true, mensaje:"Sin consolidación activa." };
     }
-    if (entries.length === 0) {
-      return { ok:false, mensaje:"No hay archivos 'Entregado' en el Panel." };
+
+    // En reanudación, modo/incluir/contexto provienen del estado persistido.
+    if (debeReanudar) {
+      modo    = estPrev.MODO || modo;
+      incluir = estPrev.INCLUIR || incluir;
+      procInv = (incluir === "INV" || incluir === "ALL");
+      procReg = (incluir === "REG" || incluir === "ALL");
+    }
+    var esFresh = !debeReanudar;
+    // estricto = pasada única (no apila); tolerante/reporte_solo = por lotes.
+    var esBatch = (modo === "tolerante" || modo === "reporte_solo");
+
+    // FIX FASE 8.31/8.33: contexto de ejecución (presupuesto de tiempo).
+    // En reanudación viene del estado persistido; en fresco, del caller.
+    var ctx = debeReanudar
+      ? (estPrev.CTX || "editor")
+      : String(opciones && opciones.contexto || "editor").toLowerCase();
+
+    // Encabezados de auditoría: limpiar/escribir SOLO en arranque fresco.
+    // En reanudación se APILA sobre lo ya escrito por los lotes previos.
+    if (esFresh) {
+      aud.clear();
+      aud.appendRow([
+        "Fecha", "Cliente", "ID Archivo", "Filas leídas",
+        "Filas incluidas", "Filas excluidas", "Motivo principal exclusión",
+        "Suma Cantidad", "SKUs únicos", "Posiciones únicas", "Status"
+      ]);
+      aud.getRange(1, 1, 1, 11).setFontWeight("bold")
+         .setBackground("#1a73e8").setFontColor("#ffffff");
+
+      detErr.clear();
+      detErr.appendRow([
+        "Cliente", "ID Archivo", "Link", "Fila", "Columna",
+        "Valor encontrado", "Motivo", "Acción tomada", "Severidad"
+      ]);
+      detErr.getRange(1, 1, 1, 9).setFontWeight("bold")
+            .setBackground("#d93025").setFontColor("#ffffff");
+    }
+
+    // ── Construir (fresco) o cargar (reanudar) la lista inmutable de archivos ─
+    var entries, startIdx;
+    if (esFresh) {
+      if (pan.getLastRow() < 2) {
+        _consolEstadoReset();
+        return { ok:false, mensaje:"Panel vacío." };
+      }
+      var pData = pan.getRange(2, 1, pan.getLastRow() - 1, 7).getValues();
+      entries = [];
+      for (var i = 0; i < pData.length; i++) {
+        if (String(pData[i][CRON_CFG.PA_COL_AVANCE - 1] || "").toLowerCase().indexOf("entregado") !== -1) {
+          entries.push({
+            cliente: pData[i][CRON_CFG.PA_COL_CLIENTE - 1],
+            id: extractIdFromUrl(pData[i][CRON_CFG.PA_COL_ID - 1])
+          });
+        }
+      }
+      if (entries.length === 0) {
+        _consolEstadoReset();
+        return { ok:false, mensaje:"No hay archivos 'Entregado' en el Panel." };
+      }
+      startIdx = 0;
+      if (esBatch) {
+        _consolSnapshotCrear(entries);
+        _consolEstadoIniciar({ total: entries.length, modo: modo, incluir: incluir, ctx: ctx });
+      }
+    } else {
+      entries = _consolSnapshotLeer();
+      startIdx = estPrev.NEXT_IDX || 0;
+      if (!entries.length) {
+        _consolEstadoReset();
+        return { ok:false, mensaje:"No hay snapshot de consolidación para reanudar." };
+      }
     }
 
     // FIX FASE 8.32: auto-reparación proactiva de archivos inaccesibles previos.
@@ -2852,8 +2961,9 @@ function consolidarConAuditoria(opciones) {
     // intentamos repararlos AHORA antes del bucle principal. Así los que se
     // hayan resuelto naturalmente (alguien compartió el archivo, cambió permiso,
     // etc.) entran a la consolidación de este ciclo.
+    // FIX FASE 8.33: solo en arranque fresco (no en cada lote de continuación).
     var reparadosAuto = 0;
-    try {
+    if (esFresh) try {
       var hInacPre = ss.getSheetByName("ARCHIVOS_INACCESIBLES");
       if (hInacPre && hInacPre.getLastRow() >= 2) {
         var dPre = hInacPre.getRange(2, 1, hInacPre.getLastRow() - 1, 7).getValues();
@@ -2894,23 +3004,30 @@ function consolidarConAuditoria(opciones) {
     var totalFilasRegVacias = 0;
     var hashesGlobalesReg = {}; // dedup entre archivos (registro suele tener id único por evento)
 
-    // FIX FASE 8.31: tiempo dinámico según contexto de ejecución.
-    // - Web App: timeout duro ~360s. Margen seguro = 5 min de trabajo + 1 min escritura.
-    // - Editor de Apps Script (cuenta Workspace): hasta 1800s. Margen 25 min trabajo.
-    // El caller puede forzar el modo con opciones.contexto = "web" | "editor".
-    // Default: "editor" (más permisivo). Las llamadas desde frontend pasan "web".
+    // FIX FASE 8.31/8.33: presupuesto de tiempo por lote.
+    // - Continuación por trigger: 5 min (seguro bajo el límite duro; la cadena
+    //   .after(90s) cubre cualquier volumen sin riesgo de timeout abrupto).
+    // - Web App fresco: 5 min · Editor fresco: 25 min (cuenta Workspace).
     var tInicio = Date.now();
-    var ctx = String(opciones && opciones.contexto || "editor").toLowerCase();
-    var LIMITE_MS = (ctx === "web") ? 5 * 60 * 1000 : 25 * 60 * 1000;
+    var LIMITE_MS = esContinuacion
+      ? (5 * 60 * 1000)
+      : ((ctx === "web") ? 5 * 60 * 1000 : 25 * 60 * 1000);
     var archivosOmitidosPorTiempo = 0;
     var archivoActual = 0;
     // FIX 8.31: progreso visible en log cada N archivos
     var LOG_CADA = 10;
     // FIX 8.31: lista de archivos inaccesibles para registrar en hoja persistente
     var inaccesiblesArray = [];
+    // FIX FASE 8.33: control de lote — dónde reanudar si se agota el tiempo.
+    var seAgotoTiempo = false;
+    var nextIdx = entries.length;   // por defecto: se procesó todo
 
-    entries.forEach(function(ent){
-      archivoActual++;
+    entries.forEach(function(ent, idxEnt){
+      archivoActual = idxEnt + 1;
+      // FIX FASE 8.33: saltar lo ya procesado en lotes previos.
+      if (idxEnt < startIdx) return;
+      // FIX FASE 8.33: presupuesto agotado → el resto va al siguiente lote.
+      if (seAgotoTiempo) return;
       if (!ent.id) return;
 
       // FIX 8.31: log de progreso cada N archivos para ver avance en Logger
@@ -2921,15 +3038,14 @@ function consolidarConAuditoria(opciones) {
                    "incluidas=" + sumTotalFilas + " · excluidas=" + erroresDetalle.length);
       }
 
-      // FIX FASE 8.30: si excedimos el presupuesto de tiempo, omitir el resto.
-      // Lo procesado hasta aquí ya se escribirá; el operario puede re-ejecutar
-      // para terminar (los archivos ya consolidados no se duplicarán porque la
-      // dedup global por hash los detecta).
+      // FIX FASE 8.33: si excedimos el presupuesto de tiempo, cortar el lote.
+      // El archivo actual (idxEnt) y los siguientes se procesarán en el próximo
+      // lote vía el trigger _continuarConsolidacion. NADA se pierde ni duplica:
+      // INVENTARIOS es append-only dentro de la corrida y el checkpoint marca
+      // exactamente dónde retomar.
       if (Date.now() - tInicio > LIMITE_MS) {
-        archivosOmitidosPorTiempo++;
-        auditRows.push([new Date(), ent.cliente, ent.id, 0, 0, 0,
-          "OMITIDO_POR_TIEMPO (archivo " + archivoActual + "/" + entries.length + ")",
-          0, 0, 0, "⏱️ Omitido"]);
+        seAgotoTiempo = true;
+        nextIdx = idxEnt;
         return;
       }
 
@@ -3184,36 +3300,59 @@ function consolidarConAuditoria(opciones) {
       }
     });
 
-    // Pintar reporte de errores con hipervínculos al archivo origen
+    // ── FIX FASE 8.33: contadores de auditoría de ESTE lote ──────────────────
+    var leidasLote = auditRows.reduce(function(a,r){ return a + (Number(r[3])||0); }, 0);
+    var excAudLote = auditRows.reduce(function(a,r){ return a + (Number(r[5])||0); }, 0);
+
+    // Pintar reporte de errores con hipervínculos al archivo origen (APPEND por lote)
     if (erroresDetalle.length > 0) {
-      detErr.getRange(2, 1, erroresDetalle.length, 9).setValues(erroresDetalle);
+      var baseDet = Math.max(detErr.getLastRow() + 1, 2);
+      detErr.getRange(baseDet, 1, erroresDetalle.length, 9).setValues(erroresDetalle);
       // Pintar columna severidad por color
       for (var er = 0; er < erroresDetalle.length; er++) {
         var sev = erroresDetalle[er][8];
         var color = sev === "CRÍTICA" ? "#fce8e6" :
                     (sev === "MEDIA" ? "#fef7e0" :
                     (sev === "BAJA" ? "#e8f0fe" : "#e6f4ea"));
-        detErr.getRange(er + 2, 9).setBackground(color);
+        detErr.getRange(baseDet + er, 9).setBackground(color);
       }
       detErr.autoResizeColumns(1, 9);
       detErr.setFrozenRows(1);
     }
 
-    // FIX FASE 8.17: escribir AUDITORIA_REGISTRO si se procesó REG
+    // FIX FASE 8.17: escribir AUDITORIA_REGISTRO si se procesó REG (APPEND por lote)
     if (procReg) {
-      audReg.clear();
-      audReg.appendRow([
-        "Fecha", "Cliente", "ID Archivo", "Filas leídas",
-        "Filas incluidas", "Filas excluidas", "Motivo principal exclusión",
-        "Hashes únicos archivo", "Status"
-      ]);
-      audReg.getRange(1, 1, 1, 9).setFontWeight("bold")
-            .setBackground("#e37400").setFontColor("#ffffff");
+      if (esFresh) {
+        audReg.clear();
+        audReg.appendRow([
+          "Fecha", "Cliente", "ID Archivo", "Filas leídas",
+          "Filas incluidas", "Filas excluidas", "Motivo principal exclusión",
+          "Hashes únicos archivo", "Status"
+        ]);
+        audReg.getRange(1, 1, 1, 9).setFontWeight("bold")
+              .setBackground("#e37400").setFontColor("#ffffff");
+      }
       if (auditRegRows.length > 0) {
-        audReg.getRange(2, 1, auditRegRows.length, 9).setValues(auditRegRows);
+        var baseAudReg = Math.max(audReg.getLastRow() + 1, 2);
+        audReg.getRange(baseAudReg, 1, auditRegRows.length, 9).setValues(auditRegRows);
         audReg.autoResizeColumns(1, 9);
         audReg.setFrozenRows(1);
       }
+    }
+
+    // ── MODO ESTRICTO (pasada única): si no alcanzó a validar todo en una sola
+    //    ejecución, NO escribe nada (más seguro que el parcial anterior).
+    if (modo === "estricto" && seAgotoTiempo) {
+      return {
+        ok: false,
+        modo: modo,
+        mensaje: "❌ MODO ESTRICTO no pudo validar los " + entries.length +
+                 " archivos en una sola ejecución (límite de tiempo).\n\n" +
+                 "El modo estricto es 'todo o nada' y no se ejecuta por lotes.\n" +
+                 "Usa modo TOLERANTE (procesa automáticamente por lotes hasta\n" +
+                 "terminar el 100%) o ejecuta consolidarTodoDesdeEditor() desde\n" +
+                 "el editor de Apps Script. No se escribió nada en INVENTARIOS."
+      };
     }
 
     // ── MODO ESTRICTO: si hay errores críticos, DETIENE sin escribir INVENTARIOS
@@ -3234,46 +3373,22 @@ function consolidarConAuditoria(opciones) {
       };
     }
 
-    // ── MODO REPORTE_SOLO: no escribe INVENTARIOS ni REGISTRO, sólo reporta
-    if (modo === "reporte_solo") {
-      return {
-        ok: true,
-        mensaje: "📋 Pre-validación completa (no se escribió nada):\n\n" +
-                 "Incluir: " + incluir + "\n" +
-                 "Archivos analizados: " + (entries.length - archivosOmitidosPorTiempo) + " / " + entries.length + "\n" +
-                 (archivosOmitidosPorTiempo > 0 ?
-                   "⏱️ Omitidos por tiempo: " + archivosOmitidosPorTiempo +
-                   " (re-ejecuta para procesarlos)\n" : "") +
-                 (procInv ?
-                   "\n[INVENTARIOS]\n" +
-                   "  • Filas que SE consolidarían: " + sumTotalFilas + "\n" +
-                   "  • Errores críticos: " + totalCriticos + "\n" +
-                   "  • Duplicados intra-archivo: " + totalDuplicados + "\n"
-                 : "") +
-                 (procReg ?
-                   "\n[REGISTRO]\n" +
-                   "  • Filas que SE consolidarían: " + totalFilasRegIncluidas + "\n" +
-                   "  • Filas vacías excluidas: " + totalFilasRegVacias + "\n" +
-                   "  • Duplicados intra-archivo: " + totalDuplicadosReg + "\n"
-                 : "") +
-                 "\nRevisa ERRORES_VALIDACION_DETALLE para detalle por fila.",
-        modo: modo,
-        incluir: incluir,
-        sinEscribir: true,
-        archivosProcesados: entries.length,
-        filasIncluidasEstimadas: sumTotalFilas,
-        filasExcluidas: erroresDetalle.length,
-        criticos: totalCriticos,
-        duplicados: totalDuplicados,
-        registroIncluidas: totalFilasRegIncluidas,
-        registroDuplicados: totalDuplicadosReg,
-        registroVacias: totalFilasRegVacias
-      };
+    // ── FIX FASE 8.33: acumular contadores de ESTE lote en el estado persistido
+    //    (batch) y marcar los archivos del lote como PROCESADO en el snapshot.
+    if (esBatch) {
+      _consolAccSumar({
+        filas: sumTotalFilas, cant: sumTotalCant, criticos: totalCriticos,
+        dups: totalDuplicados, erroresDet: erroresDetalle.length,
+        excAud: excAudLote, leidas: leidasLote,
+        regIncl: totalFilasRegIncluidas, regDup: totalDuplicadosReg, regVacias: totalFilasRegVacias
+      }, esFresh ? reparadosAuto : null);
+      _consolSnapshotMarcarRango(startIdx, nextIdx, "PROCESADO");
     }
 
-    // ── MODO TOLERANTE — Escribir INVENTARIOS (si procInv)
-    if (procInv) {
-      if (inv.getLastRow() > 1) {
+    // ── Escribir INVENTARIOS — tolerante/estricto (reporte_solo nunca escribe) ─
+    //    FIX FASE 8.33: APPEND por lote. Solo el arranque fresco limpia la fila 2+.
+    if (modo !== "reporte_solo" && procInv) {
+      if (esFresh && inv.getLastRow() > 1) {
         inv.getRange(2, 1, inv.getLastRow() - 1, inv.getLastColumn()).clearContent();
       }
       // Capa 3: stringificar cualquier Date que aún quede
@@ -3285,15 +3400,16 @@ function consolidarConAuditoria(opciones) {
       }
       if (todosLosDatos.length > 0) {
         ensureColumns(inv, todosLosDatos[0].length);
-        inv.getRange(2, 1, todosLosDatos.length, todosLosDatos[0].length)
+        var destInv = Math.max(inv.getLastRow() + 1, 2);
+        inv.getRange(destInv, 1, todosLosDatos.length, todosLosDatos[0].length)
            .setNumberFormat("@")
            .setValues(todosLosDatos);
       }
     }
 
-    // ── FIX FASE 8.17 — Escribir REGISTRO (si procReg)
-    if (procReg && reg) {
-      if (reg.getLastRow() > 1) {
+    // ── FIX FASE 8.17 — Escribir REGISTRO (APPEND por lote) ───────────────────
+    if (modo !== "reporte_solo" && procReg && reg) {
+      if (esFresh && reg.getLastRow() > 1) {
         reg.getRange(2, 1, reg.getLastRow() - 1, reg.getLastColumn()).clearContent();
       }
       todosLosRegistros = _stringificarFechasFinales(todosLosRegistros);
@@ -3303,6 +3419,8 @@ function consolidarConAuditoria(opciones) {
       if (todosLosRegistros.length > 0) {
         var maxColsReg = headersReg ? headersReg.length : 0;
         todosLosRegistros.forEach(function(r){ if (r.length > maxColsReg) maxColsReg = r.length; });
+        // FIX FASE 8.33: máximo corrido entre lotes para ancho consistente.
+        if (esBatch) maxColsReg = _consolMaxColsReg(maxColsReg);
         var regNormalizado = todosLosRegistros.map(function(r){
           while (r.length < maxColsReg) r.push("");
           return r.slice(0, maxColsReg);
@@ -3315,25 +3433,18 @@ function consolidarConAuditoria(opciones) {
              .setFontWeight("bold");
         }
         ensureColumns(reg, maxColsReg);
-        reg.getRange(2, 1, regNormalizado.length, maxColsReg)
+        var destReg = Math.max(reg.getLastRow() + 1, 2);
+        reg.getRange(destReg, 1, regNormalizado.length, maxColsReg)
            .setNumberFormat("@")
            .setValues(regNormalizado);
       }
     }
 
-    // Escribir AUDITORÍA INVENTARIOS (solo si procesamos INV)
-    if (procInv && auditRows.length > 0) {
-      aud.getRange(2, 1, auditRows.length, auditRows[0].length).setValues(auditRows);
-      // Fila TOTALES
-      var totalRow = ["TOTAL", "—", "—",
-        auditRows.reduce(function(a,r){ return a + (Number(r[3])||0); }, 0),
-        sumTotalFilas,
-        auditRows.reduce(function(a,r){ return a + (Number(r[5])||0); }, 0),
-        "—", sumTotalCant, "—", "—", "📊"];
-      aud.getRange(auditRows.length + 2, 1, 1, totalRow.length)
-         .setValues([totalRow])
-         .setBackground("#fff3cd").setFontWeight("bold");
-      aud.autoResizeColumns(1, 11);
+    // Escribir AUDITORÍA INVENTARIOS de este lote (APPEND, sin fila TOTAL aún).
+    // reporte_solo no escribe auditoría INV (comportamiento histórico).
+    if (modo !== "reporte_solo" && procInv && auditRows.length > 0) {
+      var baseAud = Math.max(aud.getLastRow() + 1, 2);
+      aud.getRange(baseAud, 1, auditRows.length, auditRows[0].length).setValues(auditRows);
     }
 
     // FIX FASE 8.13: REMOVIDO el espejo automático a MATRIZ_INVENTARIOS_UIO.
@@ -3343,7 +3454,8 @@ function consolidarConAuditoria(opciones) {
     // para que el operador pueda repararlos (usando repararPermisosArchivo de v8.28
     // o repararPermisosLote de v8.31). Si en una consolidación posterior algún
     // archivo ya se abrió bien, se quita automáticamente de la lista.
-    try {
+    // FIX FASE 8.33: reporte_solo es dry-run → no muta esta hoja (igual que antes).
+    if (modo !== "reporte_solo") try {
       var hInac = ss.getSheetByName("ARCHIVOS_INACCESIBLES") ||
                   ss.insertSheet("ARCHIVOS_INACCESIBLES");
 
@@ -3407,39 +3519,113 @@ function consolidarConAuditoria(opciones) {
       Logger.log("FIX 8.31 ARCHIVOS_INACCESIBLES: " + eInac.message);
     }
 
+    // ── FIX FASE 8.33: ¿quedan archivos pendientes? → checkpoint + trigger ────
+    //    Solo en modo batch (tolerante/reporte_solo). Persistimos dónde retomar
+    //    y programamos un trigger one-time que reanuda automáticamente.
+    if (esBatch && seAgotoTiempo && nextIdx < entries.length) {
+      _consolEstadoCheckpoint(nextIdx);
+      _programarContinuacionConsolidacion();
+      return {
+        ok: true, enCurso: true, procesados: nextIdx, total: entries.length,
+        modo: modo, incluir: incluir,
+        mensaje: "⏳ Consolidación en progreso: " + nextIdx + " / " + entries.length +
+                 " archivos procesados.\n\n" +
+                 "Continuará automáticamente en segundo plano (un lote cada ~1-2 min) " +
+                 "hasta terminar el 100%. El dashboard mostrará el avance.\n" +
+                 "No vuelvas a ejecutar mientras esté en curso."
+      };
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // COMPLETADO — se procesaron todos los archivos del snapshot.
+    // ════════════════════════════════════════════════════════════════════════
     invalidarCacheSeries();
+
+    // Totales GRANDES: en batch vienen del estado acumulado entre lotes;
+    // en estricto (pasada única) son los locales de esta ejecución.
+    var G = esBatch ? _consolAccLeer() : {
+      filas: sumTotalFilas, cant: sumTotalCant, criticos: totalCriticos,
+      dups: totalDuplicados, erroresDet: erroresDetalle.length,
+      excAud: excAudLote, leidas: leidasLote,
+      regIncl: totalFilasRegIncluidas, regDup: totalDuplicadosReg,
+      regVacias: totalFilasRegVacias, reparados: reparadosAuto
+    };
+
+    // ── MODO REPORTE_SOLO: no escribe INVENTARIOS ni REGISTRO, sólo reporta ───
+    if (modo === "reporte_solo") {
+      if (esBatch) _consolEstadoFinalizar("COMPLETADO");
+      return {
+        ok: true,
+        mensaje: "📋 Pre-validación completa (no se escribió nada):\n\n" +
+                 "Incluir: " + incluir + "\n" +
+                 "Archivos analizados: " + entries.length + " / " + entries.length + "\n" +
+                 (procInv ?
+                   "\n[INVENTARIOS]\n" +
+                   "  • Filas que SE consolidarían: " + G.filas + "\n" +
+                   "  • Errores críticos: " + G.criticos + "\n" +
+                   "  • Duplicados intra-archivo: " + G.dups + "\n"
+                 : "") +
+                 (procReg ?
+                   "\n[REGISTRO]\n" +
+                   "  • Filas que SE consolidarían: " + G.regIncl + "\n" +
+                   "  • Filas vacías excluidas: " + G.regVacias + "\n" +
+                   "  • Duplicados intra-archivo: " + G.regDup + "\n"
+                 : "") +
+                 "\nRevisa ERRORES_VALIDACION_DETALLE para detalle por fila.",
+        modo: modo,
+        incluir: incluir,
+        sinEscribir: true,
+        archivosProcesados: entries.length,
+        filasIncluidasEstimadas: G.filas,
+        filasExcluidas: G.erroresDet,
+        criticos: G.criticos,
+        duplicados: G.dups,
+        registroIncluidas: G.regIncl,
+        registroDuplicados: G.regDup,
+        registroVacias: G.regVacias
+      };
+    }
+
+    // ── Fila TOTALES de AUDITORIA_CONSOLIDACION (con grandes totales) ─────────
+    if (procInv) {
+      var totalRow = ["TOTAL", "—", "—",
+        G.leidas, G.filas, G.excAud,
+        "—", G.cant, "—", "—", "📊"];
+      var rowTotal = Math.max(aud.getLastRow() + 1, 2);
+      aud.getRange(rowTotal, 1, 1, totalRow.length)
+         .setValues([totalRow])
+         .setBackground("#fff3cd").setFontWeight("bold");
+      aud.autoResizeColumns(1, 11);
+    }
+
+    if (esBatch) _consolEstadoFinalizar("COMPLETADO");
 
     // FIX FASE 8.16 + 8.17: mensaje detallado por sección
     var partes = ["✅ Consolidación finalizada (modo " + modo.toUpperCase() + ", incluir " + incluir + "):",
                   "",
-                  "• Archivos procesados: " + (entries.length - archivosOmitidosPorTiempo) + " / " + entries.length];
+                  "• Archivos procesados: " + entries.length + " / " + entries.length];
     // FIX FASE 8.32: avisar si la auto-reparación previa rescató archivos
-    if (reparadosAuto > 0) {
-      partes.push("🔧 Auto-reparación previa: " + reparadosAuto + " archivo(s) re-compartidos");
-    }
-    // FIX FASE 8.30: avisar si se omitieron archivos por tiempo
-    if (archivosOmitidosPorTiempo > 0) {
-      partes.push("⏱️ Omitidos por tiempo: " + archivosOmitidosPorTiempo +
-                  " (re-ejecuta para procesarlos — la dedup evita duplicar)");
+    if (G.reparados > 0) {
+      partes.push("🔧 Auto-reparación previa: " + G.reparados + " archivo(s) re-compartidos");
     }
     if (procInv) {
       partes.push("");
       partes.push("[INVENTARIOS]");
-      partes.push("  • Filas incluidas: " + sumTotalFilas);
-      partes.push("  • Filas excluidas: " + (auditRows.reduce(function(a,r){ return a + (Number(r[5])||0); }, 0)));
-      partes.push("  • Críticos (SKU vacío / Cant. inválida): " + totalCriticos);
-      partes.push("  • Duplicados intra-archivo: " + totalDuplicados);
-      partes.push("  • Suma total cantidad: " + sumTotalCant.toLocaleString());
+      partes.push("  • Filas incluidas: " + G.filas);
+      partes.push("  • Filas excluidas: " + G.excAud);
+      partes.push("  • Críticos (SKU vacío / Cant. inválida): " + G.criticos);
+      partes.push("  • Duplicados intra-archivo: " + G.dups);
+      partes.push("  • Suma total cantidad: " + (Number(G.cant) || 0).toLocaleString());
     }
     if (procReg) {
       partes.push("");
       partes.push("[REGISTRO]");
-      partes.push("  • Filas incluidas: " + totalFilasRegIncluidas);
-      partes.push("  • Filas vacías excluidas: " + totalFilasRegVacias);
-      partes.push("  • Duplicados intra-archivo: " + totalDuplicadosReg);
+      partes.push("  • Filas incluidas: " + G.regIncl);
+      partes.push("  • Filas vacías excluidas: " + G.regVacias);
+      partes.push("  • Duplicados intra-archivo: " + G.regDup);
     }
     partes.push("");
-    partes.push(erroresDetalle.length > 0
+    partes.push(G.erroresDet > 0
       ? "📋 Revisa ERRORES_VALIDACION_DETALLE para ubicación exacta."
       : "🎯 Sin incidencias detectadas.");
     if (procInv) partes.push("📊 Revisa AUDITORIA_CONSOLIDACION para detalle INVENTARIOS.");
@@ -3449,14 +3635,14 @@ function consolidarConAuditoria(opciones) {
       ok: true,
       mensaje: partes.join("\n"),
       archivosProcesados: entries.length,
-      filasIncluidas: sumTotalFilas,
-      filasExcluidas: erroresDetalle.length,
-      criticos: totalCriticos,
-      duplicados: totalDuplicados,
-      sumaCantidad: sumTotalCant,
-      registroIncluidas: totalFilasRegIncluidas,
-      registroDuplicados: totalDuplicadosReg,
-      registroVacias: totalFilasRegVacias,
+      filasIncluidas: G.filas,
+      filasExcluidas: G.erroresDet,
+      criticos: G.criticos,
+      duplicados: G.dups,
+      sumaCantidad: G.cant,
+      registroIncluidas: G.regIncl,
+      registroDuplicados: G.regDup,
+      registroVacias: G.regVacias,
       modo: modo,
       incluir: incluir
     };
@@ -3468,6 +3654,257 @@ function consolidarConAuditoria(opciones) {
   } finally {
     lock.releaseLock();
   }
+}
+
+
+/* ==========================================================================
+   FIX FASE 8.33 — ESTADO DE CONSOLIDACIÓN POR LOTES (helpers)
+   --------------------------------------------------------------------------
+   Estado ligero en ScriptProperties + snapshot inmutable de archivos en la
+   hoja oculta __CACHE_CONSOLIDACION. Los ~250 IDs no caben en una propiedad
+   de 9 KB, por eso el snapshot va en la hoja; los contadores van en props.
+   ========================================================================== */
+
+var CONSOL_HOJA_CACHE = "__CACHE_CONSOLIDACION";
+
+function _consolProps() { return PropertiesService.getScriptProperties(); }
+
+/* Lee el estado de control (sin acumuladores). */
+function _consolEstadoLeer() {
+  var p = _consolProps();
+  return {
+    RUN_TOKEN:  p.getProperty("CONSOL_RUN_TOKEN") || "",
+    STATUS:     p.getProperty("CONSOL_STATUS") || "IDLE",
+    NEXT_IDX:   parseInt(p.getProperty("CONSOL_NEXT_IDX") || "0", 10),
+    TOTAL:      parseInt(p.getProperty("CONSOL_TOTAL") || "0", 10),
+    PROCESADOS: parseInt(p.getProperty("CONSOL_PROCESADOS") || "0", 10),
+    MODO:       p.getProperty("CONSOL_MODO") || "",
+    INCLUIR:    p.getProperty("CONSOL_INCLUIR") || "",
+    CTX:        p.getProperty("CONSOL_CTX") || "",
+    TS:         parseInt(p.getProperty("CONSOL_TS") || "0", 10)
+  };
+}
+
+/* Una corrida se considera viva si latió hace < 12 min (lotes ≤5 min + 90 s gap). */
+function _consolHeartbeatVivo(ts) {
+  if (!ts) return false;
+  return (Date.now() - ts) < (12 * 60 * 1000);
+}
+
+function _consolEstadoIniciar(o) {
+  _consolProps().setProperties({
+    CONSOL_RUN_TOKEN: Utilities.getUuid(),
+    CONSOL_STATUS:    "EN_CURSO",
+    CONSOL_NEXT_IDX:  "0",
+    CONSOL_TOTAL:     String(o.total),
+    CONSOL_PROCESADOS:"0",
+    CONSOL_MODO:      o.modo,
+    CONSOL_INCLUIR:   o.incluir,
+    CONSOL_CTX:       o.ctx,
+    CONSOL_TS:        String(Date.now()),
+    CONSOL_STALLS:    "0",
+    CONSOL_ACC: JSON.stringify({ filas:0, cant:0, criticos:0, dups:0, erroresDet:0,
+      excAud:0, leidas:0, regIncl:0, regDup:0, regVacias:0, reparados:0, maxColsReg:0 })
+  }, false);
+}
+
+function _consolEstadoCheckpoint(nextIdx) {
+  _consolProps().setProperties({
+    CONSOL_NEXT_IDX:  String(nextIdx),
+    CONSOL_PROCESADOS:String(nextIdx),
+    CONSOL_STATUS:    "EN_CURSO",
+    CONSOL_TS:        String(Date.now())
+  }, false);
+}
+
+function _consolEstadoFinalizar(status) {
+  var p = _consolProps();
+  var tot = parseInt(p.getProperty("CONSOL_TOTAL") || "0", 10);
+  p.setProperties({
+    CONSOL_STATUS:    status,
+    CONSOL_PROCESADOS:String(tot),
+    CONSOL_NEXT_IDX:  String(tot),
+    CONSOL_TS:        String(Date.now())
+  }, false);
+}
+
+function _consolEstadoReset() {
+  var p = _consolProps();
+  ["CONSOL_RUN_TOKEN","CONSOL_STATUS","CONSOL_NEXT_IDX","CONSOL_TOTAL",
+   "CONSOL_PROCESADOS","CONSOL_MODO","CONSOL_INCLUIR","CONSOL_CTX","CONSOL_TS",
+   "CONSOL_ACC","CONSOL_STALLS"].forEach(function(k){
+    try { p.deleteProperty(k); } catch(e){}
+  });
+}
+
+function _consolAccLeer() {
+  var raw = _consolProps().getProperty("CONSOL_ACC");
+  var d = { filas:0, cant:0, criticos:0, dups:0, erroresDet:0, excAud:0,
+            leidas:0, regIncl:0, regDup:0, regVacias:0, reparados:0, maxColsReg:0 };
+  if (!raw) return d;
+  try { var o = JSON.parse(raw); for (var k in d) if (o[k] != null) d[k] = o[k]; } catch(e){}
+  return d;
+}
+
+function _consolAccSumar(delta, reparados) {
+  var a = _consolAccLeer();
+  a.filas      += delta.filas      || 0;
+  a.cant       += delta.cant       || 0;
+  a.criticos   += delta.criticos   || 0;
+  a.dups       += delta.dups       || 0;
+  a.erroresDet += delta.erroresDet || 0;
+  a.excAud     += delta.excAud     || 0;
+  a.leidas     += delta.leidas     || 0;
+  a.regIncl    += delta.regIncl    || 0;
+  a.regDup     += delta.regDup     || 0;
+  a.regVacias  += delta.regVacias  || 0;
+  if (reparados != null) a.reparados = reparados;
+  _consolProps().setProperty("CONSOL_ACC", JSON.stringify(a));
+}
+
+/* Devuelve el máximo corrido de columnas de REGISTRO entre lotes. */
+function _consolMaxColsReg(n) {
+  var a = _consolAccLeer();
+  if (n > (a.maxColsReg || 0)) {
+    a.maxColsReg = n;
+    _consolProps().setProperty("CONSOL_ACC", JSON.stringify(a));
+  }
+  return a.maxColsReg;
+}
+
+/* ── Snapshot inmutable de la lista de archivos (hoja oculta) ─────────────── */
+function _consolHojaCache(crear) {
+  var ss = _getSS();
+  var sh = ss.getSheetByName(CONSOL_HOJA_CACHE);
+  if (!sh && crear) {
+    sh = ss.insertSheet(CONSOL_HOJA_CACHE);
+    try { sh.hideSheet(); } catch(e){}
+  }
+  return sh;
+}
+
+function _consolSnapshotCrear(entries) {
+  var sh = _consolHojaCache(true);
+  sh.clear();
+  var ahora = new Date();
+  var rows = [["idx","cliente","fileId","estado","timestamp"]];
+  for (var i = 0; i < entries.length; i++) {
+    rows.push([i, entries[i].cliente, entries[i].id || "", "PENDIENTE", ahora]);
+  }
+  sh.getRange(1, 1, rows.length, 5).setValues(rows);
+}
+
+function _consolSnapshotLeer() {
+  var sh = _consolHojaCache(false);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues();
+  return v.map(function(r){ return { cliente: r[1], id: String(r[2] || "") }; });
+}
+
+/* Marca el rango [desde, hasta) de índices con un estado (idx i → fila i+2). */
+function _consolSnapshotMarcarRango(desde, hasta, estado) {
+  var sh = _consolHojaCache(false);
+  if (!sh || sh.getLastRow() < 2) return;
+  var n = hasta - desde;
+  if (n <= 0) return;
+  var vals = [];
+  for (var k = 0; k < n; k++) vals.push([estado]);
+  sh.getRange(desde + 2, 4, n, 1).setValues(vals);
+}
+
+/* ── Trigger de continuación (one-time, .after) ───────────────────────────── */
+function _programarContinuacionConsolidacion() {
+  try {
+    ScriptApp.getProjectTriggers().forEach(function(t){
+      if (t.getHandlerFunction() === "_continuarConsolidacion") ScriptApp.deleteTrigger(t);
+    });
+  } catch(e){}
+  ScriptApp.newTrigger("_continuarConsolidacion").timeBased().after(90 * 1000).create();
+}
+
+/* Reanuda la consolidación desde el checkpoint. Se auto-borra (patrón one-time)
+   y reprograma sólo si quedó trabajo pendiente y la cadena no avanzó. */
+function _continuarConsolidacion() {
+  try {
+    ScriptApp.getProjectTriggers().forEach(function(t){
+      if (t.getHandlerFunction() === "_continuarConsolidacion") ScriptApp.deleteTrigger(t);
+    });
+  } catch(e){}
+
+  var st = _consolEstadoLeer();
+  if (st.STATUS !== "EN_CURSO") return;  // completado/cancelado → autodestrucción
+
+  try {
+    _consolidarNucleo({ _continuacion: true });
+  } catch(e) {
+    Logger.log("FIX 8.33 _continuarConsolidacion error: " + e.message);
+  }
+
+  // Salvaguarda: si sigue EN_CURSO con pendientes y nadie reprogramó, reintentar.
+  var st2 = _consolEstadoLeer();
+  if (st2.STATUS === "EN_CURSO" && st2.NEXT_IDX < st2.TOTAL) {
+    var avanzo = st2.NEXT_IDX > st.NEXT_IDX;
+    var p = _consolProps();
+    var stalls = avanzo ? 0 : (parseInt(p.getProperty("CONSOL_STALLS") || "0", 10) + 1);
+    p.setProperty("CONSOL_STALLS", String(stalls));
+    if (stalls >= 4) {
+      p.setProperty("CONSOL_STATUS", "ERROR");
+      Logger.log("FIX 8.33: consolidación detenida por estancamiento (4 intentos sin avance).");
+      return;
+    }
+    var yaProg = false;
+    try {
+      ScriptApp.getProjectTriggers().forEach(function(t){
+        if (t.getHandlerFunction() === "_continuarConsolidacion") yaProg = true;
+      });
+    } catch(e){}
+    if (!yaProg) { try { _programarContinuacionConsolidacion(); } catch(e){} }
+  }
+}
+
+/* ── Wrappers del dashboard para estado / control de la consolidación ──────── */
+function dash_estadoConsolidacion() {
+  var st = _consolEstadoLeer();
+  return {
+    enCurso:    st.STATUS === "EN_CURSO",
+    status:     st.STATUS || "IDLE",
+    procesados: st.PROCESADOS || 0,
+    total:      st.TOTAL || 0,
+    modo:       st.MODO || "",
+    incluir:    st.INCLUIR || ""
+  };
+}
+
+function dash_continuarConsolidacion() {
+  _requiereRol(["Coordinador", "Líder de Conteo"]);
+  var st = _consolEstadoLeer();
+  if (st.STATUS !== "EN_CURSO") {
+    return { ok:false, mensaje:"No hay una consolidación pendiente para continuar." };
+  }
+  // Reprograma el trigger por si la cadena se detuvo; devuelve el progreso actual.
+  _programarContinuacionConsolidacion();
+  return {
+    ok: true, enCurso: true, procesados: st.PROCESADOS, total: st.TOTAL,
+    mensaje: "▶️ Continuación reprogramada (" + st.PROCESADOS + "/" + st.TOTAL +
+             "). Terminará automáticamente en segundo plano."
+  };
+}
+
+function dash_cancelarConsolidacion() {
+  _requiereRol(["Coordinador", "Líder de Conteo"]);
+  try {
+    ScriptApp.getProjectTriggers().forEach(function(t){
+      if (t.getHandlerFunction() === "_continuarConsolidacion") ScriptApp.deleteTrigger(t);
+    });
+  } catch(e){}
+  var st = _consolEstadoLeer();
+  _consolProps().setProperties({ CONSOL_STATUS:"CANCELADO", CONSOL_TS:String(Date.now()) }, false);
+  return {
+    ok: true,
+    mensaje: "🛑 Consolidación cancelada. Se conservó lo ya consolidado (" +
+             (st.PROCESADOS || 0) + "/" + (st.TOTAL || 0) + " archivos). " +
+             "Vuelve a ejecutar 'Consolidar' para reprocesar el 100%."
+  };
 }
 
 
