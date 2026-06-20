@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1220; --panel: #131c2e; --panel-2: #1c2740;
+      --border: #283352; --text: #e8ecf3; --muted: #7d8aa8;
+      --accent: #3b82f6; --ok: #22c55e; --warn: #eab308;
+      --danger: #ef4444; --info: #8b5cf6; --teal: #14b8a6;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg);
+           color: var(--text); margin: 0; padding: 14px; font-size: 13px; }
+    h1, h2, h3 { font-weight: 500; margin: 0; }
+    button { font-family: inherit; cursor: pointer; }
+    input, select { font-family: inherit; }
+
+    /* Header */
+    .topbar { display: flex; justify-content: space-between; align-items: center;
+              padding-bottom: 10px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand .logo { width: 32px; height: 32px; background: var(--accent); border-radius: 7px;
+                   display: flex; align-items: center; justify-content: center;
+                   font-weight: 600; color: #fff; font-size: 14px; }
+    .brand .name { font-size: 14px; font-weight: 600; }
+    .brand .sub  { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .meta { font-size: 11px; color: var(--muted); text-align: right; }
+    .meta .clock { font-size: 13px; color: var(--text); font-weight: 500; }
+
+    /* KPIs */
+    .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 10px; }
+    .kpi { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 8px; padding: 10px 12px; position: relative; }
+    .kpi .lbl { font-size: 10px; letter-spacing: 0.8px; color: var(--muted); text-transform: uppercase; font-weight: 500; }
+    .kpi .val { font-size: 22px; font-weight: 600; margin-top: 4px; line-height: 1; }
+    .kpi .sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
+    .kpi.danger .val { color: var(--danger); }
+    .kpi.warn   .val { color: var(--warn); }
+    .kpi.info   .val { color: var(--accent); }
+    .kpi.ok     .val { color: var(--ok); }
+    .kpi.teal   .val { color: var(--teal); }
+    .kpi.violet .val { color: var(--info); }
+
+    /* Grid principal */
+    .grid { display: grid; grid-template-columns: 1fr 290px; gap: 12px; }
+
+    /* Cards */
+    .card { background: var(--panel); border: 1px solid var(--border);
+            border-radius: 10px; padding: 12px 14px; }
+    .card .ttl { font-size: 12px; font-weight: 600; color: var(--text);
+                 margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+                 letter-spacing: 0.3px; justify-content: space-between; }
+    .card .ttl .lbl-grp { display: flex; align-items: center; gap: 6px; }
+    .card .ttl small { color: var(--muted); font-weight: 400; font-size: 10px; }
+
+    /* Chart */
+    #chart-wrap { height: 200px; position: relative; }
+
+    /* Tablas */
+    .tbl { width: 100%; font-size: 12px; }
+    .tbl .hd { display: grid; gap: 6px; padding: 6px 4px;
+               border-bottom: 1px solid var(--border); color: var(--muted);
+               font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 600; }
+    .tbl .rw { display: grid; gap: 6px; padding: 7px 4px;
+               border-bottom: 1px solid rgba(255,255,255,0.04); align-items: center; }
+    .tbl .rw:hover { background: rgba(255,255,255,0.02); }
+    .tbl-cron .hd, .tbl-cron .rw { grid-template-columns: 58px 1fr 110px 80px 130px; }
+    .tbl-pan .hd,  .tbl-pan .rw  { grid-template-columns: 1fr 78px 70px 84px; }
+    .tbl .scroll { max-height: 260px; overflow-y: auto; padding-right: 2px; }
+    .tbl-pan  .scroll { max-height: 175px; }
+
+    /* Pills */
+    .pill { font-size: 10px; padding: 3px 8px; border-radius: 10px; font-weight: 600;
+            display: inline-block; }
+    .pill-danger { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+    .pill-warn   { background: rgba(234, 179, 8, 0.15); color: #fde047; }
+    .pill-info   { background: rgba(59, 130, 246, 0.15); color: #93c5fd; }
+    .pill-ok     { background: rgba(34, 197, 94, 0.15); color: #86efac; }
+    .pill-muted  { background: rgba(125, 138, 168, 0.15); color: var(--muted); }
+
+    /* Filtros */
+    .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+    .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+    .chip { background: var(--panel-2); border: 1px solid var(--border);
+            color: var(--muted); padding: 4px 10px; border-radius: 12px;
+            font-size: 11px; cursor: pointer; user-select: none; }
+    .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .chip:hover { color: var(--text); }
+    .filter-sep { width: 1px; height: 18px; background: var(--border); }
+    .input-mini, .select-mini { background: var(--panel-2); border: 1px solid var(--border);
+                                color: var(--text); padding: 4px 8px; border-radius: 4px;
+                                font-size: 11px; min-width: 130px; }
+    .input-mini:focus, .select-mini:focus { outline: none; border-color: var(--accent); }
+
+    /* Sidebar */
+    .sidebar { display: flex; flex-direction: column; gap: 10px; }
+    .actbox { background: var(--panel); border: 1px solid var(--border);
+              border-radius: 10px; padding: 10px 12px; }
+    .actbox .lbl { font-size: 10px; font-weight: 600; color: var(--muted);
+                   letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 7px; }
+    .btn { width: 100%; background: var(--panel-2); border: 1px solid var(--border);
+           color: var(--text); padding: 8px 10px; border-radius: 6px; text-align: left;
+           font-size: 12px; margin-bottom: 4px; transition: all 0.15s;
+           display: flex; align-items: center; gap: 8px; }
+    .btn:hover { background: var(--border); border-color: var(--accent); }
+    .btn .ico { font-size: 14px; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #2563eb; border-color: #2563eb; }
+    .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* Acciones en filas del cronograma */
+    .act-grp { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; }
+    .mini-btn { padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;
+                border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+                cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+    .mini-btn:hover:not(:disabled) { border-color: var(--accent); }
+    .mini-btn.start { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #93c5fd; }
+    .mini-btn.start:hover:not(:disabled) { background: var(--accent); color: #fff; }
+    .mini-btn.end { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: #86efac; }
+    .mini-btn.end:hover:not(:disabled) { background: var(--ok); color: #fff; }
+    .mini-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .icon-btn { background: transparent; border: 1px solid var(--border);
+                color: var(--muted); width: 24px; height: 22px; border-radius: 4px;
+                display: inline-flex; align-items: center; justify-content: center;
+                font-size: 11px; cursor: pointer; }
+    .icon-btn:hover { color: var(--text); border-color: var(--accent); }
+    .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* Carga responsables */
+    .resp-row { display: flex; justify-content: space-between; padding: 5px 0;
+                font-size: 11px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .resp-row:last-child { border-bottom: none; }
+    .resp-row b { color: var(--accent); }
+
+    /* Modal */
+    .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+                z-index: 100; display: none; align-items: center; justify-content: center; }
+    .modal-bg.show { display: flex; }
+    .modal { background: var(--panel); border: 1px solid var(--border);
+             border-radius: 10px; padding: 20px; max-width: 520px; width: 92%;
+             max-height: 88vh; overflow-y: auto; }
+    .modal h3 { font-size: 14px; margin-bottom: 8px; }
+    .modal p { color: var(--muted); font-size: 12px; margin: 8px 0 14px 0; line-height: 1.5; }
+    .modal input[type="text"], .modal input[type="date"], .modal select {
+      width: 100%; background: var(--panel-2);
+      color: var(--text); border: 1px solid var(--border);
+      padding: 8px 10px; border-radius: 6px; font-size: 13px;
+      margin-bottom: 12px; font-family: inherit; }
+    .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); }
+    .modal label { display: block; font-size: 10px; color: var(--muted);
+                   margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px;
+                   font-weight: 600; }
+    .modal .field { margin-bottom: 12px; }
+    .modal .actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal button { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border);
+                    background: var(--panel-2); color: var(--text); font-size: 12px;
+                    cursor: pointer; font-family: inherit; }
+    .modal .confirm { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .modal .danger { background: var(--danger); border-color: var(--danger); }
+
+    /* Mini radios (modal) */
+    .radio-row { display: flex; gap: 6px; margin-bottom: 4px; }
+    .radio-mini { background: var(--panel-2); border: 1px solid var(--border);
+                  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+                  font-size: 11px; flex: 1; text-align: center; }
+    .radio-mini.selected { border-color: var(--accent); background: rgba(59,130,246,0.15);
+                           color: #93c5fd; font-weight: 600; }
+    .radio-mini input { display: none; }
+
+    /* Finalización: lista de archivos del cliente */
+    .fin-warn { background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.3);
+                color: #fde047; padding: 8px 10px; border-radius: 5px;
+                font-size: 11px; margin-bottom: 10px; }
+    .fin-empty { background: var(--panel-2); border: 1px dashed var(--border);
+                 padding: 12px; border-radius: 5px; text-align: center;
+                 color: var(--muted); font-size: 11px; }
+    .fin-files-list { max-height: 220px; overflow-y: auto;
+                      background: var(--panel-2); border: 1px solid var(--border);
+                      border-radius: 5px; padding: 4px; }
+    .fin-file-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px;
+                    border-radius: 4px; cursor: pointer; margin-bottom: 2px; }
+    .fin-file-row:hover { background: var(--panel); }
+    .fin-file-row input { margin-top: 3px; }
+    .fin-file-info { flex: 1; min-width: 0; }
+    .fin-file-name { font-size: 11px; font-weight: 500; overflow: hidden;
+                     text-overflow: ellipsis; white-space: nowrap; }
+    .fin-file-meta { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+    /* Toast */
+    #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+             background: var(--panel); border: 1px solid var(--border);
+             color: var(--text); padding: 10px 16px; border-radius: 6px;
+             font-size: 12px; z-index: 200; display: none; max-width: 480px; }
+    #toast.show { display: block; }
+    #toast.success { border-color: var(--ok); }
+    #toast.error { border-color: var(--danger); }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+
+    .empty { text-align: center; padding: 24px; color: var(--muted); font-size: 11px; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">IT</div>
+      <div>
+        <div class="name">Centro de Mando Integral — Itsanet UIO</div>
+        <div class="sub">Inventarios físicos auditables · trazabilidad gerencial</div>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="clock" id="meta-fecha">—</div>
+      <div id="meta-hora">—</div>
+    </div>
+  </div>
+
+  <!-- KPIs Row 1 — operación día a día -->
+  <div class="kpis">
+    <div class="kpi danger"><div class="lbl">Vencidos</div><div class="val" id="kpi-venc">—</div><div class="sub">cronograma</div></div>
+    <div class="kpi warn"><div class="lbl">Hoy</div><div class="val" id="kpi-hoy">—</div><div class="sub">programados</div></div>
+    <div class="kpi info"><div class="lbl">Próx. 7 días</div><div class="val" id="kpi-prox7">—</div><div class="sub">en agenda</div></div>
+    <div class="kpi ok"><div class="lbl">Entregados año</div><div class="val" id="kpi-entr-anio">—</div><div class="sub">en panel</div></div>
+    <div class="kpi violet"><div class="lbl">Clientes activos</div><div class="val" id="kpi-cli-act">—</div><div class="sub">mes en curso</div></div>
+  </div>
+
+  <!-- KPIs Row 2 — volumen y eficiencia -->
+  <div class="kpis">
+    <div class="kpi"><div class="lbl">Unidades</div><div class="val" id="kpi-unid">—</div><div class="sub">año en curso</div></div>
+    <div class="kpi"><div class="lbl">Referencias</div><div class="val" id="kpi-refs">—</div><div class="sub">año en curso</div></div>
+    <div class="kpi"><div class="lbl">Posiciones</div><div class="val" id="kpi-pos">—</div><div class="sub">año en curso</div></div>
+    <div class="kpi teal"><div class="lbl">Avance mes</div><div class="val" id="kpi-avance-mes">—</div><div class="sub">entregados / total</div></div>
+    <div class="kpi info"><div class="lbl">Cumplimiento año</div><div class="val" id="kpi-cumpl">—</div><div class="sub">programado vs ejecutado</div></div>
+  </div>
+
+  <!-- Grid principal -->
+  <div class="grid">
+
+    <!-- COLUMNA IZQUIERDA -->
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+
+      <!-- Chart anual -->
+      <div class="card">
+        <div class="ttl">
+          <div class="lbl-grp">📈 Tendencia anual <small id="chart-anio">—</small></div>
+        </div>
+        <div id="chart-wrap"><canvas id="chart-anual"></canvas></div>
+      </div>
+
+      <!-- Cronograma operativo -->
+      <div class="card">
+        <div class="ttl">
+          <div class="lbl-grp">📅 Cronograma operativo <small id="cron-resumen">—</small></div>
+        </div>
+        <div class="filters">
+          <div class="chips">
+            <span class="chip active" data-f="all" onclick="setF(this,'all')">Todos</span>
+            <span class="chip" data-f="urgent" onclick="setF(this,'urgent')">Urgentes</span>
+            <span class="chip" data-f="upcoming" onclick="setF(this,'upcoming')">Próx. 7d</span>
+            <span class="chip" data-f="pending" onclick="setF(this,'pending')">Pendientes</span>
+            <span class="chip" data-f="sinresp" onclick="setF(this,'sinresp')">Sin resp.</span>
+            <span class="chip" data-f="sinfile" onclick="setF(this,'sinfile')">Sin archivo</span>
+          </div>
+          <div class="filter-sep"></div>
+          <input class="input-mini" id="f-cliente" placeholder="Buscar cliente…" oninput="pintarCron()">
+        </div>
+        <div class="tbl tbl-cron">
+          <div class="hd"><div>Fecha</div><div>Cliente / Tarea</div><div>Responsable</div><div>Estado</div><div></div></div>
+          <div class="scroll" id="cron-body">
+            <div class="empty">Cargando cronograma…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel de control -->
+      <div class="card">
+        <div class="ttl">
+          <div class="lbl-grp">📊 Panel de Control — últimos inventarios</div>
+        </div>
+        <div class="tbl tbl-pan">
+          <div class="hd"><div>Cliente</div><div>Unidades</div><div>Efect.</div><div>Estado</div></div>
+          <div class="scroll" id="pan-body">
+            <div class="empty">Cargando panel…</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- COLUMNA DERECHA (sidebar) -->
+    <div class="sidebar">
+
+      <div class="actbox">
+        <div class="lbl">📦 Operación</div>
+        <button class="btn btn-primary" onclick="accion('crearInventario')">
+          <span class="ico">＋</span> Crear inventario
+        </button>
+        <button class="btn" onclick="accion('nuevoEvento')">
+          <span class="ico">📅</span> Nuevo evento cronograma
+        </button>
+        <button class="btn" onclick="accion('actualizarMetricas')">
+          <span class="ico">🔄</span> Actualizar métricas
+        </button>
+        <button class="btn" onclick="accion('abrirLibro')">
+          <span class="ico">📗</span> Abrir libro Excel
+        </button>
+      </div>
+
+      <div class="actbox">
+        <div class="lbl">🗂️ Base de datos</div>
+        <button class="btn btn-danger" onclick="confirmar('consolidar')">
+          <span class="ico">📥</span> Consolidar con auditoría
+        </button>
+        <button class="btn" onclick="accion('verAuditoria')">
+          <span class="ico">🔍</span> Ver auditoría
+        </button>
+        <button class="btn" onclick="accion('preValidar')">
+          <span class="ico">⚠️</span> Pre-validar errores
+        </button>
+        <button class="btn btn-danger" onclick="confirmar('limpiar')">
+          <span class="ico">🧹</span> Limpiar duplicados
+        </button>
+      </div>
+
+      <div class="actbox">
+        <div class="lbl">📤 Reportes</div>
+        <button class="btn" onclick="accion('exportarCliente')">
+          <span class="ico">📄</span> Exportar cliente
+        </button>
+        <button class="btn" onclick="accion('descargarZip')">
+          <span class="ico">📦</span> Descargar ZIP
+        </button>
+      </div>
+
+      <div class="actbox">
+        <div class="lbl">📧 Notificaciones</div>
+        <button class="btn" onclick="accion('enviarRecord')">
+          <span class="ico">📨</span> Enviar recordatorios
+        </button>
+        <button class="btn" onclick="accion('sincPanel')">
+          <span class="ico">⇄</span> Sincronizar c/Panel
+        </button>
+      </div>
+
+      <div class="actbox">
+        <div class="lbl">👥 Carga por operario</div>
+        <div id="carga-resp"><div class="empty">—</div></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Modal genérico -->
+  <div class="modal-bg" id="modal">
+    <div class="modal">
+      <h3 id="modal-titulo">Confirmar acción</h3>
+      <p id="modal-msg">¿Estás seguro de continuar?</p>
+      <div id="modal-body"></div>
+      <div class="actions">
+        <button onclick="cerrarModal()">Cancelar</button>
+        <button class="confirm" id="modal-ok">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    let estado = null;
+    let chart = null;
+    let filtroActual = 'all';
+
+    function tick() {
+      const now = new Date();
+      document.getElementById('meta-fecha').innerText =
+        now.toLocaleDateString('es-ES', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+      document.getElementById('meta-hora').innerText =
+        now.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' });
+    }
+    setInterval(tick, 60000); tick();
+
+    function cargar(silencioso) {
+      // Guardar scroll y filtro de cliente para preservar UX
+      var scrollY = window.scrollY;
+      var queryActual = $('f-cliente') ? $('f-cliente').value : '';
+      if (!silencioso) {
+        // Indicador visual mínimo (sin toast invasivo)
+      }
+      google.script.run
+        .withSuccessHandler(d => {
+          estado = d; pintar();
+          // Restaurar scroll y filtro
+          if (silencioso) {
+            if ($('f-cliente') && queryActual) {
+              $('f-cliente').value = queryActual;
+              pintarCron();
+            }
+            window.scrollTo(0, scrollY);
+            mostrarIndicadorRefresh();
+          }
+        })
+        .withFailureHandler(err => {
+          if (!silencioso) toast('Error: ' + err.message, 'error');
+        })
+        .obtenerEstadoIntegralDashboard();
+    }
+
+    function mostrarIndicadorRefresh() {
+      var ind = document.getElementById('refresh-ind');
+      if (!ind) {
+        ind = document.createElement('div');
+        ind.id = 'refresh-ind';
+        ind.style.cssText = 'position:fixed;top:10px;right:10px;background:rgba(34,197,94,0.15);color:#86efac;padding:4px 10px;border-radius:12px;font-size:10px;z-index:60;border:1px solid rgba(34,197,94,0.3);opacity:0;transition:opacity 0.3s;';
+        ind.innerText = '✓ Actualizado';
+        document.body.appendChild(ind);
+      }
+      ind.style.opacity = '1';
+      clearTimeout(window._indT);
+      window._indT = setTimeout(function(){ ind.style.opacity = '0'; }, 1500);
+    }
+
+    function $(id) { return document.getElementById(id); }
+    function fmtNum(n) {
+      if (n == null) return '—';
+      if (n >= 1e6) return (n/1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return (n/1e3).toFixed(1) + 'k';
+      return Math.round(n).toString();
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function pintar() {
+      if (!estado) return;
+      const k = estado.kpis;
+      $('kpi-venc').innerText = k.vencidos;
+      $('kpi-hoy').innerText = k.hoy;
+      $('kpi-prox7').innerText = k.proximos7;
+      $('kpi-entr-anio').innerText = k.entregadosAnio;
+      $('kpi-cli-act').innerText = k.clientesActivosMes;
+      $('kpi-unid').innerText = fmtNum(k.unidades);
+      $('kpi-refs').innerText = fmtNum(k.referencias);
+      $('kpi-pos').innerText = fmtNum(k.posiciones);
+      $('kpi-avance-mes').innerText = Math.round(k.avanceGlobalMes * 100) + '%';
+
+      // Cumplimiento año = entregadosCronos / total cronograma
+      const totalCronos = estado.cronograma.length;
+      const cumpl = totalCronos > 0 ? (k.entregadosCronos / totalCronos) : 0;
+      $('kpi-cumpl').innerText = Math.round(cumpl * 100) + '%';
+
+      const sinResp = estado.cronograma.filter(d =>
+        !d.responsable && String(d.estado).toLowerCase().indexOf('entregado') === -1).length;
+      $('cron-resumen').innerText = estado.cronograma.length + ' fichas · ' + sinResp + ' sin resp.';
+
+      pintarChart();
+      pintarCron();
+      pintarPan();
+      pintarCarga();
+    }
+
+    function pintarChart() {
+      const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      const data = estado.chartAnual;
+      $('chart-anio').innerText = new Date().getFullYear() + ' · inventarios entregados (eje izq.) y unidades en miles (eje der.)';
+
+      if (chart) chart.destroy();
+      const ctx = document.getElementById('chart-anual').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: meses,
+          datasets: [
+            { label: 'Inventarios entregados', data: data.map(d => d.invent),
+              borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)',
+              yAxisID: 'y1', tension: 0.25, borderWidth: 2,
+              pointRadius: 3, pointHoverRadius: 5, fill: true },
+            { label: 'Unidades (miles)', data: data.map(d => Math.round(d.unid / 1000)),
+              borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.05)',
+              yAxisID: 'y2', tension: 0.25, borderWidth: 2,
+              pointRadius: 3, pointHoverRadius: 5, borderDash: [4, 3], fill: false }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#e8ecf3', font: { size: 11 }, boxWidth: 12, usePointStyle: true } },
+            tooltip: { backgroundColor: '#131c2e', borderColor: '#283352', borderWidth: 1,
+                       titleColor: '#e8ecf3', bodyColor: '#e8ecf3', padding: 10 }
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.04)' },
+                 ticks: { color: '#7d8aa8', font: { size: 10 } } },
+            y1: { type: 'linear', position: 'left',
+                  grid: { color: 'rgba(255,255,255,0.04)' },
+                  ticks: { color: '#7d8aa8', font: { size: 10 }, stepSize: 1 },
+                  title: { display: true, text: 'Inventarios', color: '#7d8aa8', font: { size: 10 } } },
+            y2: { type: 'linear', position: 'right',
+                  grid: { display: false },
+                  ticks: { color: '#7d8aa8', font: { size: 10 } },
+                  title: { display: true, text: 'Unidades (k)', color: '#7d8aa8', font: { size: 10 } } }
+          }
+        }
+      });
+    }
+
+    function pintarCron() {
+      const q = ($('f-cliente').value || '').toLowerCase().trim();
+      const filtrados = estado.cronograma.filter(d => {
+        const est = String(d.estado).toLowerCase();
+        const entregado = est.indexOf('entregado') !== -1;
+        if (q && String(d.cliente).toLowerCase().indexOf(q) === -1 &&
+                 String(d.titulo).toLowerCase().indexOf(q) === -1) return false;
+        switch (filtroActual) {
+          case 'urgent':
+            return !entregado && d.diasRestantes !== null && d.diasRestantes <= 1;
+          case 'upcoming':
+            return !entregado && d.diasRestantes !== null && d.diasRestantes > 0 && d.diasRestantes <= 7;
+          case 'pending':
+            return !entregado;
+          case 'sinresp':
+            return !d.responsable && !entregado;
+          case 'sinfile':
+            return !d.urlArchivo && !entregado;
+          default:
+            return true;
+        }
+      }).slice(0, 80);
+
+      if (filtrados.length === 0) {
+        $('cron-body').innerHTML = '<div class="empty">Sin elementos para este filtro.</div>';
+        return;
+      }
+      $('cron-body').innerHTML = filtrados.map(filaCron).join('');
+    }
+
+    function filaCron(d) {
+      const estadoLower = String(d.estado).toLowerCase();
+      const entregado = estadoLower.indexOf('entregado') !== -1;
+      const enProceso = estadoLower.indexOf('proceso') !== -1;
+      let fechaStr = '—';
+      if (d.fechaInicio) {
+        const dt = new Date(d.fechaInicio);
+        fechaStr = String(dt.getDate()).padStart(2,'0') + ' ' +
+                   ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][dt.getMonth()];
+      }
+      let cdClass = 'pill-muted', cdText = '—';
+      if (entregado) { cdClass = 'pill-ok'; cdText = '✓ Entregado'; }
+      else if (enProceso) { cdClass = 'pill-info'; cdText = '⏳ En proceso'; }
+      else if (d.diasRestantes !== null) {
+        if (d.diasRestantes < 0)         { cdClass = 'pill-danger'; cdText = 'V ' + Math.abs(d.diasRestantes) + 'd'; }
+        else if (d.diasRestantes === 0)  { cdClass = 'pill-warn'; cdText = 'HOY'; }
+        else if (d.diasRestantes <= 7)   { cdClass = 'pill-info'; cdText = d.diasRestantes + 'd'; }
+        else                              { cdClass = 'pill-muted'; cdText = d.diasRestantes + 'd'; }
+      }
+
+      // Acciones contextuales
+      let actions = '';
+      if (entregado) {
+        if (d.urlArchivo) {
+          actions = '<button class="icon-btn" onclick="window.open(\'' + d.urlArchivo + '\',\'_blank\')" title="Abrir archivo">↗</button>';
+        } else {
+          actions = '<button class="icon-btn" disabled title="Sin archivo">·</button>';
+        }
+      } else {
+        const btnInic = enProceso
+          ? '<button class="mini-btn" disabled title="Ya iniciado">▶ Iniciar</button>'
+          : '<button class="mini-btn start" onclick="iniciarEvt(' + d.fila + ')">▶ Iniciar</button>';
+        const btnFin = '<button class="mini-btn end" onclick="finalizarEvt(' + d.fila + ')">✓ Fin</button>';
+        const btnAbrir = d.urlArchivo
+          ? '<button class="icon-btn" onclick="window.open(\'' + d.urlArchivo + '\',\'_blank\')" title="Abrir archivo">↗</button>'
+          : '';
+        const btnNotif = '<button class="icon-btn" onclick="notificar(\'' + (d.cliente+'').replace(/\'/g,"\\'") + '\')" title="Enviar recordatorio">✉</button>';
+        actions = btnInic + btnFin + btnAbrir + btnNotif;
+      }
+
+      return '<div class="rw">' +
+        '<div style="color:var(--muted);font-size:11px;">' + fechaStr + '</div>' +
+        '<div><div style="font-weight:500;">' + escapeHtml(d.cliente) + '</div>' +
+          '<div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+          escapeHtml(d.titulo) + '</div></div>' +
+        '<div style="font-size:11px;color:var(--info);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+          (d.responsable ? escapeHtml(d.responsable) : '<i style="color:var(--muted)">—</i>') + '</div>' +
+        '<div><span class="pill ' + cdClass + '">' + cdText + '</span></div>' +
+        '<div class="act-grp">' + actions + '</div>' +
+      '</div>';
+    }
+
+    function pintarPan() {
+      const datos = estado.panelUltimos;
+      if (!datos || datos.length === 0) {
+        $('pan-body').innerHTML = '<div class="empty">Sin datos en panel.</div>';
+        return;
+      }
+      $('pan-body').innerHTML = datos.map(filaPan).join('');
+    }
+
+    function filaPan(d) {
+      const av = String(d.avance || '').toLowerCase();
+      let cls = 'pill-muted', txt = d.avance || '—';
+      if (av.indexOf('entregado') !== -1) cls = 'pill-ok';
+      else if (av.indexOf('proceso') !== -1) cls = 'pill-warn';
+      const ef = d.efectividad ? Math.round(d.efectividad * 100) + '%' : '—';
+      return '<div class="rw">' +
+        '<div><div style="font-weight:500;">' + escapeHtml(d.cliente) + '</div>' +
+          '<div style="color:var(--muted);font-size:10px;">' + escapeHtml(d.link || '') + '</div></div>' +
+        '<div>' + fmtNum(d.unidades) + '</div>' +
+        '<div>' + ef + '</div>' +
+        '<div><span class="pill ' + cls + '">' + escapeHtml(txt) + '</span></div>' +
+      '</div>';
+    }
+
+    function pintarCarga() {
+      const arr = Object.entries(estado.cargaResp).sort((a,b)=>b[1]-a[1]);
+      if (arr.length === 0) {
+        $('carga-resp').innerHTML = '<div class="empty">Sin pendientes asignados.</div>';
+        return;
+      }
+      $('carga-resp').innerHTML = arr.map(([n,c]) =>
+        '<div class="resp-row"><span>' + escapeHtml(n) + '</span><b>' + c + '</b></div>'
+      ).join('');
+    }
+
+    function setF(el, f) {
+      document.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+      filtroActual = f;
+      pintarCron();
+    }
+
+    /* ===== Iniciar evento (prompt operario) ===== */
+    function iniciarEvt(fila) {
+      const equipo = estado.equipo || [];
+      const opts = equipo.map(n => '<option value="' + n + '">' + n + '</option>').join('');
+      $('modal-titulo').innerText = '▶ Iniciar evento — fila #' + fila;
+      $('modal-msg').innerText = 'Selecciona el operario responsable que inicia este inventario:';
+      $('modal-body').innerHTML =
+        '<select id="modal-operario"><option value="">— Seleccione —</option>' + opts + '</select>';
+      $('modal-ok').innerText = 'Iniciar';
+      $('modal-ok').className = 'confirm';
+      $('modal-ok').onclick = () => {
+        const op = $('modal-operario').value;
+        if (!op) return toast('Debes seleccionar un operario', 'error');
+        cerrarModal();
+        toast('Iniciando…');
+        google.script.run
+          .withSuccessHandler(() => { toast('✓ Evento iniciado', 'success'); cargar(); })
+          .withFailureHandler(err => toast('Error: ' + err.message, 'error'))
+          .iniciarEventoCronograma(fila, op);
+      };
+      $('modal').classList.add('show');
+    }
+
+    /* ===== Finalizar evento — flujo enriquecido ===== */
+    function finalizarEvt(fila) {
+      const ev = estado.cronograma.find(d => d.fila === fila);
+      if (!ev) return toast('Evento no encontrado', 'error');
+      toast('Buscando archivos del cliente…');
+      google.script.run
+        .withSuccessHandler(archivos => abrirModalFinalizacion(ev, archivos || []))
+        .withFailureHandler(err => abrirModalFinalizacion(ev, []))
+        .listarArchivosDelCliente(ev.cliente);
+    }
+
+    function abrirModalFinalizacion(ev, archivos) {
+      const hoy = new Date().toISOString().slice(0, 10);
+      const yaTieneArchivo = !!ev.urlArchivo;
+      const yaWarn = yaTieneArchivo
+        ? '<div class="fin-warn">⚠ Este evento ya tiene archivo asignado en columna Q. No se reemplazará.</div>'
+        : '';
+
+      const filesHtml = yaTieneArchivo ? '' : `
+        <div class="field">
+          <label>📎 ¿Adjuntar archivo del cliente a columna Q?</label>
+          <div class="radio-row">
+            <label class="radio-mini selected"><input type="radio" name="fin-adj" value="no" checked onchange="toggleFinFiles()"> No adjuntar</label>
+            <label class="radio-mini"><input type="radio" name="fin-adj" value="si" onchange="toggleFinFiles()"> Seleccionar archivo</label>
+          </div>
+        </div>
+        <div id="fin-files-zone" style="display:none;">
+          ${archivos.length === 0
+            ? '<div class="fin-empty">No se encontraron archivos en Drive con el nombre del cliente.</div>'
+            : '<div class="fin-files-list">' + archivos.map(f => `
+              <label class="fin-file-row">
+                <input type="radio" name="fin-file" value="${f.id}|${f.url}|${escapeHtml(f.name)}">
+                <div class="fin-file-info">
+                  <div class="fin-file-name">${escapeHtml(f.name)}</div>
+                  <div class="fin-file-meta">${new Date(f.modificado).toLocaleDateString('es-ES')} · ${escapeHtml(f.carpeta)}</div>
+                </div>
+              </label>`).join('') + '</div>'
+          }
+        </div>`;
+
+      $('modal-titulo').innerText = '✓ Finalizar evento — fila #' + ev.fila;
+      $('modal-msg').innerHTML =
+        '<b>Cliente:</b> ' + escapeHtml(ev.cliente) +
+        '<br><b>Tarea:</b> ' + escapeHtml(ev.titulo || '—');
+      $('modal-body').innerHTML = `
+        ${yaWarn}
+        <div class="field">
+          <label>📅 Fecha de culminación</label>
+          <input type="date" id="fin-fecha" value="${hoy}">
+        </div>
+        ${filesHtml}
+      `;
+      $('modal-ok').innerText = 'Confirmar entrega';
+      $('modal-ok').className = 'confirm';
+      $('modal-ok').onclick = () => confirmarFinalizacion(ev.fila);
+      $('modal').classList.add('show');
+      setTimeout(() => { try { $('fin-fecha').focus(); } catch(e){} }, 100);
+    }
+
+    function toggleFinFiles() {
+      const v = document.querySelector('input[name="fin-adj"]:checked').value;
+      $('fin-files-zone').style.display = (v === 'si') ? 'block' : 'none';
+      document.querySelectorAll('input[name="fin-adj"]').forEach(r => {
+        r.closest('.radio-mini').classList.toggle('selected', r.checked);
+      });
+    }
+
+    function confirmarFinalizacion(fila) {
+      const fecha = $('fin-fecha').value;
+      if (!fecha) return toast('Indica fecha de culminación', 'error');
+      const adj = document.querySelector('input[name="fin-adj"]:checked');
+      const adjVal = adj ? adj.value : 'no';
+      let opciones = { fechaCulminacion: fecha };
+      if (adjVal === 'si') {
+        const fileChoice = document.querySelector('input[name="fin-file"]:checked');
+        if (!fileChoice) return toast('Selecciona un archivo o cambia a "No adjuntar"', 'error');
+        const parts = fileChoice.value.split('|');
+        opciones.fileId = parts[0];
+        opciones.fileUrl = parts[1];
+        opciones.fileName = parts.slice(2).join('|');
+      }
+      cerrarModal();
+      toast('Finalizando…');
+      google.script.run
+        .withSuccessHandler(res => {
+          let msg = '✓ Evento entregado';
+          if (res.archivoAdjuntado) msg += ' · archivo vinculado en Q';
+          toast(msg, 'success');
+          cargar();
+        })
+        .withFailureHandler(err => toast('Error: ' + err.message, 'error'))
+        .finalizarEventoConOpciones(fila, opciones);
+    }
+
+    function notificar(cliente) {
+      toast('Enviando…');
+      google.script.run
+        .withSuccessHandler(res => { toast(res, 'success'); cargar(); })
+        .withFailureHandler(err => toast('Error: ' + err.message, 'error'))
+        .enviarRecordatorioManual(cliente);
+    }
+
+    function accion(tipo) {
+      switch (tipo) {
+        case 'crearInventario':   google.script.run.lanzarAsistenteCreacion(); break;
+        case 'nuevoEvento':       google.script.run.lanzarFormularioEvento(); break;
+        case 'actualizarMetricas': ejecutar('Actualizando métricas…', 'dash_actualizarMetricas'); break;
+        case 'abrirLibro':
+          google.script.run.withSuccessHandler(url => {
+            window.open(url, '_blank');
+            toast('Abriendo libro en otra pestaña', 'success');
+          }).obtenerUrlLibro();
+          break;
+        case 'preValidar':        ejecutar('Pre-validando errores…', 'dash_preValidar'); break;
+        case 'verAuditoria':      google.script.run.dash_verAuditoria(); break;
+        case 'exportarCliente':   google.script.run.dash_exportarCliente(); break;
+        case 'descargarZip':      google.script.run.dash_descargarZip(); break;
+        case 'enviarRecord':      ejecutar('Enviando recordatorios…', 'enviarRecordatoriosCronograma'); break;
+        case 'sincPanel':         ejecutar('Sincronizando…', 'sincronizarEstadoCronogramaConPanel'); break;
+      }
+    }
+
+    function ejecutar(msg, fn) {
+      toast(msg);
+      google.script.run
+        .withSuccessHandler(() => { toast('✓ Completado', 'success'); cargar(); })
+        .withFailureHandler(err => toast('Error: ' + err.message, 'error'))
+        [fn]();
+    }
+
+    function confirmar(tipo) {
+      const cfg = {
+        consolidar: {
+          titulo: 'Consolidar con auditoría',
+          msg: 'Procesa los archivos "Entregado" del Panel, reescribe INVENTARIOS y genera la hoja AUDITORIA_CONSOLIDACION con métricas por archivo (filas leídas, incluidas, excluidas, sumas). Puede tomar varios minutos.',
+          fn: 'dash_consolidarAuditoria'
+        },
+        limpiar: {
+          titulo: 'Limpiar duplicados',
+          msg: 'Eliminará filas duplicadas y vacías en INVENTARIOS y REGISTRO. Esta operación no se puede deshacer.',
+          fn: 'dash_limpiarDuplicados'
+        }
+      }[tipo];
+      $('modal-titulo').innerText = cfg.titulo;
+      $('modal-msg').innerText = cfg.msg;
+      $('modal-body').innerHTML = '';
+      $('modal-ok').innerText = 'Confirmar';
+      $('modal-ok').className = 'confirm danger';
+      $('modal-ok').onclick = () => { cerrarModal(); ejecutar(cfg.titulo + '…', cfg.fn); };
+      $('modal').classList.add('show');
+    }
+
+    function cerrarModal() { $('modal').classList.remove('show'); }
+
+    function toast(msg, type) {
+      const t = $('toast');
+      t.innerText = msg;
+      t.className = type || '';
+      t.classList.add('show');
+      clearTimeout(window._toastT);
+      window._toastT = setTimeout(() => t.classList.remove('show'), 3500);
+    }
+
+    /* ===== ENTER en modales ===== */
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && $('modal').classList.contains('show')) {
+        // Evitar si el foco está en textarea
+        if (e.target.tagName === 'TEXTAREA') return;
+        e.preventDefault();
+        if (!$('modal-ok').disabled) $('modal-ok').click();
+      }
+      // Escape para cerrar
+      if (e.key === 'Escape' && $('modal').classList.contains('show')) {
+        cerrarModal();
+      }
+    });
+
+    /* ===== AUTO-REFRESH ===== */
+    var AUTO_REFRESH_MS = 60000;
+    var _autoTimer = null;
+    var _pausarAuto = false;
+
+    function iniciarAutoRefresh() {
+      if (_autoTimer) clearInterval(_autoTimer);
+      _autoTimer = setInterval(function () {
+        // No refrescar si hay modal abierto o el documento está oculto
+        if (_pausarAuto) return;
+        if (document.hidden) return;
+        if ($('modal').classList.contains('show')) return;
+        cargar(true /* silencioso */);
+      }, AUTO_REFRESH_MS);
+    }
+
+    window.onload = function() {
+      cargar();
+      iniciarAutoRefresh();
+    };
+  </script>
+</body>
+</html>

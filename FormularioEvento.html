@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1220; --panel: #131c2e; --panel-2: #1c2740;
+      --border: #283352; --text: #e8ecf3; --muted: #7d8aa8;
+      --accent: #3b82f6; --ok: #22c55e; --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg);
+           color: var(--text); margin: 0; padding: 18px; font-size: 13px; }
+    h2 { margin: 0 0 4px 0; font-size: 15px; font-weight: 600; }
+    .sub { color: var(--muted); font-size: 11px; margin-bottom: 16px;
+           padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+    button { font-family: inherit; cursor: pointer; }
+    input, select, textarea { font-family: inherit; }
+
+    label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px;
+            text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600; }
+    .req::after { content: ' *'; color: var(--danger); }
+    .field { margin-bottom: 11px; }
+    input[type="text"], input[type="date"], select, textarea {
+      width: 100%; background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); padding: 8px 10px; border-radius: 6px;
+      font-size: 13px;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 56px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .nav { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;
+           padding-top: 14px; border-top: 1px solid var(--border); }
+    .btn { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border);
+           background: var(--panel-2); color: var(--text); font-size: 12px; font-weight: 500; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-ghost { background: transparent; }
+
+    .alert-info { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.3);
+                  color: #93c5fd; padding: 8px 10px; border-radius: 6px;
+                  font-size: 11px; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+
+  <h2>📅 Nuevo evento en cronograma</h2>
+  <div class="sub">Añade una fila al CRONOGRAMA - 2026 sin asociar archivo de inventario.</div>
+
+  <div class="alert-info">Los campos con <b style="color:var(--danger)">*</b> son obligatorios.</div>
+
+  <div class="field">
+    <label class="req">Título de la tarea</label>
+    <input type="text" id="titulo" placeholder="Ej. Inventario Cíclico - BELIA (Mayo 2026)" oninput="validar()">
+  </div>
+
+  <div class="field">
+    <label class="req">Cliente</label>
+    <input type="text" id="cliente" placeholder="Ej. BELIA" list="clientes-lista" oninput="validar()">
+    <datalist id="clientes-lista"></datalist>
+  </div>
+
+  <div class="grid-2">
+    <div class="field">
+      <label class="req">Responsable</label>
+      <select id="resp" onchange="validar()">
+        <option value="">—</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Prioridad</label>
+      <select id="prio">
+        <option value="Alta">Alta</option>
+        <option value="Media" selected>Media</option>
+        <option value="Baja">Baja</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="field">
+      <label class="req">Fecha de inicio</label>
+      <input type="date" id="fini" onchange="validar()">
+    </div>
+    <div class="field">
+      <label>Fecha de entrega</label>
+      <input type="date" id="fent">
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="field">
+      <label>Categoría</label>
+      <select id="cat">
+        <option>Inventario Programado</option>
+        <option>Inventario No Programado</option>
+        <option>Trabajo Slotting</option>
+        <option>Movimientos</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Frecuencia</label>
+      <select id="frec">
+        <option>MENSUAL</option>
+        <option>SEMANAL</option>
+        <option>ANUAL</option>
+        <option>EMERGENTE</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Observaciones</label>
+    <textarea id="obs" placeholder="Opcional — notas adicionales del evento"></textarea>
+  </div>
+
+  <div class="nav">
+    <button class="btn btn-ghost" onclick="google.script.host.close()">Cancelar</button>
+    <button class="btn btn-primary" id="btnOk" disabled onclick="crear()">Crear evento</button>
+  </div>
+
+  <script>
+    window.onload = function() {
+      // Cargar clientes y equipo desde el dashboard backend
+      google.script.run.withSuccessHandler(d => {
+        const dl = document.getElementById('clientes-lista');
+        dl.innerHTML = d.clientes.map(c => '<option value="' + c + '">').join('');
+        const sel = document.getElementById('resp');
+        d.equipo.forEach(n => {
+          const opt = document.createElement('option');
+          opt.value = n; opt.innerText = n;
+          sel.appendChild(opt);
+        });
+      }).obtenerEstadoIntegralDashboard();
+
+      // Fecha de inicio = mañana por defecto
+      const m = new Date();
+      m.setDate(m.getDate() + 1);
+      document.getElementById('fini').valueAsDate = m;
+      validar();
+    };
+
+    function validar() {
+      const ok = document.getElementById('titulo').value.trim() &&
+                 document.getElementById('cliente').value.trim() &&
+                 document.getElementById('resp').value &&
+                 document.getElementById('fini').value;
+      document.getElementById('btnOk').disabled = !ok;
+    }
+
+    /* Enter para submit */
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      if (e.target.tagName === 'TEXTAREA') return;
+      if (!document.getElementById('btnOk').disabled) {
+        e.preventDefault();
+        crear();
+      }
+    });
+
+    function crear() {
+      const btn = document.getElementById('btnOk');
+      btn.disabled = true; btn.innerText = 'Creando…';
+
+      const datos = {
+        titulo:        document.getElementById('titulo').value.trim(),
+        cliente:       document.getElementById('cliente').value.trim(),
+        responsable:   document.getElementById('resp').value,
+        prioridad:     document.getElementById('prio').value,
+        fechaInicio:   document.getElementById('fini').value,
+        fechaEntrega:  document.getElementById('fent').value,
+        categoria:     document.getElementById('cat').value,
+        frecuencia:    document.getElementById('frec').value,
+        observaciones: document.getElementById('obs').value.trim()
+      };
+
+      google.script.run
+        .withSuccessHandler(res => {
+          alert('✓ Evento creado en fila ' + res.fila + ' del cronograma.');
+          google.script.host.close();
+        })
+        .withFailureHandler(err => {
+          alert('Error: ' + err.message);
+          btn.disabled = false; btn.innerText = 'Crear evento';
+        })
+        .crearEventoCronograma(datos);
+    }
+  </script>
+</body>
+</html>

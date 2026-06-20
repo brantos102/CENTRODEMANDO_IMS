@@ -1,0 +1,1149 @@
+<script>
+/* ====================================================================
+   WEB APP — lógica SPA. window.USUARIO viene inyectado desde doGet.
+   ==================================================================== */
+var U = window.USUARIO || { nombre:'Invitado', rol:'Auditor', permisos:{} };
+var P = U.permisos || {};
+var estado = null;
+var chart = null;
+var filtroActual = 'all';
+
+function $(id){ return document.getElementById(id); }
+function escapeHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtNum(n){ if(n==null)return '—'; if(n>=1e6)return (n/1e6).toFixed(2)+'M'; if(n>=1e3)return (n/1e3).toFixed(1)+'k'; return Math.round(n).toString(); }
+
+/* ===== INIT ===== */
+window.onload = function() {
+  // Header usuario
+  $('u-nombre').innerText = U.nombre || U.email;
+  $('u-rol').innerText = U.rol;
+  $('u-avatar').innerText = (U.nombre || U.email || '?').charAt(0).toUpperCase();
+
+  // Aplicar permisos: ocultar nav/botones según rol
+  if (!P.gestionUsuarios) $('nav-usuarios').classList.add('hidden');
+  if (!P.verAnalytics)    $('nav-analytics').classList.add('hidden');
+  aplicarPermisosBotones();
+
+  cargarDashboard();
+  iniciarAutoRefresh();
+};
+
+function aplicarPermisosBotones() {
+  var map = {
+    'b-crear': P.crearInventario, 'b-evento': P.crearInventario,
+    'b-metricas': P.crearInventario, 'b-libro': P.abrirLibro,
+    'b-consolidar': P.consolidar, 'b-prevalidar': P.consolidar,
+    'b-limpiar': P.limpiar, 'b-exportar': P.exportar,
+    'b-record': P.recordatorios, 'b-sinc': P.recordatorios,
+    'b-syncQ': P.recordatorios,
+    'b-zip': P.exportar || P.verDashboard
+  };
+  Object.keys(map).forEach(function(id){
+    var el = $(id);
+    if (el && !map[id]) { el.disabled = true; el.title = 'Tu rol no permite esta acción'; }
+  });
+}
+
+/* ===== NAVEGACIÓN SPA ===== */
+function nav(sec) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  $('sec-' + sec).classList.add('active');
+  document.querySelector('.nav button[data-sec="' + sec + '"]').classList.add('active');
+  if (sec === 'perfil') cargarPerfil();
+  if (sec === 'usuarios') cargarUsuarios();
+  if (sec === 'analytics') cargarAnalytics();
+  window.scrollTo(0, 0);
+}
+
+/* ===== DASHBOARD ===== */
+var AUTO_REFRESH_MS = 60000;
+var _autoTimer = null;
+
+function cargarDashboard(silencioso) {
+  var scrollY = window.scrollY;
+  var qActual = $('f-cliente') ? $('f-cliente').value : '';
+  google.script.run
+    .withSuccessHandler(d => {
+      estado = d;
+      // FIX FASE 8.23: timestamp para invalidar cache del calendario
+      estado._cronoStamp = Date.now();
+      _calCacheKey = ''; // forzar repintado
+      pintarDashboard();
+      if (silencioso) {
+        if ($('f-cliente') && qActual) { $('f-cliente').value = qActual; pintarCron(); }
+        window.scrollTo(0, scrollY);
+        mostrarIndicadorRefresh();
+      }
+    })
+    .withFailureHandler(err => { if (!silencioso) toast('Error: ' + err.message, 'error'); })
+    .obtenerEstadoIntegralDashboard();
+}
+
+function iniciarAutoRefresh() {
+  if (_autoTimer) clearInterval(_autoTimer);
+  _autoTimer = setInterval(function() {
+    if (document.hidden) return;
+    if ($('modal').classList.contains('show')) return;
+    // Solo refrescar la sección activa
+    var activa = document.querySelector('.section.active');
+    if (!activa) return;
+    var id = activa.id;
+    if (id === 'sec-dashboard') cargarDashboard(true);
+    else if (id === 'sec-usuarios') cargarUsuarios();
+    else if (id === 'sec-analytics') cargarAnalytics();
+    // Perfil no necesita auto-refresh
+  }, AUTO_REFRESH_MS);
+}
+
+function mostrarIndicadorRefresh() {
+  var ind = document.getElementById('refresh-ind');
+  if (!ind) {
+    ind = document.createElement('div');
+    ind.id = 'refresh-ind';
+    ind.style.cssText = 'position:fixed;top:60px;right:14px;background:rgba(34,197,94,0.15);color:#86efac;padding:5px 12px;border-radius:14px;font-size:11px;z-index:60;border:1px solid rgba(34,197,94,0.3);opacity:0;transition:opacity 0.3s;font-weight:500;';
+    document.body.appendChild(ind);
+  }
+  ind.innerText = '✓ Actualizado ' + new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  ind.style.opacity = '1';
+  clearTimeout(window._indT);
+  window._indT = setTimeout(function(){ ind.style.opacity = '0'; }, 2000);
+}
+
+function pintarDashboard() {
+  if (!estado) return;
+  var k = estado.kpis;
+  $('kpi-venc').innerText = k.vencidos;
+  $('kpi-hoy').innerText = k.hoy;
+  $('kpi-prox7').innerText = k.proximos7;
+  $('kpi-entr-anio').innerText = k.entregadosAnio;
+  $('kpi-cli-act').innerText = k.clientesActivosMes;
+  $('kpi-unid').innerText = fmtNum(k.unidades);
+  $('kpi-refs').innerText = fmtNum(k.referencias);
+  $('kpi-pos').innerText = fmtNum(k.posiciones);
+  $('kpi-avance-mes').innerText = Math.round(k.avanceGlobalMes * 100) + '%';
+  var totalCronos = estado.cronograma.length;
+  $('kpi-cumpl').innerText = Math.round((totalCronos > 0 ? k.entregadosCronos/totalCronos : 0) * 100) + '%';
+  var sinResp = estado.cronograma.filter(d => !d.responsable && String(d.estado).toLowerCase().indexOf('entregado')===-1).length;
+  $('cron-resumen').innerText = estado.cronograma.length + ' fichas · ' + sinResp + ' sin resp.';
+  pintarChart(); pintarCron(); pintarPan(); pintarCarga();
+}
+
+function pintarChart() {
+  var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var data = estado.chartAnual;
+  $('chart-anio').innerText = new Date().getFullYear() + ' · inventarios (izq) y unidades en miles (der)';
+  if (chart) chart.destroy();
+  chart = new Chart($('chart-anual').getContext('2d'), {
+    type:'line',
+    data:{ labels:meses, datasets:[
+      { label:'Inventarios entregados', data:data.map(d=>d.invent), borderColor:'#3b82f6',
+        backgroundColor:'rgba(59,130,246,0.1)', yAxisID:'y1', tension:0.25, borderWidth:2, pointRadius:3, fill:true },
+      { label:'Unidades (miles)', data:data.map(d=>Math.round(d.unid/1000)), borderColor:'#22c55e',
+        backgroundColor:'rgba(34,197,94,0.05)', yAxisID:'y2', tension:0.25, borderWidth:2, pointRadius:3, borderDash:[4,3], fill:false }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{labels:{color:'#e8ecf3',font:{size:11},boxWidth:12,usePointStyle:true}},
+        tooltip:{backgroundColor:'#131c2e',borderColor:'#283352',borderWidth:1,titleColor:'#e8ecf3',bodyColor:'#e8ecf3',padding:10}},
+      scales:{ x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8aa8',font:{size:10}}},
+        y1:{type:'linear',position:'left',grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8aa8',font:{size:10},stepSize:1},title:{display:true,text:'Inventarios',color:'#7d8aa8',font:{size:10}}},
+        y2:{type:'linear',position:'right',grid:{display:false},ticks:{color:'#7d8aa8',font:{size:10}},title:{display:true,text:'Unidades (k)',color:'#7d8aa8',font:{size:10}}}}}
+  });
+  // FIX FASE 8.19: si el calendario estaba activo, re-renderizar con datos frescos
+  if (vistaTendActual === 'cal') pintarCalendario();
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   FIX FASE 8.19: Tabs Tendencia / Calendario Gantt
+   Vista calendario muestra mes a mes los eventos del cronograma con
+   colores por estado, sin afectar la vista de tendencia (chart).
+   ════════════════════════════════════════════════════════════════════ */
+var vistaTendActual = 'chart';
+var calMesActual = new Date().getMonth(); // 0-11
+var calAnioActual = new Date().getFullYear();
+// FIX FASE 8.23: cache del último render para evitar repintado innecesario
+var _calCacheKey = '';
+
+function cambiarVistaTendencia(vista) {
+  vistaTendActual = vista;
+  // Tabs
+  document.querySelectorAll('.vt-tab').forEach(function(t){
+    t.classList.toggle('active', t.getAttribute('data-vt') === vista);
+  });
+  // Paneles
+  document.querySelectorAll('.vt-pane').forEach(function(p){ p.classList.remove('vt-active'); });
+  $('vt-' + vista).classList.add('vt-active');
+  // Título y render según vista
+  if (vista === 'chart') {
+    $('tend-titulo').innerHTML = '📈 Tendencia anual <small id="chart-anio">' + (new Date().getFullYear() + ' · inventarios (izq) y unidades en miles (der)') + '</small>';
+  } else if (vista === 'cal') {
+    $('tend-titulo').innerHTML = '📅 Calendario operativo <small id="chart-anio">' + ' · vista por mes</small>';
+    pintarCalendario();
+  }
+}
+
+function calMover(delta) {
+  calMesActual += delta;
+  if (calMesActual < 0) { calMesActual = 11; calAnioActual--; }
+  if (calMesActual > 11) { calMesActual = 0; calAnioActual++; }
+  pintarCalendario();
+}
+
+function pintarCalendario() {
+  if (!estado || !estado.cronograma) {
+    $('cal-body').innerHTML = '<div class="empty">Sin datos de cronograma.</div>';
+    return;
+  }
+  // FIX FASE 8.23: cache key — si el mes y la cantidad de eventos no cambiaron,
+  // y el último render fue reciente, no repintar (evita lag en cambio de tab).
+  var cacheKey = calAnioActual + '-' + calMesActual + '-' +
+                 estado.cronograma.length + '-' + (estado._cronoStamp || 0);
+  if (cacheKey === _calCacheKey) return;
+  _calCacheKey = cacheKey;
+
+  var nombresMes = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  $('cal-mes-titulo').innerText = nombresMes[calMesActual] + ' ' + calAnioActual;
+
+  // Días del mes
+  var ultimoDia = new Date(calAnioActual, calMesActual + 1, 0);
+  var diasMes = ultimoDia.getDate();
+
+  // Filtrar eventos que tocan este mes (por fechaInicio o fechaFin)
+  var hoy = new Date(); hoy.setHours(0,0,0,0);
+  var inicioMes = new Date(calAnioActual, calMesActual, 1);
+  var finMes = new Date(calAnioActual, calMesActual, diasMes, 23,59,59);
+
+  var eventos = estado.cronograma.filter(function(d){
+    if (!d.fechaInicio) return false;
+    var ini = new Date(d.fechaInicio);
+    var fin = d.fechaFin ? new Date(d.fechaFin) : ini;
+    return !(fin < inicioMes || ini > finMes);
+  });
+
+  if (eventos.length === 0) {
+    $('cal-body').innerHTML = '<div class="empty">Sin eventos programados para ' + nombresMes[calMesActual] + '.</div>';
+    return;
+  }
+
+  eventos.sort(function(a,b){ return (a.fechaInicio||0) - (b.fechaInicio||0); });
+
+  // FIX FASE 8.23: construir todo el HTML como string (más rápido que innerHTML++)
+  var partes = ['<div class="cal-grid" style="--cal-days:' + diasMes + ';">'];
+
+  // Header con días
+  partes.push('<div class="cal-grid-head"><div></div>');
+  for (var d = 1; d <= diasMes; d++) {
+    var fechaDia = new Date(calAnioActual, calMesActual, d);
+    var dow = fechaDia.getDay();
+    var esWeekend = (dow === 0 || dow === 6);
+    partes.push('<div class="cal-day-head' + (esWeekend ? ' cal-weekend' : '') + '">' + d + '</div>');
+  }
+  partes.push('</div>');
+
+  // Filas: una por evento
+  for (var e = 0; e < eventos.length; e++) {
+    var ev = eventos[e];
+    var ini = new Date(ev.fechaInicio);
+    var fin = ev.fechaFin ? new Date(ev.fechaFin) : new Date(ev.fechaInicio);
+    var diaIni = (ini.getMonth() === calMesActual && ini.getFullYear() === calAnioActual) ? ini.getDate() : 1;
+    var diaFin = (fin.getMonth() === calMesActual && fin.getFullYear() === calAnioActual) ? fin.getDate() : diasMes;
+    if (diaFin < diaIni) diaFin = diaIni;
+
+    var est = String(ev.estado || '').toLowerCase();
+    var claseEstado;
+    if (est.indexOf('entregado') !== -1) claseEstado = 'cal-bar-ent';
+    else if (est.indexOf('curso') !== -1 || est.indexOf('proceso') !== -1) claseEstado = 'cal-bar-curso';
+    else if (fin < hoy) claseEstado = 'cal-bar-venc';
+    else claseEstado = 'cal-bar-prog';
+
+    var clienteCorto = (ev.cliente || '—').toString().substring(0, 15);
+    var titCorto = (ev.titulo || '').toString().substring(0, 18);
+    var dur = ev.duracion ? ' · ' + ev.duracion + 'd' : '';
+    var tooltip = (ev.cliente || '') + ' · ' + (ev.titulo || '') + dur + ' · ' +
+                  (ev.estado || 'Pendiente') + ' · ' + (ev.responsable || 'Sin responsable');
+
+    partes.push('<div class="cal-grid-row" title="' + tooltip.replace(/"/g,'&quot;') + '">');
+    partes.push('<div class="cal-cli">' + clienteCorto + '<small>' + titCorto + '</small></div>');
+    for (var dd = 1; dd <= diasMes; dd++) {
+      var fechaDia2 = new Date(calAnioActual, calMesActual, dd);
+      var dow2 = fechaDia2.getDay();
+      var esWk = (dow2 === 0 || dow2 === 6);
+      var esHoy = fechaDia2.getTime() === hoy.getTime();
+      var dentro = (dd >= diaIni && dd <= diaFin);
+      var cls = 'cal-cell';
+      if (esWk) cls += ' cal-weekend';
+      if (esHoy) cls += ' cal-today';
+      if (dentro) cls += ' ' + claseEstado;
+      partes.push('<div class="' + cls + '"></div>');
+    }
+    partes.push('</div>');
+  }
+
+  partes.push('</div>');
+  // Una sola asignación al DOM (mucho más rápido que append iterativo)
+  $('cal-body').innerHTML = partes.join('');
+}
+
+function pintarCron() {
+  var q = ($('f-cliente').value || '').toLowerCase().trim();
+  var filtrados = estado.cronograma.filter(d => {
+    var est = String(d.estado).toLowerCase(), entregado = est.indexOf('entregado')!==-1;
+    if (q && String(d.cliente).toLowerCase().indexOf(q)===-1 && String(d.titulo).toLowerCase().indexOf(q)===-1) return false;
+    switch (filtroActual) {
+      case 'urgent': return !entregado && d.diasRestantes!==null && d.diasRestantes<=1;
+      case 'upcoming': return !entregado && d.diasRestantes!==null && d.diasRestantes>0 && d.diasRestantes<=7;
+      case 'pending': return !entregado;
+      case 'sinfile': return !d.urlArchivo && !entregado;
+      default: return true;
+    }
+  }).slice(0, 80);
+  if (filtrados.length === 0) { $('cron-body').innerHTML = '<div class="empty">Sin elementos.</div>'; return; }
+  $('cron-body').innerHTML = filtrados.map(filaCron).join('');
+}
+
+function filaCron(d) {
+  var est = String(d.estado).toLowerCase();
+  var entregado = est.indexOf('entregado')!==-1, enProceso = est.indexOf('proceso')!==-1;
+  var fechaStr = '—';
+  if (d.fechaInicio) { var dt=new Date(d.fechaInicio); fechaStr = String(dt.getDate()).padStart(2,'0')+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][dt.getMonth()]; }
+  var cdClass='pill-muted', cdText='—';
+  if (entregado){cdClass='pill-ok';cdText='✓ Entregado';}
+  else if (enProceso){cdClass='pill-info';cdText='⏳ En proceso';}
+  else if (d.diasRestantes!==null){
+    if(d.diasRestantes<0){cdClass='pill-danger';cdText='V '+Math.abs(d.diasRestantes)+'d';}
+    else if(d.diasRestantes===0){cdClass='pill-warn';cdText='HOY';}
+    else if(d.diasRestantes<=7){cdClass='pill-info';cdText=d.diasRestantes+'d';}
+    else{cdText=d.diasRestantes+'d';}
+  }
+
+  // FIX FASE 7.6/8.9: Acceso al archivo por rol
+  // · Coordinador/Líder ven 📊 Excel + 📦 WMS
+  // · Operario/Auditor solo ven 📦 WMS (deep-link)
+  // 8.9: Si el archivo proviene de PANEL DE CONTROL (no de columna Q del cronograma),
+  // se marca con un punto azul para que sea evidente; el archivo ES el correcto
+  // (el más cercano en fecha al evento dentro de los registrados para el cliente).
+  var accesos = '';
+  if (d.urlArchivo) {
+    var enlaceFromPanel = (d.fuenteArchivo === 'panel_de_control');
+    var marcaPanel = enlaceFromPanel ? '<span style="position:absolute;top:-2px;right:-2px;width:6px;height:6px;background:#3b82f6;border-radius:50%;"></span>' : '';
+    var tooltipExcel = enlaceFromPanel
+      ? 'Abrir Excel del inventario (link tomado de PANEL DE CONTROL)'
+      : 'Abrir Excel del inventario';
+    var tooltipWMS = enlaceFromPanel
+      ? 'Abrir Terminal WMS (archivo vinculado vía PANEL DE CONTROL)'
+      : 'Abrir Terminal WMS';
+
+    if (P.abrirLibro) {
+      accesos += '<button class="icon-btn" style="position:relative;" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="'+tooltipExcel+'">📊'+marcaPanel+'</button>';
+    }
+    // Todos los roles: link al WMS deep-link
+    var wmsUrl = (d.wmsUrl ? d.wmsUrl : window.location.href.split('?')[0]) + '?vista=wms&fileId=' + encodeURIComponent(d.fileId || '') + '&cliente=' + encodeURIComponent(d.cliente || '');
+    if (P.iniciarFin || P.abrirLibro) {
+      // Coord, Líder, Operario → modo operario
+      wmsUrl += '&modo=op';
+    } else {
+      // Auditor → modo auditor
+      wmsUrl += '&modo=auditor';
+    }
+    accesos += '<button class="icon-btn" style="position:relative;" onclick="window.open(\''+wmsUrl+'\',\'_blank\')" title="'+tooltipWMS+'">📦'+marcaPanel+'</button>';
+  }
+
+  var actions = '';
+  if (entregado) {
+    actions = accesos || '<button class="icon-btn" disabled>·</button>';
+  } else if (P.iniciarFin) {
+    var bInic = enProceso ? '<button class="mini-btn" disabled>▶ Iniciar</button>' : '<button class="mini-btn start" onclick="iniciarEvt('+d.fila+')">▶ Iniciar</button>';
+    var bFin = '<button class="mini-btn end" onclick="finalizarEvt('+d.fila+')">✓ Fin</button>';
+    actions = bInic + bFin + accesos;
+  } else {
+    actions = accesos || '<span style="color:var(--muted);font-size:10px;">solo lectura</span>';
+  }
+  return '<div class="rw"><div style="color:var(--muted);font-size:11px;">'+fechaStr+'</div>'+
+    '<div><div style="font-weight:500;">'+escapeHtml(d.cliente)+'</div><div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo)+'</div></div>'+
+    '<div style="font-size:11px;color:var(--info);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(d.responsable?escapeHtml(d.responsable):'<i style="color:var(--muted)">—</i>')+'</div>'+
+    '<div><span class="pill '+cdClass+'">'+cdText+'</span></div><div class="act-grp">'+actions+'</div></div>';
+}
+
+function pintarPan() {
+  var datos = estado.panelUltimos;
+  if (!datos || !datos.length) { $('pan-body').innerHTML = '<div class="empty">Sin datos.</div>'; return; }
+  $('pan-body').innerHTML = datos.map(function(d){
+    var av = String(d.avance||'').toLowerCase(), cls='pill-muted', txt=d.avance||'—';
+    if (av.indexOf('entregado')!==-1) cls='pill-ok'; else if (av.indexOf('proceso')!==-1) cls='pill-warn';
+    var ef = d.efectividad ? Math.round(d.efectividad*100)+'%' : '—';
+    return '<div class="rw"><div><div style="font-weight:500;">'+escapeHtml(d.cliente)+'</div><div style="color:var(--muted);font-size:10px;">'+escapeHtml(d.link||'')+'</div></div><div>'+fmtNum(d.unidades)+'</div><div>'+ef+'</div><div><span class="pill '+cls+'">'+escapeHtml(txt)+'</span></div></div>';
+  }).join('');
+}
+
+function pintarCarga() {
+  var arr = Object.entries(estado.cargaResp).sort((a,b)=>b[1]-a[1]);
+  if (!arr.length) { $('carga-resp').innerHTML = '<div class="empty">Sin pendientes.</div>'; return; }
+  $('carga-resp').innerHTML = arr.map(([n,c]) => '<div class="resp-row"><span>'+escapeHtml(n)+'</span><b>'+c+'</b></div>').join('');
+}
+
+function setF(el, f) {
+  document.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
+  el.classList.add('active'); filtroActual = f; pintarCron();
+}
+
+/* ===== INICIAR / FINALIZAR ===== */
+/* FIX FASE 8.8: Iniciar evento con selección flexible: responsable, fecha, archivo.
+   Sincroniza con CRONOGRAMA-2026: si ya está "En Proceso" muestra info y
+   permite actualizar campos vacíos sin pisar lo existente. */
+function iniciarEvt(fila) {
+  var equipo = estado.equipo || [];
+  var ev = estado.cronograma.find(d => d.fila === fila);
+  var yaEnProceso = ev && String(ev.estado || '').toLowerCase().indexOf('proceso') !== -1;
+  var hoy = new Date().toISOString().slice(0,10);
+
+  // Listar TODOS los del equipo activo (Operarios, Líderes, Coordinadores)
+  var opts = equipo.map(n => '<option value="'+n+'">'+n+'</option>').join('');
+  var info = yaEnProceso ?
+    '<div style="background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.3);color:#fde047;padding:8px;border-radius:5px;font-size:11px;margin-bottom:10px;">⚠ Este evento ya está <b>En Proceso</b>. Solo se actualizarán campos vacíos. Marca <b>"Sobrescribir"</b> para reemplazarlos.</div>' : '';
+
+  // Cargar archivos del cliente (para opción de asignar archivo)
+  toast('Cargando archivos del cliente…');
+  google.script.run.withSuccessHandler(function(archivos) {
+    abrirModalInicio(ev, fila, opts, info, yaEnProceso, hoy, archivos || []);
+  }).withFailureHandler(function() {
+    abrirModalInicio(ev, fila, opts, info, yaEnProceso, hoy, []);
+  }).listarArchivosDelCliente(ev ? ev.cliente : '');
+}
+
+function abrirModalInicio(ev, fila, opts, info, yaEnProceso, hoy, archivos) {
+  var filesHtml = archivos.length === 0
+    ? '<div class="empty" style="padding:8px;font-size:11px;color:var(--muted);">Sin archivos del cliente en Drive.</div>'
+    : archivos.map(f =>
+        '<label style="display:flex;gap:8px;padding:6px;border-radius:4px;cursor:pointer;align-items:center;">' +
+          '<input type="radio" name="m-file-ini" value="'+f.id+'|'+f.url+'|'+escapeHtml(f.name)+'">' +
+          '<div><div style="font-size:11px;font-weight:500;">'+escapeHtml(f.name)+'</div>' +
+          '<div style="font-size:10px;color:var(--muted);">'+new Date(f.modificado).toLocaleDateString('es-ES')+' · '+escapeHtml(f.carpeta)+'</div></div>' +
+        '</label>'
+      ).join('');
+
+  modalCustom('▶ Iniciar evento — fila #'+fila,
+    'Cliente: <b>' + escapeHtml(ev ? ev.cliente : '') + '</b>',
+    info +
+    '<div class="field"><label>👤 Responsable (operario / líder / coordinador) *</label>' +
+      '<select id="m-ini-resp" style="width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border);padding:8px 10px;border-radius:6px;">' +
+        '<option value="">— Seleccione —</option>'+opts+'</select></div>' +
+    '<div class="field"><label>📅 Fecha de inicio</label>' +
+      '<input type="date" id="m-ini-fecha" value="'+hoy+'" style="width:100%;"></div>' +
+    (yaEnProceso ? '<div class="field" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="m-ini-sobreesc"><label for="m-ini-sobreesc" style="margin:0;font-size:11px;">Sobrescribir responsable existente</label></div>' : '') +
+    '<div class="field"><label>📎 ¿Asignar archivo existente al evento? <span style="font-size:10px;color:var(--muted);">(opcional)</span></label>' +
+      '<div style="display:flex;gap:6px;margin-bottom:4px;">' +
+        '<label style="flex:1;"><input type="radio" name="m-ini-adj" value="no" checked onchange="mIniToggleFiles()"> No asignar</label>' +
+        '<label style="flex:1;"><input type="radio" name="m-ini-adj" value="si" onchange="mIniToggleFiles()"> Seleccionar archivo</label>' +
+      '</div>' +
+      '<div id="m-ini-files" style="display:none;max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:5px;padding:4px;">' + filesHtml + '</div>' +
+    '</div>',
+    'Iniciar',
+    function() {
+      var resp = $('m-ini-resp').value;
+      if (!resp) { toast('Selecciona un responsable','error'); return false; }
+      var fechaIni = $('m-ini-fecha').value || null;
+      var opciones = { responsable: resp, fechaInicio: fechaIni };
+      var so = $('m-ini-sobreesc');
+      if (so && so.checked) opciones.sobrescribirResponsable = true;
+      var adj = document.querySelector('input[name="m-ini-adj"]:checked');
+      if (adj && adj.value === 'si') {
+        var fc = document.querySelector('input[name="m-file-ini"]:checked');
+        if (!fc) { toast('Selecciona archivo o cambia a "No asignar"','error'); return false; }
+        var p = fc.value.split('|');
+        opciones.fileId = p[0]; opciones.fileUrl = p[1]; opciones.fileName = p.slice(2).join('|');
+      }
+      cerrarModal(); toast('Iniciando evento…');
+      google.script.run
+        .withSuccessHandler(function(r){
+          var msg = r.yaEnProceso ? '✓ Actualizado (ya en Proceso)' : '✓ Iniciado';
+          if (r.archivoAsignado) msg += ' · archivo asignado';
+          toast(msg, 'success');
+          cargarDashboard();
+        })
+        .withFailureHandler(e=>toast('Error: '+(e.message||e),'error'))
+        .iniciarEventoConOpciones(fila, opciones);
+    });
+}
+
+function mIniToggleFiles() {
+  var v = document.querySelector('input[name="m-ini-adj"]:checked').value;
+  $('m-ini-files').style.display = (v==='si') ? 'block' : 'none';
+}
+
+function finalizarEvt(fila) {
+  var ev = estado.cronograma.find(d => d.fila === fila);
+  if (!ev) return;
+  toast('Buscando archivos…');
+  google.script.run.withSuccessHandler(archivos => abrirModalFin(ev, archivos||[]))
+    .withFailureHandler(()=>abrirModalFin(ev, [])).listarArchivosDelCliente(ev.cliente);
+}
+
+function abrirModalFin(ev, archivos) {
+  var hoy = new Date().toISOString().slice(0,10);
+  var ya = !!ev.urlArchivo;
+  var filesHtml = ya ? '<div style="background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.3);color:#fde047;padding:8px;border-radius:5px;font-size:11px;margin-bottom:10px;">⚠ Ya tiene archivo en Q, no se reemplaza.</div>' : `
+    <div class="field"><label>📎 ¿Adjuntar archivo a columna Q?</label>
+      <div style="display:flex;gap:6px;"><label style="flex:1;"><input type="radio" name="m-adj" value="no" checked onchange="mToggleFiles()"> No</label>
+      <label style="flex:1;"><input type="radio" name="m-adj" value="si" onchange="mToggleFiles()"> Seleccionar archivo</label></div></div>
+    <div id="m-files" style="display:none;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:5px;padding:4px;margin-top:6px;">
+      ${archivos.length===0 ? '<div class="empty">Sin archivos del cliente.</div>' : archivos.map(f=>'<label style="display:flex;gap:8px;padding:6px;border-radius:4px;cursor:pointer;"><input type="radio" name="m-file" value="'+f.id+'|'+f.url+'|'+escapeHtml(f.name)+'"><div><div style="font-size:11px;font-weight:500;">'+escapeHtml(f.name)+'</div><div style="font-size:10px;color:var(--muted);">'+new Date(f.modificado).toLocaleDateString('es-ES')+' · '+escapeHtml(f.carpeta)+'</div></div></label>').join('')}
+    </div>`;
+  modalCustom('✓ Finalizar — fila #'+ev.fila, 'Cliente: '+escapeHtml(ev.cliente),
+    '<div class="field"><label>📅 Fecha de culminación</label><input type="date" id="m-fecha" value="'+hoy+'"></div>'+filesHtml,
+    'Confirmar entrega', function(){ return confirmarFin(ev.fila); });
+}
+
+function mToggleFiles() {
+  var v = document.querySelector('input[name="m-adj"]:checked').value;
+  $('m-files').style.display = (v==='si') ? 'block' : 'none';
+}
+
+function confirmarFin(fila) {
+  var fecha = $('m-fecha').value;
+  if (!fecha) { toast('Indica fecha','error'); return false; }
+  var adj = document.querySelector('input[name="m-adj"]:checked');
+  var opciones = { fechaCulminacion: fecha };
+  if (adj && adj.value === 'si') {
+    var fc = document.querySelector('input[name="m-file"]:checked');
+    if (!fc) { toast('Selecciona archivo o cambia a No','error'); return false; }
+    var p = fc.value.split('|'); opciones.fileId=p[0]; opciones.fileUrl=p[1]; opciones.fileName=p.slice(2).join('|');
+  }
+  cerrarModal(); toast('Finalizando…');
+  google.script.run.withSuccessHandler(r=>{toast('✓ Entregado'+(r.archivoAdjuntado?' · archivo en Q':''),'success');cargarDashboard();})
+    .withFailureHandler(e=>toast('Error: '+e.message,'error')).finalizarEventoConOpciones(fila, opciones);
+}
+
+/* ===== ACCIONES ===== */
+/* FIX FASE 8.9: ejecutar sincronización archivos Cronograma Q ← PANEL DE CONTROL */
+function ejecutarSyncQ() {
+  if (!P.recordatorios) return toast('Tu rol no permite sincronizar','error');
+  toast('Vinculando archivos del PANEL a columna Q del cronograma...','info');
+  google.script.run
+    .withSuccessHandler(function(res){
+      if (!res || !res.ok) { toast('Error: sin respuesta válida','error'); return; }
+      toast('✓ ' + res.sincronizados + ' filas actualizadas · ' +
+            res.yaTenian + ' ya tenían · ' +
+            res.sinMatchPanel + ' sin match','success');
+      cargarDashboard();
+    })
+    .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+    .sincronizarArchivosCronogramaConPanel();
+}
+
+function ejecutar(msg, fn) {
+  toast(msg);
+  google.script.run.withSuccessHandler(()=>{toast('✓ Completado','success');cargarDashboard();})
+    .withFailureHandler(e=>toast('Error: '+e.message,'error'))[fn]();
+}
+function abrirLibro() {
+  google.script.run.withSuccessHandler(url=>{window.open(url,'_blank');toast('Abriendo libro','success');}).obtenerUrlLibro();
+}
+
+/* FIX FASE 7.4: Exportar reporte por cliente desde Web App.
+   Muestra selector de cliente → llama backend que actualiza el archivo
+   EXISTENTE en HISTORIAL_REPORTES (no crea uno nuevo si ya existe). */
+/* FIX FASE 8.7: Selector de ZIP MEJORADO con filtros, búsqueda y ordenamiento.
+   Pedido por Bryan tras análisis operativo:
+   - TextBox filtro por cliente
+   - Buscador por nombre archivo
+   - Headers clickeables para ordenar por columna */
+function abrirSelectorDescargarZip() {
+  if (!P.exportar && !P.verDashboard) return toast('Tu rol no permite descargar inventarios','error');
+  toast('Cargando lista de inventarios...','info');
+  google.script.run
+    .withSuccessHandler(function(lista) {
+      if (!lista || lista.length === 0) {
+        toast('No hay inventarios en PANEL DE CONTROL','error');
+        return;
+      }
+      window._zipLista = lista;
+      window._zipOrden = { columna: 'fecha', desc: true };
+      window._zipFiltroEstado = 'todos';
+
+      var contenido =
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">' +
+          '<input type="text" id="zip-q-cliente" placeholder="🔍 Filtrar cliente..." style="flex:1;min-width:140px;background:var(--panel-2);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:5px;font-size:12px;" oninput="zipRenderTabla()">' +
+          '<input type="text" id="zip-q-nombre" placeholder="🔎 Buscar archivo..." style="flex:1;min-width:140px;background:var(--panel-2);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:5px;font-size:12px;" oninput="zipRenderTabla()">' +
+        '</div>' +
+        '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">' +
+          '<button id="zip-f-todos" onclick="zipSetFiltro(\'todos\')" class="zip-fbtn zip-fbtn-active">📋 Todos</button>' +
+          '<button id="zip-f-entregado" onclick="zipSetFiltro(\'entregado\')" class="zip-fbtn">✓ Entregados</button>' +
+          '<button id="zip-f-pendiente" onclick="zipSetFiltro(\'pendiente\')" class="zip-fbtn">⏳ Pendientes</button>' +
+          '<span style="margin-left:auto;display:flex;gap:6px;">' +
+            '<button onclick="zipSelAll(true)" style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;">✓ Sel.todos</button>' +
+            '<button onclick="zipSelAll(false)" style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;">✕ Limpiar</button>' +
+          '</span>' +
+        '</div>' +
+        '<style>.zip-fbtn{background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:5px 10px;border-radius:4px;font-size:11px;cursor:pointer;}' +
+        '.zip-fbtn-active{background:#3b82f6;border-color:#3b82f6;color:#fff;}' +
+        '.zip-sortable{cursor:pointer;user-select:none;}.zip-sortable:hover{background:#243456;}' +
+        '.zip-sort-arrow{margin-left:4px;font-size:9px;color:#3b82f6;}</style>' +
+        '<div style="max-height:380px;overflow-y:auto;border:1px solid #283352;border-radius:5px;background:#0f172a;">' +
+          '<table style="width:100%;border-collapse:collapse;font-size:12px;" id="zip-tabla">' +
+            '<thead style="background:#1c2740;position:sticky;top:0;">' +
+              '<tr>' +
+                '<th style="padding:8px;text-align:left;width:30px;">Sel</th>' +
+                '<th class="zip-sortable" data-col="cliente" onclick="zipOrdenar(\'cliente\')" style="padding:8px;text-align:left;">Cliente <span class="zip-sort-arrow"></span></th>' +
+                '<th class="zip-sortable" data-col="archivo" onclick="zipOrdenar(\'archivo\')" style="padding:8px;text-align:left;">Archivo <span class="zip-sort-arrow"></span></th>' +
+                '<th class="zip-sortable" data-col="fecha" onclick="zipOrdenar(\'fecha\')" style="padding:8px;text-align:left;width:90px;">Fecha <span class="zip-sort-arrow">▼</span></th>' +
+                '<th class="zip-sortable" data-col="estado" onclick="zipOrdenar(\'estado\')" style="padding:8px;text-align:left;width:110px;">Estado <span class="zip-sort-arrow"></span></th>' +
+              '</tr>' +
+            '</thead><tbody id="zip-tbody"></tbody>' +
+          '</table>' +
+        '</div>' +
+        '<div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right;"><span id="zip-count">0</span> seleccionados de <span id="zip-visibles">' + lista.length + '</span> visibles</div>';
+
+      modalCustom('📦 Descargar inventarios como ZIP',
+        'Filtra, busca, ordena y selecciona los inventarios a descargar:',
+        contenido,
+        '⬇ Descargar ZIP de seleccionados',
+        function() {
+          var checks = document.querySelectorAll('.zip-chk:checked');
+          if (checks.length === 0) { toast('Selecciona al menos un inventario','error'); return false; }
+          var ids = Array.prototype.map.call(checks, function(c){ return c.dataset.fileid; });
+          cerrarModal();
+          toast('Generando ZIP con ' + ids.length + ' archivos…','info');
+          google.script.run
+            .withSuccessHandler(function(res) {
+              if (!res || !res.ok) { toast('Error generando ZIP','error'); return; }
+              try {
+                var byteChars = atob(res.base64);
+                var byteNumbers = new Array(byteChars.length);
+                for (var i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+                var byteArray = new Uint8Array(byteNumbers);
+                var blob = new Blob([byteArray], { type: 'application/zip' });
+                var url = window.URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url; a.download = res.fileName; a.click();
+                setTimeout(function(){ window.URL.revokeObjectURL(url); }, 1000);
+                toast('✓ ZIP descargado: ' + res.procesados + ' archivos' +
+                      (res.errores && res.errores.length ? ' (' + res.errores.length + ' fallaron)' : ''),'success');
+              } catch (e) { toast('Error procesando ZIP: ' + e.message,'error'); }
+            })
+            .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+            .dash_generarZipDesdeIDs(ids);
+        });
+
+      setTimeout(function() { zipRenderTabla(); }, 100);
+    })
+    .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+    .dash_listarInventariosParaZip();
+}
+
+function zipSetFiltro(f) {
+  window._zipFiltroEstado = f;
+  ['todos','entregado','pendiente'].forEach(function(t){
+    var btn = document.getElementById('zip-f-' + t);
+    if (btn) btn.classList.toggle('zip-fbtn-active', t === f);
+  });
+  zipRenderTabla();
+}
+
+function zipOrdenar(col) {
+  if (window._zipOrden.columna === col) window._zipOrden.desc = !window._zipOrden.desc;
+  else { window._zipOrden.columna = col; window._zipOrden.desc = false; }
+  zipRenderTabla();
+}
+
+function zipRenderTabla() {
+  var lista = window._zipLista || [];
+  var qCli = (document.getElementById('zip-q-cliente') || {}).value || '';
+  var qNom = (document.getElementById('zip-q-nombre') || {}).value || '';
+  qCli = qCli.toLowerCase(); qNom = qNom.toLowerCase();
+  var filtroEstado = window._zipFiltroEstado || 'todos';
+
+  // Filtrar
+  var filtrados = lista.filter(function(it) {
+    if (qCli && (it.cliente || '').toLowerCase().indexOf(qCli) === -1) return false;
+    var nombreArch = '';
+    try { nombreArch = (it.fileUrl || '').toLowerCase(); } catch(e){}
+    if (qNom && nombreArch.indexOf(qNom) === -1 &&
+        (it.cliente || '').toLowerCase().indexOf(qNom) === -1) return false;
+    var est = String(it.estado || '').toLowerCase();
+    if (filtroEstado === 'entregado' && est.indexOf('entregado') === -1) return false;
+    if (filtroEstado === 'pendiente' && est.indexOf('entregado') !== -1) return false;
+    return true;
+  });
+
+  // Ordenar
+  var orden = window._zipOrden;
+  filtrados.sort(function(a, b) {
+    var va, vb;
+    if (orden.columna === 'cliente') { va = (a.cliente||'').toLowerCase(); vb = (b.cliente||'').toLowerCase(); }
+    else if (orden.columna === 'archivo') { va = (a.fileUrl||'').toLowerCase(); vb = (b.fileUrl||'').toLowerCase(); }
+    else if (orden.columna === 'fecha') { va = a.fecha || 0; vb = b.fecha || 0; }
+    else if (orden.columna === 'estado') { va = (a.estado||'').toLowerCase(); vb = (b.estado||'').toLowerCase(); }
+    if (va < vb) return orden.desc ? 1 : -1;
+    if (va > vb) return orden.desc ? -1 : 1;
+    return 0;
+  });
+
+  // Actualizar flechas de ordenamiento
+  document.querySelectorAll('.zip-sortable').forEach(function(th) {
+    var spn = th.querySelector('.zip-sort-arrow');
+    if (!spn) return;
+    spn.innerText = (th.dataset.col === orden.columna) ? (orden.desc ? '▼' : '▲') : '';
+  });
+
+  // Render tabla
+  var tbody = document.getElementById('zip-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = filtrados.map(function(it) {
+    var fechaStr = it.fecha ? new Date(it.fecha).toLocaleDateString('es-EC') : '—';
+    var estadoClass = String(it.estado||'').toLowerCase().indexOf('entregado') !== -1 ? 'pill-ok' : 'pill-muted';
+    // Extraer nombre de archivo de la URL si es posible
+    var nombreArch = '—';
+    try {
+      var m = (it.fileUrl||'').match(/\/d\/([a-zA-Z0-9_-]+)/);
+      nombreArch = it.cliente; // fallback
+    } catch(e){}
+    return '<tr style="border-bottom:1px solid #283352;">' +
+      '<td style="padding:6px 8px;"><input type="checkbox" class="zip-chk" data-fileid="' + it.fileId + '" onchange="actualizarContadorZip()"></td>' +
+      '<td style="padding:6px 8px;font-weight:500;">' + escapeHtml(it.cliente) + '</td>' +
+      '<td style="padding:6px 8px;font-family:ui-monospace,monospace;font-size:10px;color:var(--muted);">' + escapeHtml(it.fileId.substring(0,12)) + '...</td>' +
+      '<td style="padding:6px 8px;color:var(--muted);font-size:11px;">' + fechaStr + '</td>' +
+      '<td style="padding:6px 8px;"><span class="pill ' + estadoClass + '">' + escapeHtml(it.estado || '—') + '</span></td>' +
+      '</tr>';
+  }).join('');
+
+  var visEl = document.getElementById('zip-visibles');
+  if (visEl) visEl.innerText = filtrados.length;
+  actualizarContadorZip();
+}
+
+function zipSelAll(estado) {
+  document.querySelectorAll('.zip-chk').forEach(function(c){ c.checked = estado; });
+  actualizarContadorZip();
+}
+
+function actualizarContadorZip() {
+  var cnt = document.querySelectorAll('.zip-chk:checked').length;
+  var el = document.getElementById('zip-count');
+  if (el) el.innerText = cnt;
+}
+
+function abrirSelectorExportarCliente() {
+  if (!P.exportar) return toast('Tu rol no permite exportar reportes','error');
+  toast('Cargando lista de clientes…','info');
+  google.script.run
+    .withSuccessHandler(function(clientes) {
+      if (!clientes || clientes.length === 0) {
+        toast('No hay clientes en PANEL DE CONTROL','error');
+        return;
+      }
+      var options = clientes.map(function(c){ return '<option value="' + c + '">' + c + '</option>'; }).join('');
+      modalCustom('📄 Exportar Reporte por Cliente',
+        'Selecciona el cliente. El sistema <b>actualizará el archivo existente</b> del cliente en <code>HISTORIAL_REPORTES</code> (no crea uno nuevo si ya existe).',
+        '<div class="field"><label>Cliente *</label>' +
+        '<select id="exp-cliente" style="width:100%;padding:8px;background:#1c2740;color:#e8ecf3;border:1px solid #334155;border-radius:5px;">' +
+        '<option value="">— Selecciona —</option>' + options + '</select></div>',
+        'Actualizar reporte', function() {
+          var cli = document.getElementById('exp-cliente').value;
+          if (!cli) { toast('Selecciona un cliente','error'); return false; }
+          cerrarModal();
+          toast('Actualizando reporte de ' + cli + '…','info');
+          google.script.run
+            .withSuccessHandler(function(msg){ toast(msg || '✓ Reporte actualizado','success'); })
+            .withFailureHandler(function(e){ toast('Error: ' + e.message,'error'); })
+            .dash_exportarCliente(cli);
+        });
+    })
+    .withFailureHandler(function(e){ toast('Error: ' + e.message,'error'); })
+    .dash_listarClientesParaExportar();
+}
+
+function confirmar(tipo) {
+  var cfg = {
+    consolidar:{t:'Consolidar con auditoría',m:'Procesa archivos Entregado, reescribe INVENTARIOS y genera AUDITORIA_CONSOLIDACION.',fn:'dash_consolidarAuditoria'},
+    limpiar:{t:'Limpiar duplicados',m:'Elimina filas duplicadas/vacías en INVENTARIOS y REGISTRO. No se puede deshacer.',fn:'dash_limpiarDuplicados'}
+  }[tipo];
+  // FIX FASE 8.16: para consolidar mostramos modal de selección de MODO
+  if (tipo === 'consolidar') {
+    modalConsolidacionAvanzada();
+    return;
+  }
+  modalCustom(cfg.t, cfg.m, '', 'Confirmar', function(){
+    cerrarModal();
+    ejecutar(cfg.t+'…', cfg.fn);
+  }, true);
+}
+
+/* FIX FASE 8.16 + 8.17: modal con 3 modos × 3 alcances de consolidación. */
+function modalConsolidacionAvanzada() {
+  var html =
+    '<div style="font-size:13px;line-height:1.5;color:var(--text);">' +
+      '<p style="margin:0 0 12px 0;">Configura qué consolidar y con qué nivel de tolerancia:</p>' +
+
+      // ─── SECCIÓN 1: QUÉ INCLUIR ───
+      '<div style="margin-bottom:14px;">' +
+        '<div style="font-weight:600;margin-bottom:6px;color:var(--accent);">1. ¿Qué hojas consolidar?</div>' +
+        '<div style="display:flex;gap:6px;">' +
+          '<label style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--panel-2);text-align:center;">' +
+            '<input type="radio" name="consol-incluir" value="ALL" checked style="margin-right:4px;">' +
+            '<div style="font-weight:600;font-size:11px;margin-top:2px;">📦 Ambas</div>' +
+            '<div style="font-size:10px;color:var(--muted);">INVENTARIOS + REGISTRO</div>' +
+          '</label>' +
+          '<label style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--panel-2);text-align:center;">' +
+            '<input type="radio" name="consol-incluir" value="INV" style="margin-right:4px;">' +
+            '<div style="font-weight:600;font-size:11px;margin-top:2px;">📋 Solo INV</div>' +
+            '<div style="font-size:10px;color:var(--muted);">INVENTARIOS</div>' +
+          '</label>' +
+          '<label style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--panel-2);text-align:center;">' +
+            '<input type="radio" name="consol-incluir" value="REG" style="margin-right:4px;">' +
+            '<div style="font-weight:600;font-size:11px;margin-top:2px;">📒 Solo REG</div>' +
+            '<div style="font-size:10px;color:var(--muted);">REGISTRO</div>' +
+          '</label>' +
+        '</div>' +
+      '</div>' +
+
+      // ─── SECCIÓN 2: MODO DE TOLERANCIA ───
+      '<div style="font-weight:600;margin-bottom:6px;color:var(--accent);">2. ¿Cómo manejar errores?</div>' +
+      '<div style="display:flex;flex-direction:column;gap:8px;">' +
+        '<label style="display:flex;gap:10px;padding:10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--panel-2);">' +
+          '<input type="radio" name="consol-modo" value="tolerante" checked style="margin-top:3px;">' +
+          '<div><div style="font-weight:600;color:#34a853;">✓ Tolerante (recomendado)</div>' +
+          '<div style="font-size:11px;color:var(--muted);margin-top:3px;">Consolida ignorando filas con errores. Las excluye y reporta su ubicación en ERRORES_VALIDACION_DETALLE. Escribe las hojas seleccionadas.</div></div>' +
+        '</label>' +
+        '<label style="display:flex;gap:10px;padding:10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--panel-2);">' +
+          '<input type="radio" name="consol-modo" value="reporte_solo" style="margin-top:3px;">' +
+          '<div><div style="font-weight:600;color:#1a73e8;">📋 Reporte solo (pre-validar)</div>' +
+          '<div style="font-size:11px;color:var(--muted);margin-top:3px;">NO escribe nada. Sólo simula la consolidación y genera ERRORES_VALIDACION_DETALLE para revisar antes.</div></div>' +
+        '</label>' +
+        '<label style="display:flex;gap:10px;padding:10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--panel-2);">' +
+          '<input type="radio" name="consol-modo" value="estricto" style="margin-top:3px;">' +
+          '<div><div style="font-weight:600;color:#d93025;">🚦 Estricto (bloquea si hay errores)</div>' +
+          '<div style="font-size:11px;color:var(--muted);margin-top:3px;">Si encuentra SKU vacío o cantidad inválida, DETIENE y no escribe nada. Útil cuando exiges 100% calidad.</div></div>' +
+        '</label>' +
+      '</div>' +
+
+      '<div style="margin-top:12px;padding:8px;background:rgba(26,115,232,0.1);border-left:3px solid #1a73e8;font-size:11px;color:var(--muted);">' +
+        '<b>Filtros automáticos (todos los modos):</b><br>' +
+        '• Filas completamente vacías → excluidas silenciosas<br>' +
+        '• Filas idénticas dentro del mismo archivo → excluidas como duplicado<br>' +
+        '• [INV] Cantidad cero → excluida (conteo no realizado)<br>' +
+        '• [REG] Filas duplicadas entre archivos → reportadas como advertencia<br>' +
+        '• Fechas normalizadas con el formato del archivo origen' +
+      '</div>' +
+    '</div>';
+
+  modalCustom('Consolidar con auditoría', '', html, 'Ejecutar', function(){
+    var modo = document.querySelector('input[name="consol-modo"]:checked').value;
+    var incluir = document.querySelector('input[name="consol-incluir"]:checked').value;
+    cerrarModal();
+    toast('Consolidando ' + incluir + ' (modo ' + modo + ')…','info');
+    google.script.run
+      .withSuccessHandler(function(res){
+        if (!res || !res.ok) {
+          if (res && res.modo === 'estricto') {
+            modalCustom('🚦 Estricto: consolidación bloqueada', '',
+              '<pre style="white-space:pre-wrap;font-family:inherit;font-size:12px;color:var(--text);background:var(--panel-2);padding:10px;border-radius:5px;border:1px solid var(--border);">' +
+                escapeHtml(res.mensaje) + '</pre>',
+              'OK', cerrarModal);
+            return;
+          }
+          toast('⚠ ' + (res && res.mensaje ? res.mensaje : 'Sin datos'), 'error');
+          return;
+        }
+        var titulo = res.sinEscribir ? '📋 Pre-validación completa' : '✓ Consolidación completa';
+        modalCustom(titulo, '',
+          '<pre style="white-space:pre-wrap;font-family:inherit;font-size:12px;color:var(--text);background:var(--panel-2);padding:10px;border-radius:5px;border:1px solid var(--border);">' +
+            escapeHtml(res.mensaje) + '</pre>',
+          'OK', cerrarModal);
+        cargarDashboard();
+      })
+      .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+      .dash_consolidarAuditoria({ modo: modo, incluir: incluir });
+  }, true);
+}
+
+/* ===== PERFIL ===== */
+function cargarPerfil() {
+  google.script.run.withSuccessHandler(p => {
+    $('p-email').value = p.email; $('p-rol').value = p.rol;
+    $('p-nombre').value = p.nombre || ''; $('p-telefono').value = p.telefono || '';
+    var a = p.analytics || {};
+    $('p-iniciados').innerText = a.iniciados||0; $('p-finalizados').innerText = a.finalizados||0; $('p-creados').innerText = a.creados||0;
+  }).withFailureHandler(e=>toast('Error: '+e.message,'error')).obtenerMiPerfil();
+}
+function guardarPerfil() {
+  var datos = { nombre:$('p-nombre').value.trim(), telefono:$('p-telefono').value.trim() };
+  toast('Guardando…');
+  google.script.run.withSuccessHandler(()=>toast('✓ Perfil actualizado','success'))
+    .withFailureHandler(e=>toast('Error: '+e.message,'error')).actualizarMiPerfil(datos);
+}
+
+/* ===== USUARIOS ===== */
+function cargarUsuarios() {
+  $('usr-body').innerHTML = '<div class="empty">Cargando…</div>';
+  google.script.run.withSuccessHandler(lista => {
+    if (!lista.length) { $('usr-body').innerHTML = '<div class="empty">Sin usuarios.</div>'; return; }
+    $('usr-body').innerHTML = lista.map(filaUsuario).join('');
+  }).withFailureHandler(e=>$('usr-body').innerHTML='<div class="empty">Error: '+e.message+'</div>').listarUsuarios();
+}
+function filaUsuario(u) {
+  var rolCls = u.rol==='Coordinador'?'pill-info':(u.rol==='Auditor'?'pill-muted':'pill-ok');
+  var estPill = u.activo ? '<span class="pill pill-ok">Activo</span>' : '<span class="pill pill-danger">Inactivo</span>';
+  return '<div class="rw"><div><div style="font-weight:500;">'+escapeHtml(u.nombre)+'</div><div style="font-size:10px;color:var(--muted);">'+escapeHtml(u.email)+'</div></div>'+
+    '<div><span class="pill '+rolCls+'">'+escapeHtml(u.rol)+'</span></div><div style="font-size:11px;">'+escapeHtml(u.telefono||'—')+'</div>'+
+    '<div>'+estPill+'</div><div class="act-grp"><button class="mini-btn" onclick=\'editarUsuario('+JSON.stringify(u)+')\'>✎</button>'+
+    (u.activo?'<button class="mini-btn" onclick="desactUsuario('+u.fila+')">⊘</button>':'')+'</div></div>';
+}
+function abrirNuevoUsuario() {
+  var roles = ['Coordinador','Líder de Conteo','Auditor'].map(r=>'<option>'+r+'</option>').join('');
+  modalCustom('＋ Nuevo usuario', 'Registra un nuevo miembro del equipo:',
+    '<div class="field"><label>Email *</label><input type="text" id="nu-email" placeholder="correo@itsanet.com"></div>'+
+    '<div class="field"><label>Nombre *</label><input type="text" id="nu-nombre"></div>'+
+    '<div class="field"><label>Rol *</label><select id="nu-rol">'+roles+'</select></div>'+
+    '<div class="field"><label>Teléfono</label><input type="text" id="nu-tel"></div>',
+    'Crear usuario', function(){
+      var datos = { email:$('nu-email').value.trim(), nombre:$('nu-nombre').value.trim(), rol:$('nu-rol').value, telefono:$('nu-tel').value.trim() };
+      if (!datos.email||!datos.nombre) { toast('Email y nombre obligatorios','error'); return false; }
+      cerrarModal(); toast('Creando…');
+      google.script.run.withSuccessHandler(()=>{toast('✓ Usuario creado','success');cargarUsuarios();})
+        .withFailureHandler(e=>toast('Error: '+e.message,'error')).crearUsuario(datos);
+    });
+}
+function editarUsuario(u) {
+  var roles = ['Coordinador','Líder de Conteo','Auditor'].map(r=>'<option'+(r===u.rol?' selected':'')+'>'+r+'</option>').join('');
+  modalCustom('✎ Editar — '+escapeHtml(u.nombre), '',
+    '<div class="field"><label>Nombre</label><input type="text" id="eu-nombre" value="'+escapeHtml(u.nombre)+'"></div>'+
+    '<div class="field"><label>Rol</label><select id="eu-rol">'+roles+'</select></div>'+
+    '<div class="field"><label>Teléfono</label><input type="text" id="eu-tel" value="'+escapeHtml(u.telefono||'')+'"></div>'+
+    '<div class="field"><label>Estado</label><select id="eu-activo"><option value="true"'+(u.activo?' selected':'')+'>Activo</option><option value="false"'+(!u.activo?' selected':'')+'>Inactivo</option></select></div>',
+    'Guardar', function(){
+      var datos = { nombre:$('eu-nombre').value.trim(), rol:$('eu-rol').value, telefono:$('eu-tel').value.trim(), activo:$('eu-activo').value==='true' };
+      cerrarModal(); toast('Guardando…');
+      google.script.run.withSuccessHandler(()=>{toast('✓ Actualizado','success');cargarUsuarios();})
+        .withFailureHandler(e=>toast('Error: '+e.message,'error')).actualizarUsuario(u.fila, datos);
+    });
+}
+function desactUsuario(fila) {
+  modalCustom('⊘ Desactivar usuario', '¿Confirmas desactivar este usuario? No podrá ingresar al sistema.', '', 'Desactivar', function(){
+    cerrarModal(); toast('Desactivando…');
+    google.script.run.withSuccessHandler(()=>{toast('✓ Desactivado','success');cargarUsuarios();})
+      .withFailureHandler(e=>toast('Error: '+e.message,'error')).desactivarUsuario(fila);
+  }, true);
+}
+
+/* ===== ANALYTICS ===== */
+function cargarAnalytics() {
+  $('analytics-body').innerHTML = '<div class="empty">Cargando…</div>';
+  google.script.run.withSuccessHandler(res => {
+    if (!res.porUsuario.length) { $('analytics-body').innerHTML = '<div class="empty">Sin actividad registrada aún.</div>'; return; }
+    $('analytics-body').innerHTML = res.porUsuario.map(u =>
+      '<div class="rw"><div style="font-weight:500;font-size:11px;">'+escapeHtml(u.email)+'</div>'+
+      '<div style="color:var(--accent);">'+u.iniciados+'</div><div style="color:var(--ok);">'+u.finalizados+'</div>'+
+      '<div style="color:var(--info);">'+u.creados+'</div><div><b>'+u.total+'</b></div></div>').join('');
+  }).withFailureHandler(e=>$('analytics-body').innerHTML='<div class="empty">Error: '+e.message+'</div>').obtenerAnalyticsGlobal();
+}
+
+/* ===== WIZARD / FORM EVENTO (overlays) ===== */
+function abrirWizard() {
+  if (!P.crearInventario) return toast('Tu rol no permite crear inventarios','error');
+  // FIX FASE 8.2: El wizard se abre como modal overlay DENTRO de la misma pantalla.
+  // No abre pestaña nueva, no redirige al libro. El iframe carga ?vista=wizard
+  // del MISMO origen, lo que evita los problemas de pantalla blanca del sandbox.
+  abrirWizardComoModal();
+}
+
+function abrirWizardComoModal() {
+  // Si ya existe el modal, no duplicar
+  if (document.getElementById('wizard-modal-overlay')) return;
+
+  // FIX FASE 8.3: Usar URL CANÓNICA (script.google.com), no window.location.href
+  // que devuelve el dominio sandbox (googleusercontent.com) y causa pantalla blanca.
+  var urlBase = window.__WEBAPP_URL__ || window.location.href.split('?')[0].split('#')[0];
+  var urlWizard = urlBase + (urlBase.indexOf('?') === -1 ? '?' : '&') + 'vista=wizard';
+
+  var modal = document.createElement('div');
+  modal.id = 'wizard-modal-overlay';
+  modal.style.cssText =
+    'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:99998;' +
+    'display:flex;flex-direction:column;padding:0;';
+
+  modal.innerHTML =
+    '<div style="background:#0b1220;color:#e8ecf3;padding:10px 18px;display:flex;' +
+    'justify-content:space-between;align-items:center;border-bottom:1px solid #283352;flex-shrink:0;">' +
+      '<div style="font-size:13px;font-weight:600;">📦 Crear nuevo inventario</div>' +
+      '<button id="wizard-modal-close" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;' +
+      'padding:6px 14px;border-radius:5px;cursor:pointer;font-size:12px;font-family:inherit;">✕ Cerrar wizard</button>' +
+    '</div>' +
+    '<div id="wizard-modal-loader" style="position:absolute;inset:48px 0 0 0;background:#0b1220;color:#e8ecf3;' +
+    'display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:system-ui,sans-serif;text-align:center;">' +
+      '<div style="width:42px;height:42px;border:3px solid #283352;border-top-color:#3b82f6;border-radius:50%;' +
+      'animation:wiz-spin 1s linear infinite;margin-bottom:14px;"></div>' +
+      '<div style="font-size:14px;font-weight:600;margin-bottom:4px;">Cargando wizard...</div>' +
+      '<div style="font-size:11px;color:#94a3b8;">Si tarda más de 15 segundos, cierra y reintenta</div>' +
+      '<style>@keyframes wiz-spin { to { transform: rotate(360deg); } }</style>' +
+    '</div>' +
+    '<iframe id="wizard-modal-iframe" src="' + urlWizard + '" ' +
+    'style="flex:1;border:none;background:#0b1220;width:100%;" ' +
+    'onload="document.getElementById(\'wizard-modal-loader\').style.display=\'none\';"></iframe>';
+
+  document.body.appendChild(modal);
+
+  document.getElementById('wizard-modal-close').onclick = function() {
+    if (confirm('¿Cerrar el wizard? Los datos sin guardar se perderán.')) {
+      cerrarWizardModal();
+    }
+  };
+
+  // Permitir cerrar con ESC
+  var escHandler = function(ev) {
+    if (ev.key === 'Escape') { cerrarWizardModal(); document.removeEventListener('keydown', escHandler); }
+  };
+  document.addEventListener('keydown', escHandler);
+
+  toast('Wizard cargado en pantalla. Procesa para crear el inventario.', 'info');
+}
+
+function cerrarWizardModal() {
+  var m = document.getElementById('wizard-modal-overlay');
+  if (m) m.remove();
+  // FIX FASE 8.7: Recargar el dashboard para reflejar el nuevo archivo
+  // creado (cronograma, KPIs, cargas por operario, etc.)
+  try { cargarDashboard(); } catch(e) {}
+  toast('Panel actualizado','success');
+}
+
+// FIX FASE 8.2/8.7: Escuchar mensajes del iframe del wizard
+// - CERRAR_WIZARD / cerrarWizard → cierra el modal
+// - inventarioCreado → recarga el dashboard sin perder selección
+window.addEventListener('message', function(ev) {
+  if (!ev || !ev.data) return;
+  var tipo = ev.data.tipo;
+  if (tipo === 'CERRAR_WIZARD' || tipo === 'cerrarWizard') {
+    cerrarWizardModal();
+  } else if (tipo === 'inventarioCreado') {
+    // Refresca dashboard porque se agregó archivo nuevo a PANEL DE CONTROL
+    setTimeout(function(){ cerrarWizardModal(); }, 200);
+    setTimeout(function(){
+      cargarDashboard(false);
+      toast('✓ Panel actualizado con el nuevo archivo','success');
+    }, 400);
+  }
+});
+
+/* FIX FASE 8.10: Crear evento sin dependencias entre campos.
+   - Cliente con autocomplete (datalist) — permite escribir libremente o elegir de la lista
+   - Responsable dropdown con TODOS los miembros del equipo activo
+   - Si el equipo no está cargado al abrir, lo solicita en paralelo (fallback)
+   - Todos los campos son independientes y se pueden llenar en cualquier orden */
+function abrirFormEvento() {
+  if (!P.crearInventario) return toast('Tu rol no permite crear eventos','error');
+
+  // Garantizar que equipo y clientes estén disponibles
+  var equipoCargado = (estado && estado.equipo && estado.equipo.length > 0);
+  var clientesCargados = (estado && estado.clientes && estado.clientes.length > 0);
+
+  if (!equipoCargado || !clientesCargados) {
+    toast('Cargando catálogos…','info');
+    google.script.run
+      .withSuccessHandler(function(d){
+        if (d) {
+          if (d.equipo) estado.equipo = d.equipo;
+          if (d.clientes) estado.clientes = d.clientes;
+        }
+        _renderFormEvento();
+      })
+      .withFailureHandler(function(){ _renderFormEvento(); })
+      .dash_obtenerDashboard();
+    return;
+  }
+  _renderFormEvento();
+}
+
+function _renderFormEvento() {
+  // Equipo: TODOS los miembros activos (Operarios/Líderes/Coordinadores)
+  var equipoArr = (estado && estado.equipo) ? estado.equipo : [];
+  var roles = equipoArr.map(function(n){ return '<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>'; }).join('');
+
+  // Clientes para datalist (autocomplete)
+  var clientesArr = (estado && estado.clientes) ? estado.clientes : [];
+  var clientesOpts = clientesArr.map(function(c){ return '<option value="'+escapeHtml(c)+'">'; }).join('');
+
+  var hoy = new Date().toISOString().slice(0,10);
+
+  // Aviso si el equipo está vacío (operativo, no bloqueante)
+  var avisoVacio = (equipoArr.length === 0)
+    ? '<div style="background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.3);color:#fde047;padding:7px;border-radius:5px;font-size:11px;margin-bottom:8px;">⚠ La lista de equipo está vacía. Agrega usuarios en la pestaña Usuarios o ejecuta "Sincronizar c/Panel" antes de continuar.</div>'
+    : '';
+
+  modalCustom('📅 Nuevo evento en cronograma',
+    'Llena los campos en cualquier orden. Los datos NO dependen entre sí.',
+    avisoVacio +
+    '<datalist id="dl-clientes-evt">' + clientesOpts + '</datalist>' +
+    '<div class="field"><label>Título *</label>' +
+      '<input type="text" id="fe-titulo" placeholder="Ej. Inventario Cíclico - CLIENTE (Mayo - 2026)" autocomplete="off"></div>' +
+    '<div class="field"><label>Cliente * <small style="color:var(--muted);">(escribe o elige de la lista)</small></label>' +
+      '<input type="text" id="fe-cliente" list="dl-clientes-evt" placeholder="Ej. SAINT GOBAIN" autocomplete="off"></div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+      '<div class="field"><label>Responsable * <small style="color:var(--muted);">(' + equipoArr.length + ' disp.)</small></label>' +
+        '<select id="fe-resp"><option value="">— Seleccione —</option>' + roles + '</select></div>' +
+      '<div class="field"><label>Prioridad</label>' +
+        '<select id="fe-prio"><option>Alta</option><option selected>Media</option><option>Baja</option></select></div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+      '<div class="field"><label>Fecha inicio *</label>' +
+        '<input type="date" id="fe-fini" value="'+hoy+'"></div>' +
+      '<div class="field"><label>Frecuencia</label>' +
+        '<select id="fe-frec"><option>MENSUAL</option><option>SEMANAL</option><option>QUINCENAL</option><option>BIMESTRAL</option><option>TRIMESTRAL</option><option>SEMESTRAL</option><option>ANUAL</option><option>EMERGENTE</option></select></div>' +
+    '</div>',
+    'Crear evento', function(){
+      var datos = {
+        titulo:       ($('fe-titulo').value || '').trim(),
+        cliente:      ($('fe-cliente').value || '').trim(),
+        responsable:  ($('fe-resp').value || '').trim(),
+        prioridad:    $('fe-prio').value,
+        fechaInicio:  $('fe-fini').value,
+        frecuencia:   $('fe-frec').value,
+        categoria:    'Inventario Programado'
+      };
+      var faltantes = [];
+      if (!datos.titulo) faltantes.push('Título');
+      if (!datos.cliente) faltantes.push('Cliente');
+      if (!datos.responsable) faltantes.push('Responsable');
+      if (!datos.fechaInicio) faltantes.push('Fecha inicio');
+      if (faltantes.length > 0) { toast('Falta: ' + faltantes.join(', '),'error'); return false; }
+
+      cerrarModal();
+      toast('Creando evento…','info');
+      google.script.run
+        .withSuccessHandler(function(r){
+          toast('✓ Evento creado (fila ' + r.fila + ')','success');
+          cargarDashboard();
+        })
+        .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+        .crearEventoCronograma(datos);
+    });
+}
+
+/* ===== MODAL GENÉRICO ===== */
+var _modalCb = null;
+function modalCustom(titulo, msg, bodyHtml, okText, callback, danger) {
+  $('modal-titulo').innerText = titulo;
+  $('modal-msg').innerHTML = msg || '';
+  $('modal-body').innerHTML = bodyHtml || '';
+  $('modal-ok').innerText = okText || 'Confirmar';
+  $('modal-ok').className = 'b confirm' + (danger ? ' danger' : '');
+  _modalCb = callback;
+  $('modal-ok').onclick = function(){ if (_modalCb) { var r = _modalCb(); /* si devuelve false no cierra */ } };
+  $('modal').classList.add('show');
+}
+function cerrarModal(){ $('modal').classList.remove('show'); _modalCb=null; }
+
+function toast(msg, type) {
+  var t = $('toast'); t.innerText = msg; t.className = type||''; t.classList.add('show');
+  clearTimeout(window._tt); window._tt = setTimeout(()=>t.classList.remove('show'), 3500);
+}
+
+/* ===== ENTER / ESC global ===== */
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && $('modal').classList.contains('show')) {
+    if (e.target.tagName === 'TEXTAREA') return;
+    e.preventDefault(); $('modal-ok').click();
+  }
+  if (e.key === 'Escape' && $('modal').classList.contains('show')) cerrarModal();
+});
+</script>

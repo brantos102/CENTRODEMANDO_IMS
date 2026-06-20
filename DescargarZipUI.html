@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: 'Google Sans', Arial; text-align: center; padding: 20px; color: #3c4043; }
+      .btn-download {
+        background-color: #1a73e8;
+        color: white;
+        padding: 10px 20px;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: bold;
+        display: inline-block;
+        margin-top: 10px;
+      }
+      p { font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <p>El archivo ZIP ha sido generado con éxito.</p>
+    <a id="downloadLink" class="btn-download">Descargar Archivo .ZIP</a>
+    
+    <script>
+      window.onload = function() {
+        const base64 = "<?= base64 ?>";
+        const fileName = "<?= fileName ?>";
+        const link = document.getElementById('downloadLink');
+        
+        // Creamos un Blob desde el Base64
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {type: 'application/zip'});
+        
+        // Creamos la URL y configuramos el enlace
+        const url = window.URL.createObjectURL(blob);
+        link.href = url;
+        link.download = fileName;
+        
+        // Opcional: Auto-clic para descargar de inmediato
+        // link.click(); 
+      };
+    </script>
+  </body>
+</html>

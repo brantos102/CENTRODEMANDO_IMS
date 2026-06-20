@@ -1,0 +1,1138 @@
+const CONFIG = {
+  TEMPLATE_ID: "1Y2VZpr-fy6iuZyfX-96N1r9l3WdZOBfFnEV6Y2BHWog", 
+  INVENTARIO_GLOBAL_NAME: "MATRIZ_INVENTARIOS_UIO",
+  INVENTARIO_GLOBAL_ID: "1npxaCwfbwTJ-c8qpcw7qAhVT_CAXi4gUduPe2WuFXK4", // <--- NUEVO ID FIJO DE LA MATRIZ
+  ROOT_FOLDER_IDS: [
+    "12QkkKJ61AisU7vsNDqSuw03LGd4MSZFY",  // INT
+    "1HAqPpumvBKREO8vLeKp2kD-5WIoNdAsV", // SLOT
+    //"1JDX3VVsGxDsy1HRqfRzjDBnmgSEoSxmm"  // MABEL
+    
+  ]
+};
+
+
+
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  
+  // Menú 1: Operativo Diario
+  ui.createMenu('Gestión Inventarios')
+    .addItem('Generar Nuevo Archivo (Inventario)', 'generarArchivoDesdeTabla')
+    .addSeparator()
+    .addItem('Actualizar Métricas ', 'llenarDatosDesdeAnalisis')
+    .addToUi();
+
+  // Menú 2: Base de Datos y Reportes
+  ui.createMenu('Base de Datos')
+    .addItem(' Consolidar Datos (Menú Selectivo)', 'mostrarMenuConsolidacion') 
+    .addItem(' Pre-Validar Errores (Solo Reporte)', 'reportarErroresPrevio')
+    .addItem(' Limpiar duplicados y vacíos', 'limpiarHojaConsolidada')
+    .addSeparator()
+    .addItem(' Exportar Reporte Histórico (Cliente)', 'exportarReporteDeUnClienteArchivo')
+    .addItem('Abrir Centro de Mando', 'mostrarCentroDeMando')
+    .addItem('Descargar SELECCIONADOS como ZIP', 'prepararDescargaZip') 
+    .addToUi();
+}
+
+function onEdit(e) {
+  if (!e || !e.source) return;
+  
+  // Bloqueo rápido para evitar conflictos
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return;
+
+  try {
+    var sheet = e.source.getActiveSheet();
+    var sheetName = sheet.getName();
+    
+    // A. Protección de Hojas Críticas
+    if (sheetName === "INVENTARIOS" || sheetName === "REGISTRO") {
+      try {
+        if (e.oldValue !== undefined) e.range.setValue(e.oldValue);
+        else e.range.setValue("");
+        SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Hoja protegida por el sistema.", "Acción Bloqueada", 2);
+      } catch (er) {}
+      return;
+    }
+
+    // B. Automatización Panel de Control
+    if (sheetName === "PANEL DE CONTROL") {
+      var fila = e.range.getRow();
+      var col = e.range.getColumn();
+
+      // Aviso de duplicados (una vez por sesión)
+      var userProps = PropertiesService.getUserProperties();
+      if (!userProps.getProperty("panelWarningShown")) {
+        userProps.setProperty("panelWarningShown", "true");
+      }
+
+      // Si se pega un ID en Columna C (3), traer datos iniciales
+      if (col === 3 && fila >= 2) {
+        var fileId = e.range.getValue();
+        if (fileId) importarDatosIniciales(e.source, fila, fileId);
+      }
+
+      // Actualizar métricas automáticas (evitando bucles infinitos en cols de datos)
+      if (col < 10) {
+        try { llenarDatosDesdeAnalisis(); } catch(err){}
+      }
+    }
+  } finally { lock.releaseLock(); }
+}
+
+
+// Backend: Crea una "Raíz Virtual" para mostrar múltiples carpetas
+function obtenerEstructuraInicial() {
+  return { id: "VIRTUAL_ROOT", name: " Itsanet (UIO)" };
+}
+
+// Backend: Obtiene subcarpetas
+function obtenerSubcarpetas(parentId) {
+  var list = [];
+
+  // CASO A: Si estamos en el inicio, mostramos las carpetas configuradas en CONFIG
+  if (parentId === "VIRTUAL_ROOT") {
+    var ids = CONFIG.ROOT_FOLDER_IDS; // Leemos el Array de IDs
+    for (var i = 0; i < ids.length; i++) {
+      try {
+        var f = DriveApp.getFolderById(ids[i]);
+        list.push({ id: f.getId(), name: "📁 " + f.getName() });
+      } catch (e) {
+        list.push({ id: "ERROR", name: " Error ID: " + ids[i] });
+      }
+    }
+    return list; // No ordenamos para respetar tu orden de configuración
+  }
+
+  // CASO B: Navegación normal dentro de una carpeta real
+  try {
+    var parent = DriveApp.getFolderById(parentId);
+    var folders = parent.getFolders();
+    while (folders.hasNext()) {
+      var f = folders.next();
+      list.push({ id: f.getId(), name: f.getName() });
+    }
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  } catch (e) {
+    return [];
+  }
+}
+
+// Backend: Crear carpeta
+function crearSubcarpeta(parentId, name) {
+  if (parentId === "VIRTUAL_ROOT") {
+    throw new Error("Por seguridad, no puedes crear carpetas en la Raíz Virtual. Entra en una de las carpetas azules primero.");
+  }
+  var parent = DriveApp.getFolderById(parentId);
+  var newFolder = parent.createFolder(name);
+  return { id: newFolder.getId(), name: newFolder.getName() };
+}
+
+
+function ejecutarCreacionArchivo(folderId) {
+  if (folderId === "VIRTUAL_ROOT") throw new Error("Selecciona una carpeta específica.");
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("PANEL DE CONTROL");
+  const ui = SpreadsheetApp.getUi(); // Para lanzar mensajes de error en pantalla
+  
+  // Buscar última fila con Cliente en Columna A
+  const datosColA = sheet.getRange("A:A").getValues();
+  let row = datosColA.length;
+  while (row > 0 && datosColA[row - 1][0] == "") row--;
+  
+  if (!folderId || typeof folderId !== 'string') throw new Error("ID de carpeta inválido.");
+  
+  const nombreCliente = datosColA[row - 1][0].toString().trim().toUpperCase();
+  const folder = DriveApp.getFolderById(folderId);
+
+  try {
+    const newFile = DriveApp.getFileById(CONFIG.TEMPLATE_ID).makeCopy(nombreCliente, folder);
+    newFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+    
+    // === CONEXIÓN A LA API CON DIAGNÓSTICO ===
+    try {
+      let token = obtenerTokenItsanet();
+      
+      if (!token) {
+        ui.alert(" ERROR DE API: No se pudo obtener el Token. Verifica el usuario y la contraseña en la función obtenerTokenItsanet().");
+      } else {
+        
+        let datosStock = extraerDatosInventario(token);
+        
+        if (!datosStock || datosStock.length === 0) {
+          ui.alert(" ADVERTENCIA API: Nos conectamos bien, pero la API de ITSANET no devolvió ningún artículo. El inventario parece estar vacío.");
+        } else {
+          
+          let codigosRaw = sheet.getRange(row, 26).getValue().toString(); 
+          let codigosSeleccionados = codigosRaw ? codigosRaw.split(",").map(c => c.trim().toUpperCase()) : [];
+
+          // 1. APLICAR FILTROS (Cliente y SKUs)
+          let datosFiltrados = datosStock.filter(item => {
+            let clienteItem = (item["COD. CLIENTE"] || "").toString().trim().toUpperCase();
+            // ¡OJO AQUÍ! Comparamos el "COD. CLIENTE" de la API con lo que escribiste en Columna A
+            let cumpleCliente = (clienteItem === nombreCliente);
+            
+            let cumpleCodigo = true;
+            if (codigosSeleccionados.length > 0) {
+                let codigoItem = (item["COD. PRODUCTO"] || "").toString().trim().toUpperCase();
+                cumpleCodigo = codigosSeleccionados.includes(codigoItem);
+            }
+            return cumpleCliente && cumpleCodigo;
+          });
+
+          // 2. VERIFICACIÓN DE FILTROS
+          if (datosFiltrados.length === 0) {
+            ui.alert("⚠️ ADVERTENCIA FILTRO: La API trajo " + datosStock.length + " artículos en total, pero NINGUNO pertenece al cliente '" + nombreCliente + "'. Revisa si el código de cliente en la API es exactamente igual a lo que escribiste en la Columna A.");
+          } else {
+            
+            // 3. PREPARAR MATRIZ PARA HOJA DE CONTEO
+            let matrizDatos = datosFiltrados.map(item => {
+              let nave = item["NAVE"] || "";
+              let calle = item["CALLE"] || "";
+              let columna = item["COLUMNA"] || "";
+              let nivel = item["NIVEL"] || "";
+              let posicionFisica = nave + "-" + calle + "-" + columna + "-" + nivel;
+
+              return [
+                item["COD. PRODUCTO"] || "",        // A: SKU
+                item["DESCRIPCION"] || "",          // B: Descripción
+                posicionFisica,                     // C: Ubicación Consolidada
+                item["LOTE.PROVEEDOR"] || "",       // D: Lote
+                parseFloat(item["CANTIDAD"]) || 0   // E: Cantidad Teórica
+              ];
+            });
+
+            let ssNuevo = SpreadsheetApp.openById(newFile.getId());
+            let hojaConteo = ssNuevo.getSheetByName("PLANILLA DE CONTEO FISICO");
+            
+            if (!hojaConteo) {
+              ui.alert("❌ ERROR DE PLANTILLA: No se encontró una pestaña llamada EXACTAMENTE 'PLANILLA DE CONTEO FISICO' en tu archivo nuevo.");
+            } else {
+              hojaConteo.getRange(2, 1, matrizDatos.length, matrizDatos[0].length).setValues(matrizDatos);
+              ui.alert("✅ ÉXITO: Se importaron " + matrizDatos.length + " artículos desde la API para el cliente " + nombreCliente + ".");
+            }
+          }
+        }
+      }
+    } catch (apiError) {
+      ui.alert("❌ ERROR CRÍTICO API: " + apiError.message);
+    }
+
+    // === ESCRIBIR DATOS EN PANEL DE CONTROL ===
+    var fechaFormateada = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
+    sheet.getRange(row, 2).setValue(newFile.getUrl()); 
+    sheet.getRange(row, 3).setValue(newFile.getId());  
+    sheet.getRange(row, 4).setValue(fechaFormateada);  
+    
+    // Cerramos el panel lateral HTML
+    return "OK";
+  } catch (e) {
+    throw new Error("Error general al crear archivo: " + e.message);
+  }
+}
+
+
+
+/* ==========================================================================
+   1. ASISTENTE DE CREACIÓN DE ARCHIVOS (NUEVO FLUJO)
+   ========================================================================== */
+
+function generarArchivoDesdeTabla() {
+  // Lanza el nuevo asistente unificado
+  var html = HtmlService.createHtmlOutputFromFile('AsistenteCreacion')
+      .setTitle('Asistente de Inventarios')
+      .setWidth(350);
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+// Función backend llamada desde el HTML al dar clic en "Crear Archivo"
+function procesarCreacionArchivo(datos) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) {
+    throw new Error("El sistema está ocupado por otro operador. Intenta de nuevo en unos segundos.");
+  }
+
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("PANEL DE CONTROL");
+    
+    if (!datos.folderId || datos.folderId === "VIRTUAL_ROOT") {
+      throw new Error("Carpeta destino inválida.");
+    }
+    const folder = DriveApp.getFolderById(datos.folderId);
+
+    // 1. Crear Archivo Copia
+    const newFile = DriveApp.getFileById(CONFIG.TEMPLATE_ID).makeCopy(datos.fileName, folder);
+    
+    // SOLUCIÓN AL ERROR DE ACCESO DENEGADO
+    try {
+      newFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+    } catch (permError) {
+      console.warn("No se pudo aplicar ANYONE_WITH_LINK debido a políticas del dominio. Se mantendrán los permisos heredados.");
+    }
+    
+    // 2. Procesar Fuente de Datos (Blanco, API o CSV)
+    /*if (datos.dataSource === 'API') {
+      // Tu lógica de ITSANET iría aquí
+      // SpreadsheetApp.getActiveSpreadsheet().toast("Buscando en API Depot...", "Proceso", 3);
+    } else if (datos.dataSource === 'CSV' && datos.csvData && datos.csvData.length > 0) {
+      let ssNuevo = SpreadsheetApp.openById(newFile.getId());
+      let hojaConteo = ssNuevo.getSheetByName("PLANILLA DE CONTEO FISICO");
+      if (hojaConteo) {
+        hojaConteo.getRange(2, 1, datos.csvData.length, datos.csvData[0].length).setValues(datos.csvData);
+      }
+    }*/
+
+    // 2. Procesar Fuente de Datos (Blanco, API o CSV)
+    if (datos.dataSource === 'API') {
+      // Tu lógica de ITSANET se mantiene intacta...
+      
+    } else if (datos.dataSource === 'CSV' && datos.csvData && datos.csvData.length > 0) {
+      
+      let ssNuevo = SpreadsheetApp.openById(newFile.getId());
+      let hojaConteo = ssNuevo.getSheetByName("PLANILLA DE CONTEO FISICO");
+      
+      if (hojaConteo) {
+        let numFilas = datos.csvData.length;
+        
+        // El array enviado desde HTML tiene 17 posiciones (Índices 0 al 16).
+        // Índice 4 = Columna E (CLIENTE)
+        // Índices 6 al 16 = Columnas G a Q (Métricas: Producto, Lote, Cantidad, etc.)
+        let matrizCliente = datos.csvData.map(r => [r[4] || ""]); 
+        let matrizGQ = datos.csvData.map(r => r.slice(6, 17)); 
+
+        // 1. Escribimos CLIENTE en Columna 5 (E) sin tocar cabecera
+        hojaConteo.getRange(2, 5, numFilas, 1).setValues(matrizCliente);
+        
+        // 2. Escribimos MÉTRICAS en Columna 7 (G) hasta la 17 (Q)
+        hojaConteo.getRange(2, 7, numFilas, 11).setValues(matrizGQ);
+      }
+    }
+
+    // 3. Buscar la última fila real usando la Columna A (CLIENTE)
+    const datosColA = sheet.getRange("A:A").getValues();
+    let newRow = 1;
+    for (let i = 0; i < datosColA.length; i++) {
+      if (datosColA[i][0] !== "") newRow = i + 1;
+    }
+    newRow = newRow + 1;
+
+    // 4. Registrar en Panel de Control
+    var fechaFormateada = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
+    
+    sheet.getRange(newRow, 1).setValue(datos.clientName.toUpperCase()); 
+    sheet.getRange(newRow, 2).setValue(newFile.getUrl());               
+    sheet.getRange(newRow, 3).setValue(newFile.getId());                
+    sheet.getRange(newRow, 4).setValue(fechaFormateada);                
+
+    return {
+      folderName: folder.getName(),
+      fileUrl: newFile.getUrl()
+    };
+
+  } catch (e) {
+    throw new Error("Error: " + e.message);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ============================
+   3. CONSOLIDACIÓN DE DATOS
+   ============================ */
+
+function mostrarMenuConsolidacion() {
+  var html = '<style>body{font-family:sans-serif;text-align:center;padding:10px}button{width:100%;padding:12px;margin:5px 0;cursor:pointer;background:#1a73e8;color:#fff;border:none;border-radius:4px;font-weight:bold}.reg{background:#e37400}.all{background:#188038}</style>' +
+             '<h3>Consolidación</h3><p>Seleccione qué procesar:</p>' +
+             '<button onclick="r(\'INV\')">Solo INVENTARIOS</button>' +
+             '<button class="reg" onclick="r(\'REG\')">Solo REGISTRO</button>' +
+             '<button class="all" onclick="r(\'ALL\')">TODO (Ambos)</button>' +
+             '<script>function r(t){google.script.run.withSuccessHandler(google.script.host.close).consolidarDatosFinal(false,t)}</script>';
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(280).setHeight(300), 'Opciones de Base de Datos');
+}
+
+function consolidarDatosFinal(soloReporte, tipo) {
+  tipo = tipo || 'ALL';
+  var procInv = (tipo==='ALL'||tipo==='INV'), procReg = (tipo==='ALL'||tipo==='REG');
+  var lock = LockService.getScriptLock(); 
+  if(!lock.tryLock(45000)) { SpreadsheetApp.getUi().alert("Sistema ocupado."); return; }
+
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
+    var p = ss.getSheetByName("PANEL DE CONTROL"), inv = ss.getSheetByName("INVENTARIOS"), reg = ss.getSheetByName("REGISTRO");
+    var errSh = ss.getSheetByName("ERRORES_VALIDACION") || ss.insertSheet("ERRORES_VALIDACION");
+    
+    errSh.clear(); errSh.appendRow(["Fecha","Cliente","ID","Fila","Valor","Col","Nota"]);
+    errSh.getRange("A1:G1").setFontWeight("bold").setBackground("#f4cccc");
+
+    if(!soloReporte) {
+      if(procInv && inv.getLastRow()>1) inv.getRange(2,1,inv.getLastRow()-1,inv.getLastColumn()).clearContent();
+      if(procReg && reg.getLastRow()>1) reg.getRange(2,1,reg.getLastRow()-1,reg.getLastColumn()).clearContent();
+    }
+
+    var data = p.getRange("A2:G"+p.getLastRow()).getValues();
+    var entries = [];
+    for(var i=0; i<data.length; i++) {
+      if(String(data[i][6]).toLowerCase().trim() === "entregado") {
+        entries.push({ cliente: data[i][0], id: extractIdFromUrl(data[i][2]) });
+      }
+    }
+
+    if(entries.length===0) { ui.alert("No hay archivos 'Entregado'."); return; }
+
+    var dInv=[], dReg=[], errs=[], headers=null;
+
+    for(var idx=0; idx<entries.length; idx++) {
+      var ent = entries[idx];
+      if(!ent.id) continue;
+      
+      var ap = safeOpenSpreadsheet(ent.id);
+      if(!ap.ss) { errs.push([new Date(), ent.cliente, ent.id, "-", "Error abrir: "+ap.error, "-", "-"]); continue; }
+      var ssFile = ap.ss;
+
+      if(procInv || soloReporte) {
+        var shC = ssFile.getSheetByName("PLANILLA DE CONTEO FISICO");
+        if(shC && shC.getLastRow()>0) {
+          var lastCol = shC.getLastColumn();
+          if(!headers) headers = shC.getRange(1,1,1,lastCol).getValues()[0];
+          
+          if(shC.getLastRow()>1) {
+            var vRaw = shC.getRange(2,1,shC.getLastRow()-1,lastCol).getValues();
+            var colCnt = detectColumnCantidadSmart(headers, vRaw, lastCol);
+            
+            if (colCnt === null) {
+               var vDisp = shC.getRange(2,1,shC.getLastRow()-1,lastCol).getDisplayValues();
+               colCnt = detectColumnCantidadFromDisplay(vDisp, lastCol);
+            }
+
+            if(colCnt !== null) {
+              for(var r=0; r<vRaw.length; r++) {
+                var rowData = vRaw[r];
+                if(!rowData.some(c=>valueNotEmpty(c))) continue;
+                
+                var valC = rowData[colCnt];
+                if(valueNotEmpty(valC) && !esNumeroValido(valC)) {
+                  errs.push([new Date(), ent.cliente, ent.id, r+2, valC, columnLetter(colCnt+1), "EXCLUIDO (Alfanumérico)"]);
+                } else if(!soloReporte) {
+                  dInv.push(rowData);
+                }
+              }
+            } else { errs.push([new Date(), ent.cliente, ent.id, "-", "No Col Cantidad", "-", "-"]); }
+          }
+        }
+      }
+
+      if((procReg || soloReporte) && !soloReporte) {
+        var shR = ssFile.getSheetByName("REGISTRO");
+        if(shR && shR.getLastRow()>1) {
+          var vr = shR.getRange(2,1,shR.getLastRow()-1,shR.getLastColumn()).getValues();
+          dReg = dReg.concat(vr.filter(r=>r.some(c=>valueNotEmpty(c))));
+        }
+      }
+    }
+
+    if(errs.length) errSh.getRange(2,1,errs.length,errs[0].length).setValues(errs);
+    if(soloReporte) { ui.alert("Errores encontrados: "+errs.length); return; }
+
+    if(procInv) {
+      if(inv.getLastRow()===0 && headers) {
+         inv.getRange(1,1,1,headers.length).setValues([headers]);
+         inv.getRange(1,1,1,headers.length).setFontWeight("bold");
+      }
+      if(dInv.length) {
+        ensureColumns(inv, dInv[0].length);
+        inv.getRange(2,1,dInv.length,dInv[0].length).setValues(dInv);
+      }
+      try { exportarConsolidadoAInventario(dInv); } catch(e){}
+    }
+
+    if(procReg && dReg.length) {
+      var max=0; dReg.forEach(r=>max=Math.max(max,r.length));
+      var nReg=dReg.map(r=>{while(r.length<max)r.push("");return r;});
+      ensureColumns(reg, max);
+      reg.getRange(2,1,nReg.length,max).setValues(nReg);
+    }
+
+    ui.alert("Proceso ("+tipo+") Finalizado.\nInv: "+dInv.length+" | Reg: "+dReg.length+" | Errores: "+errs.length);
+
+  } catch(e) { SpreadsheetApp.getUi().alert("Error fatal: "+e.message); }
+  finally { lock.releaseLock(); }
+}
+
+function reportarErroresPrevio() { consolidarDatosFinal(true, 'INV'); }
+
+/* ============================
+   4. REPORTES HISTÓRICOS Y ACTUALIZACIÓN MENSUAL
+   ============================ */
+
+function exportarReporteDeUnClienteArchivo() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), p = ss.getSheetByName("PANEL DE CONTROL");
+  var d = p.getRange("A2:A"+p.getLastRow()).getValues();
+  var clients = [...new Set(d.map(r=>r[0]).filter(c=>c!==""))];
+  var t = HtmlService.createTemplateFromFile("ExportarReporteForm");
+  t.clientes = clients;
+  SpreadsheetApp.getUi().showModalDialog(t.evaluate().setWidth(400).setHeight(300), "Exportar Reporte");
+}
+
+
+
+
+/* ==========================================================================
+   ACTUALIZACIÓN DIARIA DE REPORTES EXISTENTES (SOLUCIÓN BLINDADA SMART CHIPS)
+   ========================================================================== */
+
+function actualizarTodosLosReportesMensuales() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hHist = ss.getSheetByName("HISTORIAL_REPORTES");
+  
+  if (!hHist || hHist.getLastRow() < 2) return;
+
+  var lastRow = hHist.getLastRow();
+  // Extraemos textos y links ocultos
+  var datos = hHist.getRange(2, 1, lastRow - 1, 3).getValues();
+  var richTextUrls = hHist.getRange(2, 3, lastRow - 1, 1).getRichTextValues();
+
+  for (var i = 0; i < datos.length; i++) {
+    var cliente = datos[i][0];
+    var textoCelda = datos[i][2]; 
+    var richText = richTextUrls[i][0];
+
+    if (cliente && textoCelda) {
+      try {
+        var fileId = resolverIdArchivoExtremo(textoCelda, richText);
+
+        if (fileId) {
+          actualizarReporteExistente(cliente, fileId, i + 2, hHist);
+          Logger.log("✅ Actualizado correctamente: " + cliente);
+        } else {
+          Logger.log("❌ No se encontró ID válido ni archivo activo en Drive para: " + cliente);
+        }
+      } catch (e) {
+        Logger.log("Error al actualizar " + cliente + ": " + e.message);
+      }
+    }
+  }
+}
+
+// Función conectada a tu botón de Menú (Exportación Manual)
+/*function exportarReporteAHojaExistente(cliente) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hHist = ss.getSheetByName("HISTORIAL_REPORTES");
+  var lastRow = hHist.getLastRow();
+  
+  if (lastRow < 2) return "El historial está vacío.";
+  
+  var datos = hHist.getRange(2, 1, lastRow - 1, 3).getValues();
+  var richTextUrls = hHist.getRange(2, 3, lastRow - 1, 1).getRichTextValues();
+  
+  for (var i = 0; i < datos.length; i++) {
+    if (datos[i][0] === cliente) {
+      var textoCelda = datos[i][2];
+      var richText = richTextUrls[i][0];
+      
+      try {
+        var fileId = resolverIdArchivoExtremo(textoCelda, richText);
+        if (fileId) {
+          actualizarReporteExistente(cliente, fileId, i + 2, hHist);
+          return "✅ Reporte de " + cliente + " ACTUALIZADO correctamente.";
+        } else {
+          return "❌ Error: El archivo '" + textoCelda + "' no se encuentra activo en Drive.";
+        }
+      } catch(e) {
+        return "❌ Error en " + cliente + ": " + e.message;
+      }
+    }
+  }
+  return "Error: No se encontró el registro de " + cliente + " en Historial.";
+}*/
+
+// Función conectada a tu botón de Menú (Exportación Manual)
+function exportarReporteAHojaExistente(cliente) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hHist = ss.getSheetByName("HISTORIAL_REPORTES");
+  var lastRow = hHist.getLastRow();
+  
+  // 1. BUSCAMOS SI EL CLIENTE YA EXISTE EN EL HISTORIAL
+  if (lastRow >= 2) {
+    var datos = hHist.getRange(2, 1, lastRow - 1, 3).getValues();
+    var richTextUrls = hHist.getRange(2, 3, lastRow - 1, 1).getRichTextValues();
+    
+    for (var i = 0; i < datos.length; i++) {
+      if (datos[i][0] === cliente) {
+        var textoCelda = datos[i][2];
+        var richText = richTextUrls[i][0];
+        
+        try {
+          var fileId = resolverIdArchivoExtremo(textoCelda, richText);
+          if (fileId) {
+            actualizarReporteExistente(cliente, fileId, i + 2, hHist);
+            return "✅ Reporte de " + cliente + " ACTUALIZADO correctamente en su link original.";
+          } else {
+            return "❌ Error: El archivo '" + textoCelda + "' no se encuentra activo en Drive.";
+          }
+        } catch(e) {
+          return "❌ Error en " + cliente + ": " + e.message;
+        }
+      }
+    }
+  }
+  
+  // 2. SI LLEGA AQUÍ, EL CLIENTE ES NUEVO (NO ESTÁ EN EL HISTORIAL).
+  // Creamos su archivo maestro por primera vez.
+  try {
+    // Validar que realmente tenga datos antes de crear un archivo en blanco en el Drive
+    var cons = obtenerDatosConsolidadosCliente(cliente);
+    if (!cons || cons.datos.length === 0) {
+        return "❌ Error: No se puede crear el reporte. No hay inventarios 'Entregados' para " + cliente + " en el Panel de Control.";
+    }
+
+    var anio = new Date().getFullYear();
+    var nombreArchivo = cliente + " - " + anio;
+    
+    // Crear el nuevo archivo en Google Drive
+    var nuevoSpreadsheet = SpreadsheetApp.create(nombreArchivo);
+    var nuevoFileId = nuevoSpreadsheet.getId();
+    var nuevaUrl = nuevoSpreadsheet.getUrl();
+    var fechaActual = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
+
+    // Añadir el nuevo cliente al final de HISTORIAL_REPORTES
+    hHist.appendRow([cliente, fechaActual, nuevaUrl]);
+    var nuevaFila = hHist.getLastRow();
+
+    // Inyectar los datos consolidados en el nuevo archivo
+    actualizarReporteExistente(cliente, nuevoFileId, nuevaFila, hHist);
+    
+    return "✨ ¡Nuevo reporte CREADO y consolidado para " + cliente + "!";
+    
+  } catch (e) {
+    return "❌ Error al crear nuevo reporte para " + cliente + ": " + e.message;
+  }
+}
+
+
+// === MOTOR INTELIGENTE EXTREMO DE BÚSQUEDA ===
+function resolverIdArchivoExtremo(textoCelda, richText) {
+  // 1. Extraer de los "Runs" del Smart Chip 
+  if (richText) {
+    var runs = richText.getRuns();
+    for (var i = 0; i < runs.length; i++) {
+      var url = runs[i].getLinkUrl();
+      if (url) {
+        var match = url.match(/[-\w]{25,50}/);
+        if (match) return match[0];
+      }
+    }
+  }
+  
+  // 2. Si la celda es texto crudo con URL tradicional
+  var txt = (textoCelda || "").toString().trim();
+  if (txt.indexOf("http") !== -1) {
+    var matchTxt = txt.match(/[-\w]{25,50}/);
+    if (matchTxt) return matchTxt[0];
+  }
+  
+  // 3. BÚSQUEDA ESTRICTA EN DRIVE
+  if (txt) {
+    var safeName = txt.replace(/"/g, '\\"');
+    var query = 'title = "' + safeName + '" and trashed = false and mimeType = "application/vnd.google-apps.spreadsheet"';
+    var archivos = DriveApp.searchFiles(query);
+    if (archivos.hasNext()) {
+      return archivos.next().getId();
+    }
+  }
+  
+  return null;
+}
+
+// === FUNCIÓN QUIRÚRGICA DE INYECCIÓN DE DATOS ===
+function actualizarReporteExistente(cliente, fileId, filaHistorial, hHist) {
+  var ssRep;
+  try {
+    ssRep = SpreadsheetApp.openById(fileId);
+  } catch (e) {
+    throw new Error("No tienes permisos o el archivo fue eliminado. ID: " + fileId);
+  }
+
+  var cons = obtenerDatosConsolidadosCliente(cliente);
+  if (!cons || cons.datos.length === 0) {
+    throw new Error("No hay datos 'Entregados' en la matriz para este cliente.");
+  }
+
+  var sh = ssRep.getSheetByName("Inventarios");
+  if (!sh) {
+    sh = ssRep.insertSheet("Inventarios"); 
+  }
+  
+  // Limpiamos y pegamos
+  sh.clear();
+  
+  if (cons.headers.length > 0) {
+    sh.getRange(1, 1, 1, cons.headers.length).setValues([cons.headers]).setFontWeight("bold");
+  }
+  
+  if (cons.datos.length > 0) {
+    if (sh.getMaxColumns() < cons.datos[0].length) {
+      sh.insertColumnsAfter(sh.getMaxColumns(), cons.datos[0].length - sh.getMaxColumns());
+    }
+    sh.getRange(2, 1, cons.datos.length, cons.datos[0].length).setValues(cons.datos);
+  }
+  
+  // Actualizamos Fecha
+  var fechaActual = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
+  hHist.getRange(filaHistorial, 2).setValue(fechaActual);
+}
+
+// === AQUÍ ESTÁ LA FUNCION HISTÓRICA QUE FALTABA (EXTRACCIÓN DE DATOS) ===
+function obtenerDatosConsolidadosCliente(cliente) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), p = ss.getSheetByName("PANEL DE CONTROL");
+  var d = p.getRange("A2:G"+p.getLastRow()).getValues(), acc=[], head=[];
+  for(var i=0;i<d.length;i++) {
+    if(d[i][0]===cliente && String(d[i][6]).toLowerCase().trim()==="entregado") {
+      var id=extractIdFromUrl(d[i][2]), op=safeOpenSpreadsheet(id);
+      if(op.ss) {
+        var sh=op.ss.getSheetByName("PLANILLA DE CONTEO FISICO");
+        if(sh && sh.getLastRow()>0) {
+          if(!head.length) head=sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+          if(sh.getLastRow()>1) {
+            acc=acc.concat(sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues());
+          }
+        }
+      }
+    }
+  }
+  return {headers:head, datos:acc};
+}
+
+
+
+
+
+/**
+ * Ejecuta la actualización de todos los archivos existentes.
+ * Se recomienda programar este activador para las 01:00 AM.
+ */
+
+
+function instalarActivador() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'actualizarTodosLosReportesMensuales') {
+      SpreadsheetApp.getUi().alert("Activador diario ya instalado.");
+      return;
+    }
+  }
+  ScriptApp.newTrigger('actualizarTodosLosReportesMensuales').timeBased().everyDays(1).atHour(18).create();
+  SpreadsheetApp.getUi().alert("Activador diario instalado (Día 1, 6:00 AM).");
+}
+
+function instalarActivadorMetricas() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'llenarDatosDesdeAnalisis') {
+      SpreadsheetApp.getUi().alert("Activador DIARIO de métricas ya instalado.");
+      return;
+    }
+  }
+  // Ejecuta llenarDatosDesdeAnalisis cada día a las 5 AM
+  ScriptApp.newTrigger('llenarDatosDesdeAnalisis').timeBased().everyDays(1).atHour(5).create();
+  SpreadsheetApp.getUi().alert("Activador DIARIO instalado (5:00 AM).");
+}
+
+/* ============================
+   UTILIDADES
+   ============================ */
+function valueNotEmpty(v){return v!==null&&v!==undefined&&(typeof v!=='string'||v.trim()!=='');}
+function esNumeroValido(v){if(!valueNotEmpty(v))return false;var s=String(v).trim().replace(",",".");if(/[a-zA-Z]/.test(s))return false;return !isNaN(parseFloat(s))&&isFinite(s);}
+function extractIdFromUrl(t){if(!t)return"";var s=String(t).trim(),m=s.match(/[-\w]{25,50}/g);return m?m[m.length-1]:s;}
+function safeOpenSpreadsheet(id){try{return{ss:SpreadsheetApp.openById(id),error:null}}catch(e){return{ss:null,error:e.message}}}
+function tryOpenSpreadsheetWithRetries(id,r,d){while(r>0){var res=safeOpenSpreadsheet(id);if(res.ss)return res;r--;Utilities.sleep(d);}return{ss:null};}
+function ensureColumns(s,n){if(s.getMaxColumns()<n)s.insertColumnsAfter(s.getMaxColumns(),n-s.getMaxColumns());}
+function columnLetter(n){var s='',t;while(n>0){t=(n-1)%26;s=String.fromCharCode(65+t)+s;n=Math.floor((n-1)/26);}return s;}
+function detectColumnCantidadSmart(h,d,l){if(h)for(var i=0;i<h.length;i++){if(String(h[i]).toUpperCase().match(/CONTEO FINAL|CANTIDAD|TOTAL|SALDO/))return i;}return detectColumnCantidadFromDisplay(d,l);}
+function detectColumnCantidadFromDisplay(d,l){if(!d)return null;var p=[21,20,22];for(var k=0;k<p.length;k++)if(p[k]<l)for(var r=0;r<d.length;r++)if(valueNotEmpty(d[r][p[k]]))return p[k];for(var c=0;c<Math.min(l,60);c++)for(var rr=0;rr<d.length;rr++)if(valueNotEmpty(d[rr][c]))return c;return null;}
+function importarDatosIniciales(s,r,id){try{var f=SpreadsheetApp.openById(id).getSheetByName("PLANILLA DE CONTEO FISICO");if(f&&f.getLastRow()>1){var v=f.getRange(2,1,f.getLastRow()-1,f.getLastColumn()).getValues(),inv=s.getSheetByName("INVENTARIOS");if(inv){ensureColumns(inv,v[0].length);inv.getRange(inv.getLastRow()+1,1,v.length,v[0].length).setValues(v);}}}catch(e){}}
+
+/* ============================================================
+   FUNCIÓN DE ACTUALIZACIÓN DE MÉTRICAS (LÓGICA ORIGINAL + SEGURIDAD)
+   ============================================================ */
+function llenarDatosDesdeAnalisis() {
+  var lock = LockService.getScriptLock();
+  // Espera corta para no bloquear, si está ocupado salimos para no chocar con consolidación
+  if (!lock.tryLock(10000)) return; 
+
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var hojaActual = ss.getSheetByName("PANEL DE CONTROL");
+    if (!hojaActual) return;
+
+    var lastRow = hojaActual.getLastRow();
+    if (lastRow < 2) return;
+
+    // 1. CARGAMOS LOS DATOS ACTUALES (Para no perderlos si falla la conexión)
+    // IDs en Columna C (Índice 3)
+    var datosIDs = hojaActual.getRange(2, 3, lastRow - 1, 1).getValues();
+    
+    // Columna E (Dato Extra Registro) - Leemos lo que ya existe
+    var rangoColE = hojaActual.getRange(2, 5, lastRow - 1, 1);
+    var valoresColE = rangoColE.getValues();
+    
+    // Columnas J a O (Métricas Análisis) - Leemos lo que ya existe
+    var rangoMetricas = hojaActual.getRange(2, 10, lastRow - 1, 6);
+    var valoresMetricas = rangoMetricas.getValues();
+
+    var huboCambios = false;
+
+    // 2. PROCESAMOS FILA POR FILA (Respetando lógica original)
+    for (var i = 0; i < datosIDs.length; i++) {
+      var idRaw = datosIDs[i][0];
+      
+      if (idRaw) {
+        var id = extractIdFromUrl(idRaw);
+        
+        try {
+          // Intentamos abrir. Si falla, va al 'catch' y NO borra los datos existentes en los arrays
+          var ssArchivo = SpreadsheetApp.openById(id);
+          
+          // --- LOGICA ORIGINAL DE LECTURA ---
+          var hojaAnalisis = ssArchivo.getSheetByName("ANALISIS");
+          var hojaRegistro = ssArchivo.getSheetByName("REGISTRO");
+
+          // A. Lógica ANALISIS (Celdas específicas)
+          if (hojaAnalisis) {
+            // Actualizamos el array en memoria SOLO si leemos con éxito
+            valoresMetricas[i][0] = hojaAnalisis.getRange("C23").getValue(); // Unidades
+            valoresMetricas[i][1] = hojaAnalisis.getRange("H23").getValue(); // Referencias
+            valoresMetricas[i][2] = hojaAnalisis.getRange("M23").getValue(); // Posiciones
+            valoresMetricas[i][3] = hojaAnalisis.getRange("C25").getValue(); // Extra 1
+            valoresMetricas[i][4] = hojaAnalisis.getRange("H25").getValue(); // Extra 2
+            valoresMetricas[i][5] = hojaAnalisis.getRange("M25").getValue(); // Extra 3
+            huboCambios = true;
+          }
+
+          // B. Lógica REGISTRO (Última fila, Columna 1)
+          if (hojaRegistro) {
+            var ultimaFila = hojaRegistro.getLastRow();
+            if (ultimaFila >= 1) {
+              valoresColE[i][0] = hojaRegistro.getRange(ultimaFila, 1).getValue();
+              huboCambios = true;
+            }
+          }
+
+        } catch (error) {
+          // Si falla abrir el archivo, NO hacemos nada.
+          // El array 'valoresMetricas' mantiene el dato antiguo que leímos al principio.
+          // Así evitamos que se ponga en blanco.
+          Logger.log("Saltando archivo " + id + " (Mantiene dato anterior): " + error.message);
+        }
+      }
+    }
+
+    // 3. GUARDAMOS RESULTADOS (Solo si hubo lecturas exitosas)
+    if (huboCambios) {
+      rangoMetricas.setValues(valoresMetricas); // Escribe J-O
+      rangoColE.setValues(valoresColE);         // Escribe E
+      // Opcional: Timestamp de ejecución en celda K1 para control
+      // hojaActual.getRange("K1").setNote("Actualizado: " + new Date());
+    }
+
+  } catch (e) {
+    Logger.log("Error crítico en actualización: " + e.message);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function limpiarHojaConsolidada(){var s=SpreadsheetApp.getActiveSpreadsheet();['INVENTARIOS','REGISTRO'].forEach(function(n){var h=s.getSheetByName(n);if(h&&h.getLastRow()>1){var d=h.getRange(2,1,h.getLastRow()-1,h.getLastColumn()).getValues(),c=[],u=new Set();d.forEach(function(r){if(r.some(function(x){return valueNotEmpty(x)})){var k=JSON.stringify(r);if(!u.has(k)){u.add(k);c.push(r)}}});h.getRange(2,1,h.getLastRow(),h.getLastColumn()).clear({contentsOnly:true});if(c.length)h.getRange(2,1,c.length,c[0].length).setValues(c);}});}
+function exportarConsolidadoAInventario(d){try{var n=CONFIG.INVENTARIO_GLOBAL_NAME,fs=DriveApp.getFilesByName(n),f=fs.hasNext()?fs.next():DriveApp.getFileById(SpreadsheetApp.create(n).getId()),s=SpreadsheetApp.openById(f.getId()),h=s.getSheetByName("Inventarios");if(!h)h=s.insertSheet("Inventarios");h.clearContents();if(d.length)h.getRange(2,1,d.length,d[0].length).setValues(d);}catch(e){}}
+function exportarReporteDeUnCliente(){exportarReporteDeUnClienteArchivo();}
+function testCronogramaManual(){SpreadsheetApp.getUi().alert("Logística OK");}
+
+
+
+/* ==========================================================================
+   FUNCIÓN DE EXPORTACIÓN A MATRIZ (CONECTADA AL ID ESPECÍFICO)
+   ========================================================================== */
+
+function exportarConsolidadoAInventario(datosOpcionales) {
+  try {
+    var ssActual = SpreadsheetApp.getActiveSpreadsheet();
+    var hojaOrigen = ssActual.getSheetByName("INVENTARIOS");
+    var datosParaExportar = datosOpcionales;
+
+    // 1. Si no se reciben datos (ej. ejecución manual), leer de la hoja actual
+    if (!datosParaExportar) {
+      if (hojaOrigen && hojaOrigen.getLastRow() > 1) {
+        // Leemos desde la fila 2 hasta el final
+        datosParaExportar = hojaOrigen.getRange(2, 1, hojaOrigen.getLastRow() - 1, hojaOrigen.getLastColumn()).getValues();
+      } else {
+        Logger.log("⚠️ No hay datos en INVENTARIOS para exportar a la Matriz.");
+        return; // Salimos si no hay nada
+      }
+    }
+
+    // 2. Conexión Directa a la Matriz (Usando el ID fijo)
+    var idMatriz = CONFIG.INVENTARIO_GLOBAL_ID; 
+    var ssDestino;
+    
+    try {
+      ssDestino = SpreadsheetApp.openById(idMatriz);
+    } catch (err) {
+      // Fallback: Si falla el ID, intentar buscar por nombre como respaldo
+      var archivos = DriveApp.getFilesByName(CONFIG.INVENTARIO_GLOBAL_NAME);
+      if (archivos.hasNext()) {
+        ssDestino = SpreadsheetApp.open(archivos.next());
+      } else {
+        throw new Error("No se encuentra el archivo Matriz con ID: " + idMatriz);
+      }
+    }
+
+    // 3. Gestión de la Hoja Destino
+    var nombreHojaDestino = "Inventarios"; // O el nombre que tenga tu hoja en la matriz
+    var hojaDestino = ssDestino.getSheetByName(nombreHojaDestino);
+    
+    if (!hojaDestino) {
+      hojaDestino = ssDestino.insertSheet(nombreHojaDestino);
+    }
+
+    // 4. Escritura de Datos (Sobrescritura Mensual)
+    hojaDestino.clearContents(); // Limpiamos datos viejos para poner el corte del mes
+
+    // A. Copiar Encabezados (Vital para que se entienda la data)
+    // Los tomamos de la hoja origen actual para asegurar consistencia
+    if (hojaOrigen) {
+      var encabezados = hojaOrigen.getRange(1, 1, 1, hojaOrigen.getLastColumn()).getValues();
+      hojaDestino.getRange(1, 1, 1, encabezados[0].length).setValues(encabezados);
+      hojaDestino.getRange(1, 1, 1, encabezados[0].length).setFontWeight("bold").setBackground("#f3f3f3");
+    }
+
+    // B. Pegar los Datos del Cuerpo
+    if (datosParaExportar && datosParaExportar.length > 0) {
+      // Asegurar que la matriz tenga suficientes columnas
+      if (hojaDestino.getMaxColumns() < datosParaExportar[0].length) {
+        hojaDestino.insertColumnsAfter(hojaDestino.getMaxColumns(), datosParaExportar[0].length - hojaDestino.getMaxColumns());
+      }
+      
+      hojaDestino.getRange(2, 1, datosParaExportar.length, datosParaExportar[0].length).setValues(datosParaExportar);
+      
+      // Nota de auditoría
+      hojaDestino.getRange("A1").setNote("Última Carga Automática: " + new Date());
+    }
+
+    Logger.log("✅ Exportación exitosa a Matriz UIO (" + datosParaExportar.length + " filas).");
+
+  } catch (e) {
+    Logger.log("❌ Error en exportarConsolidadoAInventario: " + e.message);
+    // Opcional: Avisar al usuario si es una ejecución manual
+    if (!datosOpcionales) SpreadsheetApp.getUi().alert("Error al exportar a Matriz: " + e.message);
+  }
+}
+
+/* ============================
+   CONFIGURACIÓN DE HORARIOS (3 VECES AL DÍA)
+   ============================ */
+function instalarActivadoresDiarios() {
+  var ui = SpreadsheetApp.getUi();
+  
+  // 1. Limpieza: Borrar triggers anteriores de esta función para no duplicar
+  var triggers = ScriptApp.getProjectTriggers();
+  var borrados = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'llenarDatosDesdeAnalisis') {
+      ScriptApp.deleteTrigger(triggers[i]);
+      borrados++;
+    }
+  }
+
+  // 2. Crear los 3 horarios (Aprox 8am, 1pm, 6pm)
+  // Nota: Google maneja ventanas de +/- 15 min
+  
+  // Mañana (08:00)
+  ScriptApp.newTrigger('llenarDatosDesdeAnalisis')
+      .timeBased().everyDays(1).atHour(8).create();
+
+  // Tarde (13:00)
+  ScriptApp.newTrigger('llenarDatosDesdeAnalisis')
+      .timeBased().everyDays(1).atHour(13).create();
+
+  // Noche (18:00)
+  ScriptApp.newTrigger('llenarDatosDesdeAnalisis')
+      .timeBased().everyDays(1).atHour(18).create();
+
+  ui.alert("✅ Programación Exitosa:\n\n" +
+           "- Se eliminaron " + borrados + " configuraciones antiguas.\n" +
+           "- Se activó la actualización automática para:\n" +
+           "  🕒 08:00 AM\n  🕒 01:00 PM\n  🕒 06:00 PM");
+}
+
+
+// ==========================================
+// FUNCIONES DEL CENTRO DE MANDO GERENCIAL
+// ==========================================
+
+function mostrarCentroDeMando() {
+  // Lanza el panel HTML sobre la pantalla
+  var html = HtmlService.createHtmlOutputFromFile('CentroDeMando')
+      .setTitle('Centro de Mando Integral - Gerencia')
+      .setWidth(1000)
+      .setHeight(600);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Dashboard Gerencial: Trazabilidad y Cronograma');
+}
+
+function obtenerDatosCronograma() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Usamos el nombre exacto de tu pestaña según la imagen
+  const sheet = ss.getSheetByName("CRONOGRAMA - 2026"); 
+  if (!sheet) throw new Error("No se encontró la hoja CRONOGRAMA - 2026");
+
+  // Según tu imagen, los datos empiezan en la fila 9. Leemos desde la Columna C hasta la O.
+  const data = sheet.getRange("C9:O" + sheet.getLastRow()).getValues();
+
+  let resultados = [];
+  
+  data.forEach(row => {
+    // Índices del array (basado en rango C-O):
+    // C=0(Titulo), D=1(Cliente), E=2(Cat), F=3(Mes), G=4(Frec), H=5(Resp), I=6(Prio), J=7(Fecha Inicio), K=8(Estado)
+    let cliente = row[1];
+    let fechaInicioRaw = row[7];
+    let estado = row[8] || 'Pendiente';
+
+    if (cliente && cliente !== "") {
+      resultados.push({
+        cliente: cliente,
+        fechaInicio: fechaInicioRaw ? new Date(fechaInicioRaw).getTime() : null, // Convertimos a timestamp para ordenar
+        estado: estado
+      });
+    }
+  });
+
+  return resultados;
+}
+
+
+/**
+ * Procesa la selección del usuario y genera un ZIP con los archivos correspondientes en formato Excel.
+ * Genera una hoja temporal con el reporte de fallos indicando el nombre de la Columna B.
+ */
+function prepararDescargaZip() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet(); 
+  const range = sheet.getActiveRange();
+  const startRow = range.getRow();
+  const numRows = range.getNumRows();
+  
+  if (startRow < 2) {
+    SpreadsheetApp.getUi().alert("Por favor, selecciona filas de datos (de la fila 2 en adelante).");
+    return;
+  }
+
+  // Obtenemos las columnas A (0), B (1) y C (2)
+  const data = sheet.getRange(startRow, 1, numRows, 3).getValues();
+  
+  let blobs = [];
+  let nombresUsados = {};
+  let erroresLog = []; // Guardará objetos: {archivo: "NombreColB", motivo: "Error..."}
+  
+  let token = ScriptApp.getOAuthToken();
+
+  for (let i = 0; i < data.length; i++) {
+    // Tomamos el nombre desde la Columna B (índice 1 en el array)
+    let nombreColB = data[i][1] ? data[i][1].toString().trim() : "Fila " + (startRow + i);
+    let nombreCliente = data[i][0] ? data[i][0].toString().trim() : "Sin_Nombre";
+    
+    let fileIdRaw = data[i][2]; 
+    let fileId = fileIdRaw ? fileIdRaw.toString().trim() : "";
+
+    if (fileId.length > 10) {
+      try {
+        let url = "https://docs.google.com/spreadsheets/export?id=" + fileId + "&exportFormat=xlsx";
+        let response = UrlFetchApp.fetch(url, {
+          headers: { 'Authorization': 'Bearer ' + token },
+          muteHttpExceptions: true
+        });
+        
+        let statusCode = response.getResponseCode();
+        
+        if (statusCode === 200) {
+          let blob = response.getBlob();
+          // Usamos el nombre de la Columna B para el archivo Excel
+          let nombreFinal = nombreColB; 
+          
+          if (nombresUsados[nombreFinal]) {
+            nombresUsados[nombreFinal]++;
+            nombreFinal += "_" + nombresUsados[nombreFinal];
+          } else {
+            nombresUsados[nombreFinal] = 1;
+          }
+          
+          blob.setName(nombreFinal + ".xlsx");
+          blobs.push(blob);
+        } else {
+          erroresLog.push({archivo: nombreColB, motivo: "Error HTTP " + statusCode + " (El ID puede estar corrupto o no tienes permiso para leer ese archivo específico)"});
+        }
+        
+      } catch (e) {
+        erroresLog.push({archivo: nombreColB, motivo: "Fallo de conexión: " + e.message});
+      }
+    } else if (fileId !== "") {
+       erroresLog.push({archivo: nombreColB, motivo: "El texto en la columna C no es un ID válido de Google Drive."});
+    }
+  }
+
+  // ==========================================
+  // CREACIÓN DE HOJA TEMPORAL DE ERRORES
+  // ==========================================
+  if (erroresLog.length > 0) {
+    let tempSheetName = "Reporte_Descargas_Fallidas";
+    let tempSheet = ss.getSheetByName(tempSheetName);
+    
+    // Si la hoja ya existe, la limpiamos. Si no, la creamos.
+    if (tempSheet) {
+      tempSheet.clear();
+    } else {
+      tempSheet = ss.insertSheet(tempSheetName);
+    }
+    
+    // Cabeceras
+    tempSheet.appendRow(["Archivo (Columna B)", "Motivo del Fallo"]);
+    tempSheet.getRange("A1:B1").setFontWeight("bold").setBackground("#f4cccc");
+    
+    // Llenar datos de error
+    erroresLog.forEach(err => {
+      tempSheet.appendRow([err.archivo, err.motivo]);
+    });
+    
+    // Autoajustar tamaño de columnas
+    tempSheet.autoResizeColumns(1, 2);
+  } else {
+    // Si no hubo errores y la hoja existe de un proceso anterior, la podemos borrar o limpiar
+    let tempSheet = ss.getSheetByName("Reporte_Descargas_Fallidas");
+    if (tempSheet) ss.deleteSheet(tempSheet);
+  }
+
+  // ==========================================
+  // MANEJO FINAL DE INTERFAZ Y DESCARGA
+  // ==========================================
+  if (blobs.length === 0) {
+    SpreadsheetApp.getUi().alert("No se pudo descargar ningún archivo.\n\nSe ha generado/actualizado la pestaña 'Reporte_Descargas_Fallidas' con los motivos exactos.");
+    return;
+  }
+
+  if (erroresLog.length > 0) {
+    SpreadsheetApp.getUi().alert("Atención: Se empaquetarán " + blobs.length + " archivos, pero " + erroresLog.length + " fallaron.\n\nPor favor, revisa la pestaña 'Reporte_Descargas_Fallidas' para ver qué archivos no se pudieron procesar.");
+  }
+
+  // Creamos el archivo ZIP
+  const zipBlob = Utilities.zip(blobs, "Export_Inventarios_" + Utilities.formatDate(new Date(), "GMT-5", "yyyyMMdd_HHmm") + ".zip");
+  const base64Zip = Utilities.base64Encode(zipBlob.getBytes());
+  const fileName = zipBlob.getName();
+
+  // Abrimos el diálogo de descarga
+  const htmlTemplate = HtmlService.createTemplateFromFile('DescargarZipUI');
+  htmlTemplate.base64 = base64Zip;
+  htmlTemplate.fileName = fileName;
+  
+  const html = htmlTemplate.evaluate().setWidth(300).setHeight(150);
+  SpreadsheetApp.getUi().showModalDialog(html, "Descarga Lista");
+}

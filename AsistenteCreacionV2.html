@@ -1,0 +1,1794 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crear Inventario · Itsanet</title>
+
+  <!-- FIX FASE 7.7: CSS CRÍTICO INLINE (sin dependencias externas).
+       Garantiza fondo oscuro y texto visible incluso si fonts.googleapis.com
+       está bloqueado por CSP en el iframe sandbox. -->
+  <style>
+    html, body {
+      margin: 0; padding: 0; min-height: 100vh;
+      background: #0b1220; color: #e8ecf3;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 12px;
+    }
+    body { display: block; }
+    #wizard-loader {
+      position: fixed; inset: 0; background: #0b1220; z-index: 99999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #e8ecf3; font-family: system-ui, sans-serif; text-align: center; padding: 20px;
+    }
+    #wizard-loader .spinner {
+      width: 40px; height: 40px; border: 3px solid #283352;
+      border-top-color: #3b82f6; border-radius: 50%;
+      animation: spin 1s linear infinite; margin-bottom: 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #wizard-loader.hidden { display: none; }
+  </style>
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1220; --panel: #131c2e; --panel-2: #1c2740;
+      --border: #283352; --text: #e8ecf3; --muted: #7d8aa8;
+      --accent: #3b82f6; --ok: #22c55e; --warn: #eab308;
+      --danger: #ef4444; --info: #8b5cf6;
+    }
+    * { box-sizing: border-box; }
+    /* FIX FASE 7.4: min-height:100vh en lugar de height:100% para funcionar
+       tanto en showModalDialog como standalone Web App. */
+    html, body { min-height: 100vh; margin: 0; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg);
+           color: var(--text); font-size: 12px; display: flex; flex-direction: column; }
+    button { font-family: inherit; cursor: pointer; }
+    input, select, textarea { font-family: inherit; }
+
+    /* Layout principal */
+    .wiz-header { padding: 12px 16px; border-bottom: 1px solid var(--border);
+                  background: var(--panel); flex-shrink: 0; }
+    .wiz-header h2 { margin: 0; font-size: 14px; font-weight: 600; }
+    .wiz-header .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .wiz-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+    .wiz-footer { padding: 10px 16px; border-top: 1px solid var(--border);
+                  background: var(--panel); flex-shrink: 0;
+                  display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .wiz-footer .status { font-size: 11px; color: var(--muted); flex: 1; }
+    .wiz-footer .status.ok { color: var(--ok); }
+    .wiz-footer .status.warn { color: var(--warn); }
+    .wiz-footer .status.err { color: var(--danger); }
+
+    /* Grid 2 cols */
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+    /* Cards */
+    .card { background: var(--panel); border: 1px solid var(--border);
+            border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+    .card .ttl { font-size: 11px; font-weight: 600; color: var(--text);
+                 margin-bottom: 10px; letter-spacing: 0.4px;
+                 display: flex; align-items: center; gap: 6px; }
+    .card .ttl .step-num { background: var(--accent); color: #fff;
+                           width: 18px; height: 18px; border-radius: 50%;
+                           display: inline-flex; align-items: center; justify-content: center;
+                           font-size: 10px; font-weight: 700; }
+    .card .ttl small { color: var(--muted); font-weight: 400; font-size: 10px; margin-left: 4px; }
+
+    label { display: block; font-size: 10px; color: var(--muted); margin-bottom: 4px;
+            text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
+    .req::after { content: ' *'; color: var(--danger); }
+    .field { margin-bottom: 10px; }
+    input[type="text"], input[type="date"], select, textarea {
+      width: 100%; background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); padding: 7px 10px; border-radius: 5px;
+      font-size: 12px;
+    }
+    input[type="file"] { font-size: 11px; color: var(--muted); }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 48px; font-family: ui-monospace, monospace; }
+
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    /* Radios */
+    .radio-row { display: flex; gap: 6px; }
+    .radio-mini { background: var(--panel-2); border: 1px solid var(--border);
+                  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+                  font-size: 11px; flex: 1; text-align: center; }
+    .radio-mini.selected { border-color: var(--accent); background: rgba(59,130,246,0.15);
+                           color: #93c5fd; font-weight: 600; }
+    .radio-mini input { display: none; }
+
+    .radio-block { background: var(--panel-2); border: 1px solid var(--border);
+                   padding: 9px 11px; border-radius: 5px; cursor: pointer;
+                   margin-bottom: 5px; display: flex; gap: 8px; align-items: center; }
+    .radio-block.selected { border-color: var(--accent); background: rgba(59,130,246,0.08); }
+    .radio-block input { margin: 0; }
+    .radio-block .info { flex: 1; }
+    .radio-block .info .t { font-weight: 500; font-size: 12px; }
+    .radio-block .info .d { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+    /* CSV section */
+    #csv-zone { display: none; }
+    .csv-status { padding: 8px 10px; border-radius: 5px; font-size: 11px;
+                  line-height: 1.5; margin-top: 6px; }
+    .csv-status.ok { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+    .csv-status.warn { background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.3); color: #fde047; }
+    .csv-status.err { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+    .csv-metric { display: inline-block; margin-right: 8px; }
+    .csv-metric b { color: var(--text); }
+
+    /* Tree carpetas */
+    .tree-wrap { background: var(--panel-2); border: 1px solid var(--border);
+                 border-radius: 5px; max-height: 160px; overflow-y: auto; padding: 5px; }
+    .folder-item { padding: 4px 6px; display: flex; align-items: center; gap: 5px;
+                   cursor: pointer; border-radius: 3px; font-size: 11px; }
+    .folder-item:hover { background: var(--panel); }
+    .folder-item.selected { background: rgba(59,130,246,0.15); color: var(--accent); }
+    .arrow { font-size: 8px; color: var(--muted); display: inline-block;
+             width: 9px; transition: transform 0.2s; }
+    .arrow.open { transform: rotate(90deg); }
+    .sub-list { padding-left: 14px; display: none; }
+    .sub-list.show { display: block; }
+    .loader-mini { display: inline-block; width: 8px; height: 8px;
+                   border: 1.5px solid var(--border); border-top-color: var(--accent);
+                   border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Eventos */
+    .evt-list { max-height: 140px; overflow-y: auto; }
+    .evt { background: var(--panel-2); border: 1px solid var(--border);
+           padding: 7px 9px; border-radius: 4px; cursor: pointer;
+           margin-bottom: 4px; display: flex; gap: 8px; align-items: center; font-size: 11px; }
+    .evt:hover { border-color: var(--accent); }
+    .evt.selected { border-color: var(--accent); background: rgba(59,130,246,0.08); }
+    .evt .fecha { background: var(--panel); padding: 3px 6px; border-radius: 3px;
+                  text-align: center; min-width: 44px; font-size: 10px; font-weight: 500; }
+    .evt .info { flex: 1; min-width: 0; }
+    .evt .info .t { font-weight: 500; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .evt .info .meta { font-size: 9px; color: var(--muted); margin-top: 1px; }
+    .evt .pill { font-size: 9px; padding: 2px 6px; border-radius: 8px;
+                 background: rgba(59,130,246,0.15); color: #93c5fd; }
+    .evt-empty { background: var(--panel-2); border: 1px dashed var(--border);
+                 padding: 10px; border-radius: 4px; text-align: center;
+                 color: var(--muted); font-size: 11px; }
+
+    /* FIX FASE 8.23: chips de filtros para eventos del wizard */
+    .evt-chip { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+                font-size: 10px; padding: 4px 9px; border-radius: 12px; cursor: pointer;
+                font-family: inherit; font-weight: 500; transition: all 0.15s; }
+    .evt-chip:hover { color: var(--text); border-color: var(--accent); }
+    .evt-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .evt-badge-ent { background: rgba(34,197,94,0.15); color: #86efac;
+                     border: 1px solid #22c55e; font-size: 9px; padding: 1px 5px;
+                     border-radius: 8px; margin-left: 4px; }
+    .evt-badge-venc { background: rgba(239,68,68,0.15); color: #fca5a5;
+                      border: 1px solid #ef4444; font-size: 9px; padding: 1px 5px;
+                      border-radius: 8px; margin-left: 4px; }
+    .evt-badge-arch { background: rgba(59,130,246,0.15); color: #93c5fd;
+                      border: 1px solid #3b82f6; font-size: 9px; padding: 1px 5px;
+                      border-radius: 8px; margin-left: 4px; }
+
+    /* Form embebido evento */
+    #form-evento { display: none; padding: 10px; margin-top: 8px;
+                   background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.2);
+                   border-radius: 5px; }
+
+    /* Botones footer */
+    .btn { padding: 8px 18px; border-radius: 5px; border: 1px solid var(--border);
+           background: var(--panel-2); color: var(--text); font-size: 12px; font-weight: 500; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+    .btn-ghost { background: transparent; }
+
+    /* Reporte validación */
+    .val-report { background: var(--panel-2); border: 1px solid var(--border);
+                  border-radius: 5px; padding: 8px 10px; font-size: 11px; margin-top: 6px; }
+    .val-report .row { display: flex; justify-content: space-between; padding: 2px 0; }
+    .val-report .row b { color: var(--text); }
+    .val-report .warn-item { color: var(--warn); font-size: 10px; padding: 2px 0; }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</head>
+<body>
+
+  <!-- FIX FASE 7.7: Loader VISIBLE de inmediato sin depender de fuentes ni JS.
+       Si el wizard nunca termina de cargar (o falla), este loader queda visible
+       con mensaje claro, en vez de pantalla blanca silenciosa. -->
+  <div id="wizard-loader">
+    <div class="spinner"></div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px;">📦 Cargando wizard de inventario...</div>
+    <div id="wizard-loader-status" style="font-size:11px;color:#94a3b8;">Inicializando módulo de creación</div>
+    <div id="wizard-loader-error" style="display:none;margin-top:18px;max-width:520px;background:#7f1d1d;color:#fecaca;padding:14px 18px;border-radius:8px;font-size:12px;text-align:left;border-left:4px solid #ef4444;"></div>
+  </div>
+
+  <!-- Banner de error JS (se muestra si el wizard cargó pero algo después falla) -->
+  <div id="wizard-error-banner" style="display:none;background:#7f1d1d;color:#fecaca;padding:12px 16px;font-size:12px;border-bottom:2px solid #ef4444;">
+    <b>⚠ Error JS:</b> <span id="wizard-error-msg"></span>
+    <button onclick="this.parentElement.style.display='none'" style="float:right;background:transparent;border:1px solid #fecaca;color:#fecaca;padding:2px 8px;border-radius:3px;cursor:pointer;font-size:11px;">Cerrar</button>
+  </div>
+  <script>
+    // Capturar errores JS globales y mostrarlos en pantalla (no fallar silenciosamente)
+    window.addEventListener('error', function(e) {
+      var loader = document.getElementById('wizard-loader');
+      var loaderErr = document.getElementById('wizard-loader-error');
+      var loaderStat = document.getElementById('wizard-loader-status');
+      // Si el loader sigue visible, mostrar el error ahí
+      if (loader && !loader.classList.contains('hidden')) {
+        if (loaderStat) loaderStat.style.display = 'none';
+        if (loaderErr) {
+          loaderErr.innerHTML = '<b>⚠ Error al cargar el wizard:</b><br>' +
+            (e.message || 'Error desconocido') +
+            (e.lineno ? '<br><small>línea ' + e.lineno + (e.filename ? ' en ' + e.filename : '') + '</small>' : '');
+          loaderErr.style.display = 'block';
+        }
+        // Detener el spinner para no engañar
+        var sp = loader.querySelector('.spinner');
+        if (sp) sp.style.display = 'none';
+      } else {
+        // Si el loader ya se ocultó, mostrar el banner
+        var b = document.getElementById('wizard-error-banner');
+        var m = document.getElementById('wizard-error-msg');
+        if (b && m) {
+          m.innerText = (e.message || 'Error desconocido') + ' (línea ' + (e.lineno || '?') + ')';
+          b.style.display = 'block';
+        }
+      }
+    });
+
+    // Timeout de seguridad: si después de 30s el loader sigue visible, mostrar mensaje
+    setTimeout(function() {
+      var loader = document.getElementById('wizard-loader');
+      var loaderErr = document.getElementById('wizard-loader-error');
+      var loaderStat = document.getElementById('wizard-loader-status');
+      if (loader && !loader.classList.contains('hidden') && loaderErr && loaderErr.style.display === 'none') {
+        if (loaderStat) loaderStat.style.display = 'none';
+        loaderErr.innerHTML = '<b>⏱ El wizard está tardando demasiado en cargar.</b><br>' +
+          'Posibles causas:<br>' +
+          '• El backend no responde (verifica permisos y deploy)<br>' +
+          '• Tu rol no tiene acceso (necesitas ser Coordinador o Líder de Conteo)<br>' +
+          '• Problema temporal de Apps Script';
+        loaderErr.style.display = 'block';
+        var sp = loader.querySelector('.spinner');
+        if (sp) sp.style.display = 'none';
+      }
+    }, 30000);
+  </script>
+
+  <!-- HEADER -->
+  <div class="wiz-header">
+    <h2>📦 Crear archivo de inventario & vincular cronograma</h2>
+    <div class="sub">Diseño técnico formal · todos los controles a la vista · validación integral antes de procesar</div>
+  </div>
+
+  <!-- BODY (scroll) -->
+  <div class="wiz-body">
+    <div class="grid">
+
+      <!-- COLUMNA IZQUIERDA -->
+      <div>
+
+        <!-- 1. Identificación -->
+        <div class="card">
+          <div class="ttl"><span class="step-num">1</span> Identificación del archivo</div>
+          <div class="field">
+            <label class="req">Cliente</label>
+            <input type="text" id="cliente" placeholder="Ej. BELIA" list="clientes-lista"
+                   oninput="onClienteChange()">
+            <datalist id="clientes-lista"></datalist>
+          </div>
+          <div class="field">
+            <label class="req">Nombre del archivo</label>
+            <input type="text" id="fileName" placeholder="YYMMDD_CLIENTE" oninput="validar()">
+          </div>
+          <div class="field">
+            <label>Fuente de datos</label>
+            <div class="radio-row">
+              <label class="radio-mini selected">
+                <input type="radio" name="fuente" value="BLANK" checked onchange="cambiarFuente()"> En blanco
+              </label>
+              <label class="radio-mini">
+                <input type="radio" name="fuente" value="API" onchange="cambiarFuente()"> API ITSANET
+              </label>
+              <label class="radio-mini">
+                <input type="radio" name="fuente" value="CSV" onchange="cambiarFuente()"> CSV / TXT
+              </label>
+            </div>
+            <!-- FIX FASE 8.8: aviso visible cuando se elige BLANK con cliente conocido -->
+            <div id="fuente-info-blank" style="display:none;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;padding:7px 9px;border-radius:5px;font-size:11px;margin-top:6px;">
+              ℹ El archivo se creará <b>en blanco</b> (sin datos del CSV). Si tienes el CSV del cliente disponible cambia a "CSV / TXT" para llenarlo automáticamente; si no, puedes crear igual y subir datos después manualmente.
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. CSV (condicional) -->
+        <div class="card" id="csv-zone">
+          <div class="ttl"><span class="step-num">2</span> Carga y validación CSV
+            <small id="csv-cache-status"></small>
+          </div>
+
+          <div class="field">
+            <label>Archivo CSV / TXT</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="file" id="csv-upload" accept=".csv,.txt" style="flex:1;">
+              <button type="button" onclick="reseleccionarCSV()" title="Limpiar y reseleccionar archivo"
+                      style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:6px 10px;border-radius:5px;font-size:11px;cursor:pointer;">↻ Reset</button>
+              <button type="button" id="btn-revalidar" onclick="revalidarCSV()" title="Re-validar contra histórico"
+                      style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:6px 10px;border-radius:5px;font-size:11px;cursor:pointer;display:none;">✓ Re-validar</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Filtrar SKUs (opcional)</label>
+            <textarea id="filtroCodigos" rows="2"
+              placeholder="Pega los SKUs separados por línea. Vacío = importa el 100%."></textarea>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none;">
+              <input type="checkbox" id="chkIncluirVariantes" checked style="margin:0;">
+              <span>Incluir <b style="color:var(--text);">variantes con sufijo</b> (ej. <code style="font-family:ui-monospace,monospace;background:#1c2740;padding:1px 4px;border-radius:3px;">_U</code>, <code style="font-family:ui-monospace,monospace;background:#1c2740;padding:1px 4px;border-radius:3px;">_X</code>) — unidades sueltas / presentaciones</span>
+            </label>
+          </div>
+
+          <div id="csv-status-box"></div>
+          <div id="val-report-box"></div>
+        </div>
+
+        <!-- 3. Vinculación cronograma -->
+        <div class="card">
+          <div class="ttl"><span class="step-num">3</span> Vinculación al cronograma
+            <small id="evt-info">— elige cliente primero</small>
+          </div>
+
+          <!-- FIX FASE 8.23: chips de filtro de rango -->
+          <div id="evt-filtros" style="display:none; flex-wrap:wrap; gap:4px; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">
+            <button type="button" class="evt-chip active" data-rango="prox7" onclick="cambioRangoEventos('prox7')">Próx. 7 días</button>
+            <button type="button" class="evt-chip" data-rango="mes" onclick="cambioRangoEventos('mes')">Este mes</button>
+            <button type="button" class="evt-chip" data-rango="atrasados" onclick="cambioRangoEventos('atrasados')">⚠ Atrasados</button>
+            <button type="button" class="evt-chip" data-rango="todos_pendientes" onclick="cambioRangoEventos('todos_pendientes')">Todos pendientes</button>
+            <label class="evt-chip-toggle" style="display:flex; align-items:center; gap:4px; margin-left:auto; font-size:10px; color:var(--muted); cursor:pointer;">
+              <input type="checkbox" id="evt-incl-entregados" onchange="recargarEventosFiltro()"> incluir entregados
+            </label>
+          </div>
+
+          <div id="evt-loader" style="display:none; padding: 10px; text-align: center; color: var(--muted); font-size: 11px;">
+            Buscando eventos…
+          </div>
+
+          <div id="evt-list" class="evt-list" style="display:none;"></div>
+
+          <div id="evt-empty" class="evt-empty" style="display:none;">
+            No hay eventos del cliente para el filtro seleccionado.
+          </div>
+
+          <div id="modo-block" style="margin-top: 8px;">
+            <label class="radio-block" id="modo-asignar-label" style="display:none;">
+              <input type="radio" name="modo" value="asignar" onchange="cambioModo()">
+              <div class="info"><div class="t">Asignar al evento seleccionado</div>
+              <div class="d">Vincula este archivo a la fila marcada arriba</div></div>
+            </label>
+            <label class="radio-block">
+              <input type="radio" name="modo" value="crear" onchange="cambioModo()">
+              <div class="info"><div class="t">Crear evento nuevo y vincular</div>
+              <div class="d">Añade fila al cronograma con este archivo</div></div>
+            </label>
+            <label class="radio-block">
+              <input type="radio" name="modo" value="ninguno" onchange="cambioModo()">
+              <div class="info"><div class="t">Solo crear archivo</div>
+              <div class="d">Sin vínculo al cronograma</div></div>
+            </label>
+          </div>
+
+          <!-- Form embebido para crear evento -->
+          <div id="form-evento">
+            <div class="field">
+              <label class="req">Título</label>
+              <input type="text" id="ev-titulo" oninput="validar()">
+            </div>
+            <div class="row-2">
+              <div class="field">
+                <label class="req">Responsable</label>
+                <select id="ev-resp" onchange="validar()"><option value="">—</option></select>
+              </div>
+              <div class="field">
+                <label>Prioridad</label>
+                <select id="ev-prio">
+                  <option>Alta</option><option selected>Media</option><option>Baja</option>
+                </select>
+              </div>
+            </div>
+            <div class="row-2">
+              <div class="field">
+                <label class="req">Fecha inicio</label>
+                <input type="date" id="ev-fini" onchange="validar()">
+              </div>
+              <div class="field">
+                <label>Fecha entrega</label>
+                <input type="date" id="ev-fent">
+              </div>
+            </div>
+            <div class="row-2">
+              <div class="field">
+                <label>Categoría</label>
+                <select id="ev-cat">
+                  <option>Inventario Programado</option>
+                  <option>Inventario No Programado</option>
+                  <option>Trabajo Slotting</option>
+                  <option>Movimientos</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Frecuencia</label>
+                <select id="ev-frec">
+                  <option>MENSUAL</option><option>SEMANAL</option>
+                  <option>ANUAL</option><option>EMERGENTE</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- COLUMNA DERECHA -->
+      <div>
+
+        <!-- 4. Carpeta destino -->
+        <div class="card">
+          <div class="ttl"><span class="step-num">4</span> Carpeta destino en Drive
+            <small id="folder-info">—</small>
+          </div>
+          <div class="tree-wrap" id="tree">
+            <div style="text-align:center; padding: 10px; color: var(--muted); font-size: 11px;">
+              Cargando…
+            </div>
+          </div>
+          <button class="btn btn-ghost" style="margin-top: 6px; font-size: 10px; padding: 4px 8px;"
+            onclick="crearCarpeta()">+ Nueva subcarpeta</button>
+        </div>
+
+        <!-- 5. Resumen previo -->
+        <div class="card">
+          <div class="ttl"><span class="step-num">5</span> Resumen ejecutivo</div>
+          <div id="resumen" style="font-size: 11px; line-height: 1.7;">
+            <div style="color: var(--muted);">Completa los campos para ver el resumen.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER STICKY -->
+  <div class="wiz-footer">
+    <div class="status" id="status-msg">Listo. Completa los campos requeridos.</div>
+    <button class="btn btn-ghost" onclick="cancelarWizard()" title="Cierra el asistente y vuelve al panel principal">← Volver al Panel</button>
+    <button class="btn btn-primary" id="btn-procesar" disabled onclick="procesar()">
+      ✓ Procesar y crear archivo
+    </button>
+  </div>
+
+  <script>
+    function cancelarWizard() {
+      // Si hay datos sin guardar, confirmar antes de cerrar
+      var hayDatos = (estado.cliente || estado.csvAplicado || estado.folderId);
+      if (hayDatos && !confirm('¿Cerrar el asistente? Los datos ingresados no se guardarán.')) return;
+      _cerrarAsistente();
+    }
+
+    /* FIX FASE 8.2: Cierra el wizard funcionando en cualquier contexto:
+       - showModalDialog del libro Excel → google.script.host.close()
+       - iframe modal del Panel (Web App) → postMessage al parent */
+    function _cerrarAsistente() {
+      try {
+        // Si estamos dentro de un iframe (modal del panel), avisar al padre
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ tipo: 'CERRAR_WIZARD' }, '*');
+        }
+      } catch (e) {}
+      try { google.script.host.close(); } catch (e) {}
+    }
+    let estado = {
+      cliente: '', fileName: '', fuente: 'BLANK',
+      folderId: null, folderName: '',
+      csvData: [], csvAplicado: false, csvValidado: null,
+      modo: null, filaEvento: null, datosEvento: null,
+      eventos: []
+    };
+    let cacheDash = null;
+
+    /* ===== INIT ===== */
+    window.onload = function() {
+      // FIX FASE 7.7: handler de fallo + estado visible en el loader
+      var _stat = function(txt) {
+        var s = document.getElementById('wizard-loader-status');
+        if (s) s.innerText = txt;
+      };
+      var _err = function(msg) {
+        var loaderErr = document.getElementById('wizard-loader-error');
+        var loader = document.getElementById('wizard-loader');
+        if (loaderErr) {
+          loaderErr.innerHTML = '<b>⚠ Error:</b><br>' + msg;
+          loaderErr.style.display = 'block';
+        }
+        if (loader) {
+          var sp = loader.querySelector('.spinner');
+          if (sp) sp.style.display = 'none';
+        }
+        // También en el banner por si el loader ya se fue
+        var b = document.getElementById('wizard-error-banner');
+        var m = document.getElementById('wizard-error-msg');
+        if (b && m) { m.innerText = msg; b.style.display = 'block'; }
+      };
+
+      var pendientes = 2; // dashboard + carpetas
+      var ocultarLoaderSiListo = function() {
+        pendientes--;
+        if (pendientes <= 0) {
+          var loader = document.getElementById('wizard-loader');
+          if (loader) loader.classList.add('hidden');
+        }
+      };
+
+      _stat('Cargando lista de clientes y equipo...');
+      try {
+        google.script.run
+          .withSuccessHandler(function(d) {
+            try {
+              cacheDash = d || {};
+              if (d && d.clientes) {
+                document.getElementById('clientes-lista').innerHTML =
+                  d.clientes.map(function(c){ return '<option value="' + c + '">'; }).join('');
+              }
+              if (d && d.equipo) {
+                var sel = document.getElementById('ev-resp');
+                d.equipo.forEach(function(n){
+                  var o = document.createElement('option'); o.value = n; o.innerText = n;
+                  sel.appendChild(o);
+                });
+              }
+              ocultarLoaderSiListo();
+            } catch (e) { _err('Render dashboard: ' + e.message); }
+          })
+          .withFailureHandler(function(e){ _err('Backend (clientes/equipo): ' + (e.message || e)); })
+          .obtenerEstadoIntegralDashboard();
+      } catch (e) { _err('Init dashboard: ' + e.message); }
+
+      _stat('Cargando estructura de carpetas Drive...');
+      try {
+        google.script.run
+          .withSuccessHandler(function(root) {
+            try {
+              var tree = document.getElementById('tree');
+              if (!tree) { _err('Falta el contenedor #tree en el DOM'); return; }
+              tree.innerHTML = '';
+              if (root && root.id) crearNodo(root.id, root.name, true, tree);
+              else _err('obtenerEstructuraInicial devolvió vacío. Revisa CONFIG.ROOT_FOLDER_IDS en el backend.');
+              ocultarLoaderSiListo();
+            } catch (e) { _err('Render carpetas: ' + e.message); }
+          })
+          .withFailureHandler(function(e){ _err('Backend (carpetas): ' + (e.message || e)); })
+          .obtenerEstructuraInicial();
+      } catch (e) { _err('Init carpetas: ' + e.message); }
+
+      try { validar(); } catch (e) {}
+    };
+
+    /* ===== UTILIDADES ===== */
+    function $(id) { return document.getElementById(id); }
+    function setStatus(msg, cls) {
+      const s = $('status-msg');
+      s.innerText = msg;
+      s.className = 'status' + (cls ? ' ' + cls : '');
+    }
+
+    /* ===== CLIENTE & NOMBRE ===== */
+    function onClienteChange() {
+      generarNombre();
+      const cli = $('cliente').value.trim();
+      if (cli && cli !== estado.cliente) {
+        estado.cliente = cli;
+        cargarEventos();
+      }
+      validar();
+    }
+
+    function generarNombre() {
+      const d = new Date();
+      const yy = String(d.getFullYear()).slice(-2);
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const dd = String(d.getDate()).padStart(2,'0');
+      $('fileName').value = yy + mm + dd + '_' + $('cliente').value.trim().toUpperCase();
+    }
+
+    /* ===== FUENTE ===== */
+    function cambiarFuente() {
+      const f = document.querySelector('input[name="fuente"]:checked').value;
+      estado.fuente = f;
+      document.querySelectorAll('input[name="fuente"]').forEach(r => {
+        r.closest('.radio-mini').classList.toggle('selected', r.checked);
+      });
+      $('csv-zone').style.display = (f === 'CSV') ? 'block' : 'none';
+      // FIX FASE 8.8: aviso visible al elegir EN BLANCO con cliente seleccionado
+      var info = document.getElementById('fuente-info-blank');
+      if (info) {
+        var cliente = ($('cliente').value || '').trim();
+        info.style.display = (f === 'BLANK' && cliente) ? 'block' : 'none';
+      }
+      // Resetear CSV si cambian fuente
+      if (f !== 'CSV') {
+        estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
+        $('csv-status-box').innerHTML = '';
+        $('val-report-box').innerHTML = '';
+      }
+      validar();
+    }
+
+    /* ===== TREE CARPETAS ===== */
+    function crearNodo(id, name, isRoot, parent) {
+      const wrap = document.createElement('div');
+      const item = document.createElement('div');
+      item.className = 'folder-item';
+      item.dataset.id = id;
+      item.innerHTML = '<span class="arrow">▶</span><span>📁</span><span>' + name + '</span>';
+      item.onclick = (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.folder-item.selected').forEach(x => x.classList.remove('selected'));
+        if (id !== 'VIRTUAL_ROOT') {
+          item.classList.add('selected');
+          estado.folderId = id;
+          estado.folderName = name;
+          $('folder-info').innerText = '· ' + name;
+          validar();
+        }
+        const sub = wrap.querySelector('.sub-list');
+        const arr = item.querySelector('.arrow');
+        if (sub.classList.contains('show')) {
+          sub.classList.remove('show'); arr.classList.remove('open');
+        } else {
+          if (sub.children.length === 0) {
+            arr.innerHTML = '<span class="loader-mini"></span>';
+            google.script.run.withSuccessHandler(subs => {
+              arr.innerHTML = '▶';
+              if (subs.length === 0) {
+                sub.innerHTML = '<div style="color:var(--muted);font-size:10px;padding:3px 6px;">(vacío)</div>';
+              } else {
+                subs.forEach(s => crearNodo(s.id, s.name, false, sub));
+              }
+              sub.classList.add('show'); arr.classList.add('open');
+            }).obtenerSubcarpetas(id);
+          } else {
+            sub.classList.add('show'); arr.classList.add('open');
+          }
+        }
+      };
+      wrap.appendChild(item);
+      const sub = document.createElement('div');
+      sub.className = 'sub-list';
+      wrap.appendChild(sub);
+      parent.appendChild(wrap);
+      if (isRoot) item.click();
+    }
+
+    function crearCarpeta() {
+      if (!estado.folderId || estado.folderId === 'VIRTUAL_ROOT') {
+        return setStatus('Selecciona primero una carpeta padre', 'warn');
+      }
+      const name = prompt('Nombre de la nueva subcarpeta en "' + estado.folderName + '":');
+      if (!name) return;
+      setStatus('Creando carpeta…');
+      google.script.run.withSuccessHandler(() => {
+        const sel = document.querySelector('.folder-item[data-id="' + estado.folderId + '"]');
+        if (sel) {
+          const sub = sel.parentElement.querySelector('.sub-list');
+          sub.innerHTML = '';
+          sel.click(); sel.click(); // colapsar y reexpandir
+        }
+        setStatus('Carpeta creada', 'ok');
+      }).crearSubcarpeta(estado.folderId, name);
+    }
+
+    /* ===== CSV — parseo, validación e informe ===== */
+
+    /* FIX FASE 8.27: helper para normalizar SKUs respetando espacios internos.
+       Antes /[\s\uFEFF\xA0]/g eliminaba TODOS los espacios y rompía códigos como
+       "ATENUADOR JXP - 0-B" → "ATENUADORJXP-0-B".
+       Esta versión:
+       - Elimina BOM (\uFEFF) y nbsp (\xA0) — caracteres invisibles que pueden
+         venir del CSV pero no deben formar parte del código
+       - Colapsa múltiples espacios consecutivos a uno solo (anti-typo)
+       - Hace trim() para limpiar los bordes
+       - Convierte a MAYÚSCULAS
+       Resultado: "  ATENUADOR  JXP - 0-B  " → "ATENUADOR JXP - 0-B" (idéntico al sistema)
+    */
+    function limpiarSku(s) {
+      return String(s == null ? '' : s)
+        .replace(/[\uFEFF\xA0]/g, '')   // invisibles fuera
+        .replace(/\s+/g, ' ')           // colapsar espacios múltiples a uno
+        .trim()                         // bordes limpios
+        .toUpperCase();
+    }
+
+    document.getElementById('csv-upload').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        parsearCSV(ev.target.result);
+      };
+      reader.readAsText(file);
+    });
+
+    function parsearCSV(text) {
+      let sep = text.indexOf(';') !== -1 ? ';' : ',';
+      if (text.indexOf('\t') !== -1 && text.indexOf(';') === -1) sep = '\t';
+      const lines = text.split('\n').filter(l => l.trim() !== '');
+      if (lines.length < 2) {
+        $('csv-status-box').innerHTML = '<div class="csv-status err">Archivo vacío o sin formato válido.</div>';
+        return;
+      }
+
+      const hdr = lines[0].split(sep).map(h => h.replace(/['"]/g,'').trim().toUpperCase());
+      const findCol = ops => {
+        for (let o of ops) { let i = hdr.indexOf(o); if (i !== -1) return i; }
+        for (let o of ops) { let i = hdr.findIndex(h => h.includes(o) && !h.includes('DESC')); if (i !== -1) return i; }
+        return -1;
+      };
+      const idx = {
+        cliente: findCol(['CODIGO_CLIENTE','CLIENTE']),
+        producto: findCol(['CODIGO_PRODUCTO','PRODUCTO_ID','PRODUCTO','SKU','CODIGO']),
+        desc: findCol(['DESCRIPCION_PRODUCTO','DESCRIPCION']),
+        serie: findCol(['NRO_SERIE','SERIE']),
+        lote: findCol(['NRO_LOTE','LOTE']),
+        ndes: findCol(['NRO_DESPACHO','DESPACHO']),
+        partida: findCol(['NRO_PARTIDA','PARTIDA']),
+        cat: findCol(['CATEGORIA_LOGICA','CATEGORIA','CAT_LOG']),
+        est: findCol(['ESTADO_MERCADERIA','ESTADO']),
+        pos: findCol(['POSICION','UBICACION']),
+        un: findCol(['UNIDAD_ID','UNIDAD','U_M','U_N','UM']),
+        cant: findCol(['CANTIDAD','STOCK','DEPOT','CANT'])
+      };
+
+      // Validación de encabezados mínimos
+      if (idx.producto === -1 || idx.cant === -1) {
+        $('csv-status-box').innerHTML =
+          '<div class="csv-status err">❌ El CSV no tiene los encabezados mínimos requeridos:<br>' +
+          (idx.producto === -1 ? '· PRODUCTO / SKU / CODIGO_PRODUCTO<br>' : '') +
+          (idx.cant === -1 ? '· CANTIDAD / STOCK<br>' : '') +
+          '</div>';
+        return;
+      }
+
+      let map = new Map();
+      // FIX FASE 8.22: contadores para reportar al usuario
+      let filasConSerie = 0;     // filas que tienen serie → cada una es 1 unidad única
+      let filasSinSerie = 0;     // filas sin serie → pueden agruparse normalmente
+      let seriesDuplicadas = 0;  // serie repetida en el CSV (anomalía)
+      let cantidadAjustada = 0;  // filas con serie cuya cantidad NO era 1 (forzadas a 1)
+      const seriesVistas = new Map(); // detección de series duplicadas
+
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(sep).map(c => c ? c.replace(/['"]/g,'').trim() : '');
+        let m = new Array(17).fill('');
+        m[4] = idx.cliente > -1 ? (row[idx.cliente] || '') : '';
+        let p = idx.producto > -1 ? (row[idx.producto] || '') : '';
+        // FIX FASE 8.27: PRESERVAR espacios internos del SKU.
+        // Antes: replace(/[\s\uFEFF\xA0]/g,'') eliminaba TODOS los espacios,
+        // rompiendo códigos como "ATENUADOR JXP - 0-B" → "ATENUADORJXP-0-B".
+        // Ahora solo se eliminan: BOM (\uFEFF), nbsp (\xA0), y se trim() los bordes.
+        // Los espacios visibles dentro del código se mantienen idénticos al CSV.
+        m[6] = limpiarSku(p);
+        if (!m[6]) continue;
+        m[7] = idx.desc > -1 ? (row[idx.desc] || '') : '';
+        m[8] = idx.serie > -1 ? (row[idx.serie] || '').trim() : '';
+        m[9] = idx.lote > -1 ? (row[idx.lote] || '').trim() : '';
+        m[10] = idx.ndes > -1 ? (row[idx.ndes] || '').trim() : '';
+        m[11] = idx.partida > -1 ? (row[idx.partida] || '').trim() : '';
+        m[12] = idx.cat > -1 ? (row[idx.cat] || '') : '';
+        m[13] = idx.est > -1 ? (row[idx.est] || '') : '';
+        m[14] = idx.pos > -1 ? (row[idx.pos] || '').trim() : '';
+        m[15] = idx.un > -1 ? (row[idx.un] || '') : '';
+        let c = idx.cant > -1 ? (row[idx.cant] || '0') : '0';
+        if (c.includes(',') && !c.includes('.')) c = c.replace(',','.');
+        else c = c.replace(/,/g,'');
+        m[16] = parseFloat(c) || 0;
+
+        // ════════════════════════════════════════════════════════════════
+        // FIX FASE 8.22: REGLA 1 SERIE = 1 UNIDAD
+        // Si la fila TIENE serie, es una unidad ÚNICA y NO debe consolidarse
+        // con otras (aunque compartan SKU/lote/posición). Cada serie es un
+        // ítem físico individual que requiere validación física uno a uno.
+        // Si la fila NO TIENE serie, se aplica la consolidación histórica
+        // (agrupa por SKU+lote+despacho+partida+posición y suma cantidades).
+        // ════════════════════════════════════════════════════════════════
+        const tieneSerie = m[8] && String(m[8]).trim() !== '';
+        let k;
+
+        if (tieneSerie) {
+          // Forzar cantidad = 1 para serie individual
+          if (m[16] !== 1) { cantidadAjustada++; m[16] = 1; }
+          // La llave incluye la SERIE para que cada serie sea única
+          k = `S§${m[6]}|${m[8]}|${m[9]}|${m[14]}`;
+          filasConSerie++;
+
+          if (map.has(k)) {
+            // Si la serie YA está en el mapa, es un duplicado en el CSV (anomalía)
+            seriesDuplicadas++;
+            // No la agregamos de nuevo — mantener la primera ocurrencia
+            continue;
+          }
+          // Marcar como vista
+          seriesVistas.set(m[8].toUpperCase(), { sku: m[6], lote: m[9], pos: m[14] });
+        } else {
+          // Sin serie → consolidación histórica (agrupa y suma)
+          k = `N§${m[6]}|${m[9]}|${m[10]}|${m[11]}|${m[14]}`;
+          filasSinSerie++;
+        }
+
+        if (map.has(k)) {
+          // Solo entra aquí cuando NO tiene serie (las series ya hicieron continue arriba)
+          map.get(k)[16] += m[16];
+        } else {
+          map.set(k, m);
+        }
+      }
+
+      estado.csvData = Array.from(map.values());
+      const tot = estado.csvData.reduce((a,r) => a + r[16], 0);
+      estado.csvAplicado = true;
+      // FIX FASE 8.22: guardar métricas para mostrarlas y permitir validar
+      estado.csvSerieMetrics = {
+        filasConSerie: filasConSerie,
+        filasSinSerie: filasSinSerie,
+        seriesDuplicadas: seriesDuplicadas,
+        cantidadAjustada: cantidadAjustada,
+        totalUnidades: tot
+      };
+
+      // Detectar variantes con sufijo (códigos que contienen "_")
+      const variantesPorRaiz = {};
+      let variantesSufijoCount = 0;
+      estado.csvData.forEach(r => {
+        const sku = String(r[6] || '').toUpperCase();
+        if (sku.indexOf('_') !== -1) {
+          variantesSufijoCount++;
+          const raiz = sku.split('_')[0];
+          if (!variantesPorRaiz[raiz]) variantesPorRaiz[raiz] = [];
+          variantesPorRaiz[raiz].push(sku);
+        }
+      });
+      estado.csvMeta = { variantesSufijoCount: variantesSufijoCount, variantesPorRaiz: variantesPorRaiz };
+
+      let varianteHtml = '';
+      if (variantesSufijoCount > 0) {
+        // Mostrar un ejemplo concreto (raíz con más variantes)
+        const raizEjemplo = Object.keys(variantesPorRaiz)
+          .sort((a, b) => variantesPorRaiz[b].length - variantesPorRaiz[a].length)[0];
+        const ejemplo = raizEjemplo
+          ? raizEjemplo + ' → ' + variantesPorRaiz[raizEjemplo].slice(0, 3).join(', ') +
+            (variantesPorRaiz[raizEjemplo].length > 3 ? ', …' : '')
+          : '';
+        varianteHtml =
+          '<span class="csv-metric" style="border-color:#3b82f6;color:#bfdbfe;background:rgba(59,130,246,0.10);">' +
+            '🏷 <b>' + variantesSufijoCount + '</b> variantes con sufijo' +
+            (ejemplo ? ' <small style="opacity:0.8;display:block;font-family:ui-monospace,monospace;margin-top:2px;">ej: ' + ejemplo + '</small>' : '') +
+          '</span>';
+      }
+
+      // FIX FASE 8.22: bloque de métricas series para informar al usuario
+      const sm = estado.csvSerieMetrics || {};
+      let bloqueSeries = '';
+      if (sm.filasConSerie > 0 || sm.filasSinSerie > 0) {
+        bloqueSeries +=
+          '<span class="csv-metric" style="border-color:#22c55e;color:#86efac;background:rgba(34,197,94,0.10);">' +
+            '🔖 <b>' + sm.filasConSerie + '</b> con serie (únicas, 1u c/u)' +
+          '</span>';
+        if (sm.filasSinSerie > 0) {
+          bloqueSeries +=
+            '<span class="csv-metric" style="border-color:#94a3b8;color:#cbd5e1;background:rgba(148,163,184,0.10);">' +
+              '◯ <b>' + sm.filasSinSerie + '</b> sin serie (consolidadas)' +
+            '</span>';
+        }
+      }
+      // Advertencias graves: cantidades de series ajustadas a 1
+      if (sm.cantidadAjustada > 0) {
+        bloqueSeries +=
+          '<span class="csv-metric" style="border-color:#facc15;color:#fde047;background:rgba(250,204,21,0.10);">' +
+            '⚠ <b>' + sm.cantidadAjustada + '</b> series con cant. ≠ 1 ajustadas a 1' +
+          '</span>';
+      }
+      // Series duplicadas en el CSV (anomalía del archivo origen)
+      if (sm.seriesDuplicadas > 0) {
+        bloqueSeries +=
+          '<span class="csv-metric" style="border-color:#ef4444;color:#fca5a5;background:rgba(239,68,68,0.10);">' +
+            '🚨 <b>' + sm.seriesDuplicadas + '</b> series duplicadas omitidas' +
+            '<small style="display:block;font-size:10px;margin-top:2px;opacity:0.8;">Anomalía en el CSV — revisa origen</small>' +
+          '</span>';
+      }
+
+      $('csv-status-box').innerHTML =
+        '<div class="csv-status ok">' +
+          '<b>✓ CSV cargado</b><br>' +
+          '<span class="csv-metric"><b>' + estado.csvData.length + '</b> filas consolidadas</span>' +
+          '<span class="csv-metric"><b>' + Math.round(tot).toLocaleString() + '</b> unidades totales</span>' +
+          bloqueSeries +
+          varianteHtml +
+        '</div>';
+
+      // Disparar validación backend
+      validarBackend();
+    }
+
+    function validarBackend() {
+      const cli = $('cliente').value.trim();
+      if (!cli) {
+        $('val-report-box').innerHTML =
+          '<div class="csv-status warn">⚠ Indica primero el cliente para validar.</div>';
+        return;
+      }
+      $('val-report-box').innerHTML =
+        '<div class="csv-status">⏳ Validando CSV contra histórico del año…</div>';
+
+      google.script.run
+        .withSuccessHandler(res => {
+          estado.csvValidado = res;
+          pintarReporteValidacion(res);
+          validar();
+          // FIX FASE 8.7: mostrar botón "Re-validar" cuando ya hay validación
+          var btnRe = document.getElementById('btn-revalidar');
+          if (btnRe) btnRe.style.display = 'inline-block';
+        })
+        .withFailureHandler(err => {
+          $('val-report-box').innerHTML =
+            '<div class="csv-status err">❌ ' + err.message +
+            '<br><small style="display:block;margin-top:6px;color:#fcd34d;">Puedes <b>cambiar el cliente</b> y volver a validar, o <b>reseleccionar el archivo</b> usando el botón ↻ Reset.</small></div>';
+          estado.csvValidado = null;
+          validar();
+          // Mostrar también el botón Re-validar
+          var btnRe = document.getElementById('btn-revalidar');
+          if (btnRe) btnRe.style.display = 'inline-block';
+        })
+        .validarCSVAvanzado(estado.csvData, cli);
+    }
+
+    /* FIX FASE 8.7: Reseleccionar archivo CSV (limpia y permite cargar otro) */
+    function reseleccionarCSV() {
+      var inp = document.getElementById('csv-upload');
+      if (inp) inp.value = '';
+      estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
+      $('csv-status-box').innerHTML = '';
+      $('val-report-box').innerHTML = '';
+      var btnRe = document.getElementById('btn-revalidar');
+      if (btnRe) btnRe.style.display = 'none';
+      validar();
+      setStatus('Archivo limpiado. Selecciona un nuevo CSV.', 'info');
+    }
+
+    /* FIX FASE 8.7: Re-validar el CSV cargado (útil si cambiaste el cliente) */
+    function revalidarCSV() {
+      if (!estado.csvData || estado.csvData.length === 0) {
+        setStatus('No hay CSV cargado para validar.', 'err');
+        return;
+      }
+      var cli = $('cliente').value.trim();
+      if (!cli) {
+        setStatus('Indica primero el cliente para re-validar.', 'err');
+        return;
+      }
+      validarBackend();
+    }
+
+    function pintarReporteValidacion(res) {
+      const r = res.reporte;
+      const advClienteHTML = r.filtradasPorCliente > 0
+        ? '<div class="warn-item">⚠ ' + r.filtradasPorCliente + ' filas filtradas por cliente distinto</div>' : '';
+      const advCantHTML = r.cantidadInvalidas > 0
+        ? '<div class="warn-item">⚠ ' + r.cantidadInvalidas + ' filas con cantidad inválida excluidas</div>' : '';
+      const advSkuHTML = r.skuVacio > 0
+        ? '<div class="warn-item">⚠ ' + r.skuVacio + ' filas sin SKU excluidas</div>' : '';
+      const advSerHistHTML = r.seriesDuplicadasHistorico.length > 0
+        ? '<div class="warn-item">⚠ ' + r.seriesDuplicadasHistorico.length +
+          ' series ya presentes en histórico ' + new Date().getFullYear() +
+          ' (se permite continuar)</div>' : '';
+      const advSerCsvHTML = r.seriesDuplicadasEnCSV.length > 0
+        ? '<div class="warn-item">⚠ ' + r.seriesDuplicadasEnCSV.length +
+          ' series duplicadas dentro del mismo CSV</div>' : '';
+
+      const cliMix = r.clientesDetalle.length > 1
+        ? '<div class="warn-item">⚠ El CSV trae ' + r.clientesDetalle.length + ' clientes mezclados: ' +
+          r.clientesDetalle.slice(0,3).map(c => c.cliente + '(' + c.filas + ')').join(', ') +
+          (r.clientesDetalle.length > 3 ? ', …' : '') + '</div>' : '';
+
+      $('val-report-box').innerHTML =
+        '<div class="val-report">' +
+          '<div class="row"><span>Filas leídas:</span><b>' + r.totalLeidas + '</b></div>' +
+          '<div class="row"><span>Filas incluidas:</span><b style="color:var(--ok)">' + r.incluidas + '</b></div>' +
+          '<div class="row"><span>Filas excluidas:</span><b style="color:var(--danger)">' + r.excluidas + '</b></div>' +
+          '<div class="row"><span>SKUs únicos:</span><b>' + r.skusUnicosCount + '</b></div>' +
+          '<div class="row"><span>Suma cantidad:</span><b>' + r.sumaCantidad.toLocaleString() + '</b></div>' +
+          cliMix + advClienteHTML + advCantHTML + advSkuHTML + advSerHistHTML + advSerCsvHTML +
+        '</div>';
+    }
+
+    /* ===== EVENTOS DEL CRONOGRAMA — FIX FASE 8.23: filtros + cache ===== */
+    var evtRangoActual = 'prox7';
+    var evtCachePorClave = {}; // cache: clave "cliente|rango|incluirEntregados" → [eventos]
+
+    function cambioRangoEventos(rango) {
+      evtRangoActual = rango;
+      document.querySelectorAll('.evt-chip[data-rango]').forEach(function(c){
+        c.classList.toggle('active', c.getAttribute('data-rango') === rango);
+      });
+      cargarEventos();
+    }
+
+    function recargarEventosFiltro() {
+      cargarEventos(); // invalidar implícito: la clave de cache incluye el toggle
+    }
+
+    function cargarEventos() {
+      const cli = $('cliente').value.trim();
+      if (!cli) {
+        $('evt-filtros').style.display = 'none';
+        return;
+      }
+      $('evt-filtros').style.display = 'flex';
+
+      var inclEnt = !!($('evt-incl-entregados') && $('evt-incl-entregados').checked);
+      var claveCache = cli.toUpperCase() + '|' + evtRangoActual + '|' + (inclEnt ? '1':'0');
+
+      // FIX 8.23: si tenemos cache válido, pintar instantáneo (sin loader)
+      if (evtCachePorClave[claveCache]) {
+        _pintarEventos(evtCachePorClave[claveCache]);
+        return;
+      }
+
+      $('evt-loader').style.display = 'block';
+      $('evt-list').style.display = 'none';
+      $('evt-empty').style.display = 'none';
+      $('modo-asignar-label').style.display = 'none';
+      $('evt-info').innerText = '— buscando para ' + cli + '…';
+
+      google.script.run.withSuccessHandler(evs => {
+        evs = evs || [];
+        evtCachePorClave[claveCache] = evs;
+        estado.eventos = evs;
+        _pintarEventos(evs);
+      }).withFailureHandler(err => {
+        $('evt-loader').style.display = 'none';
+        $('evt-empty').style.display = 'block';
+        $('evt-info').innerText = '— error: ' + (err.message || err);
+      }).obtenerEventosCronogramaPorCliente(cli, {
+        rango: evtRangoActual,
+        incluirEntregados: inclEnt,
+        incluirConArchivo: false
+      });
+    }
+
+    function _pintarEventos(evs) {
+      $('evt-loader').style.display = 'none';
+      if (evs.length === 0) {
+        $('evt-list').style.display = 'none';
+        $('evt-empty').style.display = 'block';
+        $('evt-info').innerText = '— sin eventos para este filtro';
+        $('modo-asignar-label').style.display = 'none';
+        return;
+      }
+      $('evt-empty').style.display = 'none';
+      $('evt-list').style.display = 'block';
+      $('evt-info').innerText = '— ' + evs.length + ' evento(s)';
+
+      // Render rápido con join (no concat iterativo)
+      var partes = evs.map(function(e){
+        var pillTxt = e.diasRestantes >= 0
+                      ? 'en ' + e.diasRestantes + 'd'
+                      : 'V ' + Math.abs(e.diasRestantes) + 'd';
+        var badges = '';
+        if (e.entregado) badges += '<span class="evt-badge-ent">Entregado</span>';
+        else if (e.diasRestantes < 0) badges += '<span class="evt-badge-venc">Atrasado</span>';
+        if (e.tieneArchivo) badges += '<span class="evt-badge-arch">Con archivo</span>';
+        var durTxt = e.duracion && e.duracion > 1 ? ' · ' + e.duracion + 'd dur.' : '';
+        return '<div class="evt" data-fila="' + e.fila + '" onclick="seleccionarEvento(' + e.fila + ')">' +
+                 '<div class="fecha">' + e.fechaFmt.split('/')[0] + ' ' + mesAbrev(e.fechaFmt) + '</div>' +
+                 '<div class="info">' +
+                   '<div class="t">' + (e.titulo || '(sin título)') + badges + '</div>' +
+                   '<div class="meta">👤 ' + (e.responsable || 'sin responsable') + durTxt + '</div>' +
+                 '</div>' +
+                 '<div class="pill">' + pillTxt + '</div>' +
+               '</div>';
+      });
+      $('evt-list').innerHTML = partes.join('');
+      $('modo-asignar-label').style.display = 'flex';
+    }
+
+    function mesAbrev(fmt) {
+      const m = parseInt(fmt.split('/')[1], 10) - 1;
+      return ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][m] || '';
+    }
+
+    function seleccionarEvento(fila) {
+      document.querySelectorAll('.evt').forEach(x => x.classList.remove('selected'));
+      document.querySelector('.evt[data-fila="' + fila + '"]').classList.add('selected');
+      // Marcar radio "asignar"
+      const radio = document.querySelector('input[name="modo"][value="asignar"]');
+      radio.checked = true;
+      cambioModo();
+      estado.filaEvento = fila;
+      validar();
+    }
+
+    function cambioModo() {
+      const m = document.querySelector('input[name="modo"]:checked');
+      if (!m) return;
+      estado.modo = m.value;
+      if (estado.modo !== 'asignar') estado.filaEvento = null;
+      document.querySelectorAll('input[name="modo"]').forEach(r => {
+        r.closest('.radio-block').classList.toggle('selected', r.checked);
+      });
+      $('form-evento').style.display = (estado.modo === 'crear') ? 'block' : 'none';
+      if (estado.modo === 'crear' && !$('ev-fini').value) {
+        const d = new Date();
+        $('ev-fini').valueAsDate = d;
+        if (!$('ev-titulo').value) {
+          const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                         'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+          $('ev-titulo').value = 'Inventario - ' + estado.cliente.toUpperCase() +
+            ' (' + meses[d.getMonth()] + ' ' + d.getFullYear() + ')';
+        }
+      }
+      validar();
+    }
+
+    /* ===== VALIDACIÓN GLOBAL + RESUMEN ===== */
+    function validar() {
+      const cli = $('cliente').value.trim();
+      const fn = $('fileName').value.trim();
+      const f = document.querySelector('input[name="fuente"]:checked').value;
+
+      let problemas = [];
+      if (!cli) problemas.push('cliente');
+      if (!fn) problemas.push('nombre archivo');
+      if (!estado.folderId || estado.folderId === 'VIRTUAL_ROOT') problemas.push('carpeta');
+      if (f === 'CSV' && !estado.csvAplicado) problemas.push('cargar CSV');
+      if (f === 'CSV' && estado.csvAplicado && !estado.csvValidado) problemas.push('validar CSV');
+
+      if (!estado.modo) problemas.push('elegir vinculación');
+      else if (estado.modo === 'asignar' && !estado.filaEvento) problemas.push('seleccionar evento');
+      else if (estado.modo === 'crear') {
+        if (!$('ev-titulo').value.trim()) problemas.push('título evento');
+        if (!$('ev-resp').value) problemas.push('responsable');
+        if (!$('ev-fini').value) problemas.push('fecha inicio');
+      }
+
+      const ok = problemas.length === 0;
+      $('btn-procesar').disabled = !ok;
+
+      if (ok) {
+        setStatus('✓ Listo para procesar', 'ok');
+        pintarResumen();
+      } else {
+        setStatus('Pendiente: ' + problemas.join(' · '), 'warn');
+        $('resumen').innerHTML = '<div style="color: var(--muted);">Completa los campos para ver el resumen.</div>';
+      }
+    }
+
+    function pintarResumen() {
+      let vinc = '';
+      if (estado.modo === 'asignar') {
+        const ev = estado.eventos.find(e => e.fila === estado.filaEvento);
+        vinc = '<b style="color:var(--accent)">Asignar al evento existente</b><br>' +
+               'Fila #' + estado.filaEvento + ': ' + (ev ? ev.titulo : '—');
+      } else if (estado.modo === 'crear') {
+        vinc = '<b style="color:var(--accent)">Crear evento nuevo</b><br>' +
+               $('ev-titulo').value + '<br>👤 ' + $('ev-resp').value + ' · ' + $('ev-fini').value;
+      } else {
+        vinc = '<span style="color:var(--muted)">Sin vínculo</span>';
+      }
+      const csvInfo = estado.csvValidado
+        ? ' · CSV: ' + estado.csvValidado.reporte.incluidas + ' filas válidas'
+        : '';
+      $('resumen').innerHTML =
+        '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">CLIENTE:</span> <b>' + estado.cliente.toUpperCase() + '</b></div>' +
+        '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">ARCHIVO:</span> ' + estado.fileName + '</div>' +
+        '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">FUENTE:</span> ' + estado.fuente + csvInfo + '</div>' +
+        '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">CARPETA:</span> ' + estado.folderName + '</div>' +
+        '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">' + vinc + '</div>';
+    }
+
+    /* Validación reactiva en form embebido evento */
+    ['ev-titulo','ev-resp','ev-fini'].forEach(id => {
+      document.addEventListener('input', e => {
+        if (e.target.id === id) validar();
+      });
+      document.addEventListener('change', e => {
+        if (e.target.id === id) validar();
+      });
+    });
+
+    /* ===== ENTER para submit (evita uso de mouse) ===== */
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      // No interceptar Enter dentro de textareas
+      if (e.target.tagName === 'TEXTAREA') return;
+      // No interceptar Enter en archivo o si está abierto un picker nativo
+      if (e.target.type === 'file') return;
+      // Solo si el botón está habilitado
+      if (!$('btn-procesar').disabled) {
+        e.preventDefault();
+        procesar();
+      }
+    });
+
+    /* ===== PROCESAR ===== */
+    function procesar() {
+      const btn = $('btn-procesar');
+      btn.disabled = true;
+      setStatus('Creando archivo…');
+
+      // Aplicar filtro SKUs si está
+      let datosEnviar = estado.csvData;
+      let _resumenFiltro = null;
+      if (estado.fuente === 'CSV') {
+        const filtroRaw = $('filtroCodigos').value.trim();
+        if (filtroRaw) {
+          const incluirVariantes = $('chkIncluirVariantes').checked;
+          // Función: raíz = parte antes del primer "_". Ej: 66252841000_U → 66252841000
+          const raizSku = s => String(s).split('_')[0];
+
+          const codigosFiltro = filtroRaw.split(/[\n,\t\r]+/)
+            .map(c => limpiarSku(c))
+            .filter(c => c);
+          const setExacto = new Set(codigosFiltro);
+          const setRaices = new Set(codigosFiltro.map(raizSku));
+
+          let countExacto = 0, countVariante = 0;
+          const skuVistoVar = new Set();
+
+          datosEnviar = estado.csvData.filter(r => {
+            const sku = limpiarSku(r[6] || '');
+            if (!sku) return false;
+
+            // a) Match exacto (incluye casos como filtro="X_U" CSV="X_U")
+            if (setExacto.has(sku)) { countExacto++; return true; }
+
+            if (incluirVariantes) {
+              const raizCsv = raizSku(sku);
+              // b) Filtro tiene la raíz y el SKU del CSV es una variante con sufijo
+              //    Ej: filtro="66252841000" CSV="66252841000_U" → incluir
+              if (sku.indexOf('_') !== -1 && setExacto.has(raizCsv)) {
+                countVariante++; skuVistoVar.add(sku); return true;
+              }
+              // c) Filtro tiene una variante (ej "X_U") y el CSV tiene la raíz
+              //    Ej: filtro="66252841000_U" CSV="66252841000" → incluir base
+              if (setRaices.has(raizCsv) && raizCsv !== sku) {
+                // raíz coincide pero no es match exacto: variante adicional o raíz del filtro
+                countVariante++; skuVistoVar.add(sku); return true;
+              }
+              // d) Filtro y CSV comparten la misma raíz aunque sean ambos variantes
+              //    Ej: filtro="X_U" CSV="X_X" → incluir si comparten raíz
+              if (sku.indexOf('_') !== -1 && setRaices.has(raizCsv)) {
+                countVariante++; skuVistoVar.add(sku); return true;
+              }
+            }
+            return false;
+          });
+
+          _resumenFiltro = {
+            pedidos: codigosFiltro.length,
+            exactos: countExacto,
+            variantes: countVariante,
+            total: countExacto + countVariante,
+            modoVariantes: incluirVariantes
+          };
+
+          // FIX FASE 7.3: detectar códigos solicitados pero NO encontrados en CSV
+          const skusEnDatos = new Set(datosEnviar.map(r => {
+            const sku = limpiarSku(r[6] || '');
+            return raizSku(sku);
+          }));
+          const _codigosNoEncontrados = codigosFiltro.filter(c => !skusEnDatos.has(raizSku(c)));
+          window._codigosNoEncontrados = _codigosNoEncontrados;
+
+          if (datosEnviar.length === 0) {
+            const hint = incluirVariantes
+              ? 'Ningún SKU (ni sus variantes con sufijo) coincide con el CSV cargado.'
+              : 'Ningún SKU exacto coincide con el CSV. Activa "Incluir variantes con sufijo" para flexibilizar.';
+            setStatus('❌ ' + hint, 'err');
+            btn.disabled = false;
+            return;
+          }
+
+          // Mostrar resumen del filtro en el status
+          const partes = [];
+          partes.push(countExacto + ' exactos');
+          if (countVariante > 0) partes.push(countVariante + ' variantes con sufijo');
+          if (_codigosNoEncontrados.length > 0) partes.push(_codigosNoEncontrados.length + ' no encontrados');
+          setStatus('Filtro aplicado: ' + partes.join(' · ') + ' = ' + datosEnviar.length + ' filas', 'info');
+        }
+      }
+
+      const datosEvento = estado.modo === 'crear' ? {
+        titulo: $('ev-titulo').value.trim(),
+        cliente: estado.cliente,
+        responsable: $('ev-resp').value,
+        prioridad: $('ev-prio').value,
+        categoria: $('ev-cat').value,
+        frecuencia: $('ev-frec').value,
+        fechaInicio: $('ev-fini').value,
+        fechaEntrega: $('ev-fent').value,
+        observaciones: ''
+      } : null;
+
+      const payload = {
+        clientName: $('cliente').value.trim(),
+        fileName: $('fileName').value.trim(),
+        dataSource: estado.fuente,
+        folderId: estado.folderId,
+        csvData: datosEnviar,
+        codigosNoEncontrados: window._codigosNoEncontrados || [],
+        eventoAsignacion: {
+          modo: estado.modo,
+          filaEvento: estado.filaEvento,
+          datosEvento: datosEvento
+        }
+      };
+
+      google.script.run
+        .withSuccessHandler(res => {
+          mostrarModalPostCreacion(res);
+        })
+        .withFailureHandler(err => {
+          // Detectar el error tipificado "CLIENTE_NO_MATCHEA"
+          const msg = String(err.message || err);
+          if (msg.indexOf('CLIENTE_NO_MATCHEA||') !== -1) {
+            const detalle = msg.split('CLIENTE_NO_MATCHEA||')[1];
+            if (confirm(detalle)) {
+              // Reintento con ignorarFiltroCliente = true
+              setStatus('Reintentando sin filtro de cliente…', 'info');
+              const reintento = Object.assign({}, payload, { ignorarFiltroCliente: true });
+              google.script.run
+                .withSuccessHandler(res => mostrarModalPostCreacion(res))
+                .withFailureHandler(err2 => {
+                  setStatus('❌ ' + err2.message, 'err');
+                  alert('Error: ' + err2.message);
+                  btn.disabled = false;
+                })
+                .procesarCreacionArchivoConValidacion(reintento);
+            } else {
+              setStatus('Cancelado por el usuario.', 'err');
+              btn.disabled = false;
+            }
+            return;
+          }
+          setStatus('❌ ' + err.message, 'err');
+          alert('Error: ' + err.message);
+          btn.disabled = false;
+        })
+        .procesarCreacionArchivoConValidacion(payload);
+    }
+
+    /* ===== Modal post-creación con opciones WMS + QR ===== */
+    function mostrarModalPostCreacion(res) {
+      let resumen = '';
+      if (res.vinculo) resumen += '<div style="color:#22c55e;font-size:12px;margin-bottom:6px;">✓ Vinculado al cronograma (' + res.vinculo.tipo + ', fila ' + res.vinculo.fila + ')</div>';
+      if (res.vinculoError) resumen += '<div style="color:#fbbf24;font-size:12px;margin-bottom:6px;">⚠ Vinculación al cronograma falló: ' + res.vinculoError + '</div>';
+      if (res.calendar && res.calendar.ok) resumen += '<div style="color:#22c55e;font-size:12px;margin-bottom:6px;">✓ Evento agregado a Google Calendar</div>';
+      else if (res.calendarError) resumen += '<div style="color:#fbbf24;font-size:12px;margin-bottom:6px;">⚠ Calendar: ' + res.calendarError + '</div>';
+      if (res.validacionCSV) {
+        resumen += '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">CSV: ' + res.validacionCSV.incluidas + ' incluidas · ' + res.validacionCSV.excluidas + ' excluidas</div>';
+      }
+
+      let bloqueWMS = '';
+      if (res.wmsUrl) {
+        // Generar los 3 links: Operario, Auditor, Coordinador
+        const baseUrl = res.wmsUrl.split('?')[0];
+        const params = '?vista=wms&fileId=' + encodeURIComponent(res.fileId || '') +
+                       '&cliente=' + encodeURIComponent(res.cliente || '');
+        const linkOperario    = baseUrl + params + '&modo=op';
+        const linkAuditor     = baseUrl + params + '&modo=auditor';
+        const linkCoordinador = baseUrl + params + '&modo=admin';
+
+        const qrOperario = 'https://quickchart.io/qr?text=' + encodeURIComponent(linkOperario) + '&size=180&margin=2&dark=1e293b&light=ffffff';
+
+        bloqueWMS = `
+          <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:14px;margin:12px 0;">
+            <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#60a5fa;">🚀 Acceso directo al Terminal WMS (3 modos por rol)</div>
+
+            <!-- LINK OPERARIO -->
+            <div style="background:#0f172a;border:1px solid #16a34a;border-radius:6px;padding:10px;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">👷 OPERARIO</span>
+                <span style="font-size:11px;color:#94a3b8;">Cuenta físicamente · pide contraseña</span>
+              </div>
+              <input type="text" id="link-op" readonly value="${escapeAttr(linkOperario)}" style="width:100%;background:#0b1220;color:#22c55e;border:1px solid #1e3a2e;padding:5px 7px;border-radius:4px;font-family:ui-monospace,monospace;font-size:10px;margin-bottom:6px;">
+              <div style="display:flex;gap:6px;">
+                <button onclick="copyLink('link-op','b-op')" id="b-op" style="flex:1;background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:5px 8px;border-radius:4px;font-size:10px;cursor:pointer;">📋 Copiar</button>
+                <button onclick="window.open(document.getElementById('link-op').value,'_blank')" style="flex:1;background:#16a34a;color:#fff;border:none;padding:5px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">→ Abrir como Operario</button>
+              </div>
+            </div>
+
+            <!-- LINK AUDITOR -->
+            <div style="background:#0f172a;border:1px solid #3b82f6;border-radius:6px;padding:10px;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span style="background:#3b82f6;color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">🔍 AUDITOR</span>
+                <span style="font-size:11px;color:#94a3b8;">Solo lectura · entra automático sin login</span>
+              </div>
+              <input type="text" id="link-au" readonly value="${escapeAttr(linkAuditor)}" style="width:100%;background:#0b1220;color:#60a5fa;border:1px solid #1e3a5f;padding:5px 7px;border-radius:4px;font-family:ui-monospace,monospace;font-size:10px;margin-bottom:6px;">
+              <div style="display:flex;gap:6px;">
+                <button onclick="copyLink('link-au','b-au')" id="b-au" style="flex:1;background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:5px 8px;border-radius:4px;font-size:10px;cursor:pointer;">📋 Copiar</button>
+                <button onclick="window.open(document.getElementById('link-au').value,'_blank')" style="flex:1;background:#3b82f6;color:#fff;border:none;padding:5px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">→ Abrir como Auditor</button>
+              </div>
+            </div>
+
+            <!-- LINK COORDINADOR (colapsable, menos prominente) -->
+            <details style="background:#0f172a;border:1px solid #475569;border-radius:6px;padding:6px 10px;">
+              <summary style="cursor:pointer;font-size:11px;color:#94a3b8;list-style:none;">
+                <span style="background:#7c3aed;color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">🔑 COORDINADOR</span>
+                <span style="margin-left:6px;">Permisos completos (clic para expandir)</span>
+              </summary>
+              <input type="text" id="link-ad" readonly value="${escapeAttr(linkCoordinador)}" style="width:100%;background:#0b1220;color:#c4b5fd;border:1px solid #4c1d95;padding:5px 7px;border-radius:4px;font-family:ui-monospace,monospace;font-size:10px;margin:8px 0 6px;">
+              <div style="display:flex;gap:6px;">
+                <button onclick="copyLink('link-ad','b-ad')" id="b-ad" style="flex:1;background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:5px 8px;border-radius:4px;font-size:10px;cursor:pointer;">📋 Copiar</button>
+                <button onclick="window.open(document.getElementById('link-ad').value,'_blank')" style="flex:1;background:#7c3aed;color:#fff;border:none;padding:5px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">→ Abrir como Coordinador</button>
+              </div>
+            </details>
+
+            <!-- QR + Componer correo -->
+            <div style="display:flex;gap:14px;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid #334155;">
+              <img src="${qrOperario}" alt="QR Operario" style="width:90px;height:90px;border-radius:6px;background:#fff;padding:3px;flex-shrink:0;">
+              <div style="flex:1;font-size:11px;color:#94a3b8;line-height:1.4;">
+                <div style="color:#22c55e;margin-bottom:6px;"><b>QR del link de Operario</b> (cuenta físicamente)</div>
+                <button onclick="abrirComponerCorreo()" style="background:#16a34a;color:#fff;border:none;padding:7px 14px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;">📧 Componer correo con todos los links</button>
+              </div>
+            </div>
+          </div>`;
+      } else if (res.wmsConfigurado === false) {
+        bloqueWMS = `<div style="background:#451a03;border:1px solid #92400e;border-radius:6px;padding:10px;margin:12px 0;color:#fde68a;font-size:11px;">⚠ URL del Terminal WMS no configurada. Ejecuta <code>setWmsUrl('URL_DEL_WMS')</code> una vez.</div>`;
+      }
+
+      // Códigos solicitados pero NO encontrados en el CSV
+      let bloqueFaltantes = '';
+      if (res.codigosNoEncontrados && res.codigosNoEncontrados.length > 0) {
+        const lista = res.codigosNoEncontrados;
+        bloqueFaltantes = `
+          <div style="background:#451a03;border:1px solid #c2410c;border-radius:8px;padding:12px;margin:12px 0;">
+            <div style="font-weight:600;font-size:12px;color:#fdba74;margin-bottom:6px;">⚠ Códigos solicitados que NO se encontraron en el CSV (${lista.length})</div>
+            <div style="font-size:11px;color:#fed7aa;margin-bottom:6px;">Estos SKUs no quedaron en el archivo de inventario porque no había stock en la base de datos.</div>
+            <textarea readonly id="ta-faltantes" style="width:100%;background:#0f172a;color:#fed7aa;border:1px solid #7c2d12;padding:6px;border-radius:4px;font-family:ui-monospace,monospace;font-size:10px;height:60px;resize:vertical;">${lista.join('\n')}</textarea>
+            <button onclick="copyFaltantes()" id="b-falta" style="margin-top:6px;background:#1e293b;color:#fed7aa;border:1px solid #7c2d12;padding:5px 12px;border-radius:4px;font-size:10px;cursor:pointer;">📋 Copiar lista</button>
+          </div>`;
+      }
+
+      const fileLink = res.fileUrl ? `<a href="${escapeAttr(res.fileUrl)}" target="_blank" style="color:#60a5fa;text-decoration:none;font-size:12px;">📊 Abrir Excel (solo Coordinador/Líder)</a>` : '';
+
+      const modalHtml = `
+        <div id="post-modal-bg" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;">
+          <div style="background:#131c2e;border:1px solid #334155;border-radius:12px;padding:20px;max-width:680px;width:100%;max-height:92vh;overflow-y:auto;font-family:'Inter',sans-serif;color:#e8ecf3;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+              <div>
+                <h3 style="margin:0 0 4px;font-size:16px;font-weight:600;">✓ Archivo creado</h3>
+                <div style="font-size:12px;color:#94a3b8;font-family:ui-monospace,monospace;">${escapeHtml(res.fileName || 'inventario')}</div>
+                <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Cliente: <b>${escapeHtml(res.cliente || '')}</b></div>
+              </div>
+              <button onclick="cerrarPostModal()" style="background:transparent;border:none;color:#94a3b8;font-size:20px;cursor:pointer;padding:0;">×</button>
+            </div>
+            ${resumen}
+            ${bloqueWMS}
+            ${bloqueFaltantes}
+            <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+              ${fileLink}
+              <button onclick="cerrarPostModal()" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Cerrar y volver al panel</button>
+            </div>
+          </div>
+        </div>`;
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+      window._postRes = res;
+    }
+
+    function escapeAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
+    function escapeHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    /* FIX FASE 8.7: Al cerrar el modal post-creación, AVISA al panel padre
+       que debe recargar el dashboard (porque hay archivo nuevo en PANEL DE CONTROL). */
+    function cerrarPostModal() {
+      var m = document.getElementById('post-modal-bg');
+      if (m) m.remove();
+      // Avisar al panel padre que se creó archivo
+      try {
+        if (window.parent !== window) {
+          window.parent.postMessage({ tipo:'inventarioCreado', payload: window._postRes || null }, '*');
+        }
+      } catch(e) {}
+      // Cerrar el wizard (estamos en iframe)
+      try {
+        if (window.parent !== window) {
+          window.parent.postMessage({ tipo:'cerrarWizard' }, '*');
+        } else {
+          // Standalone: redirigir al panel
+          window.location.href = (window.__WEBAPP_URL__ || '');
+        }
+      } catch(e) {}
+    }
+
+    function copyLink(inputId, btnId) {
+      const inp = document.getElementById(inputId);
+      if (!inp) return;
+      try {
+        navigator.clipboard.writeText(inp.value);
+        const btn = document.getElementById(btnId);
+        const orig = btn.innerText; btn.innerText = '✓ Copiado'; btn.style.background = '#16a34a'; btn.style.color = '#fff';
+        setTimeout(() => { btn.innerText = orig; btn.style.background = ''; btn.style.color = ''; }, 1500);
+      } catch (e) { inp.select(); document.execCommand('copy'); }
+    }
+
+    function copyFaltantes() {
+      const ta = document.getElementById('ta-faltantes'); if (!ta) return;
+      try {
+        navigator.clipboard.writeText(ta.value);
+        const b = document.getElementById('b-falta');
+        b.innerText = '✓ Copiado'; b.style.background = '#16a34a'; b.style.color = '#fff';
+        setTimeout(() => { b.innerText = '📋 Copiar lista'; b.style.background = ''; b.style.color = ''; }, 1500);
+      } catch (e) { ta.select(); document.execCommand('copy'); }
+    }
+
+    function abrirWMS() {
+      if (window._postRes && window._postRes.wmsUrl) window.open(window._postRes.wmsUrl, '_blank');
+    }
+
+    function copiarLink() { copyLink('link-op','b-op'); }
+
+    /* ===== Modal componer correo estilo Gmail (autocomplete + chips) ===== */
+    function abrirComponerCorreo() {
+      const r = window._postRes; if (!r) return;
+      // Pedir códigos sin stock estimados (los SKUs con cantidad 0). Pedimos al backend
+      // la plantilla con cliente y datos del archivo.
+      const datos = {
+        fileId: r.fileId, cliente: r.cliente, fileName: r.fileName,
+        fileUrl: r.fileUrl, wmsUrl: r.wmsUrl,
+        totalCodigos: (r.validacionCSV && r.validacionCSV.skusUnicosCount) || null,
+        codigosSinStock: []  // Se podría llenar si tuviéramos detección de stock=0 en CSV
+      };
+      google.script.run.withSuccessHandler(plantilla => {
+        google.script.run.withSuccessHandler(emails => {
+          mostrarModalCorreo(plantilla, emails, datos);
+        }).withFailureHandler(() => mostrarModalCorreo(plantilla, [], datos)).listarEmailsEquipo();
+      }).obtenerPlantillaCorreoInventario(datos);
+    }
+
+    /* Modal de correo estilo Gmail */
+    function mostrarModalCorreo(plantilla, emailsEquipo, datos) {
+      const qrSrc = plantilla.qrUrl || '';
+      // Guardar lista de emails para autocomplete
+      window._equipoEmails = emailsEquipo || [];
+      window._destinatarios = []; // chips seleccionadas
+
+      const html = `
+        <div id="mail-modal-bg" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;">
+          <div style="background:#131c2e;border:1px solid #334155;border-radius:12px;padding:18px;max-width:820px;width:100%;max-height:92vh;overflow-y:auto;font-family:'Inter',sans-serif;color:#e8ecf3;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid #334155;padding-bottom:10px;">
+              <h3 style="margin:0;font-size:15px;">📧 Componer correo de inicio de inventario</h3>
+              <button onclick="document.getElementById('mail-modal-bg').remove()" style="background:transparent;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">×</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 240px;gap:14px;">
+              <div>
+                <!-- PARA: chips + autocomplete tipo Gmail -->
+                <div style="margin-bottom:10px;position:relative;">
+                  <label style="display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;margin-bottom:4px;">Para</label>
+                  <div id="mail-chips" style="background:#1c2740;border:1px solid #334155;border-radius:5px;padding:5px;min-height:36px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+                    <input type="text" id="mail-to-inp" placeholder="Empieza a escribir un nombre o correo…" autocomplete="off"
+                      style="flex:1;min-width:200px;background:transparent;color:#e8ecf3;border:none;outline:none;padding:6px 6px;font-size:13px;">
+                  </div>
+                  <div id="mail-sugerencias" style="position:absolute;top:100%;left:0;right:0;background:#1c2740;border:1px solid #334155;border-radius:5px;max-height:200px;overflow-y:auto;display:none;z-index:10;margin-top:2px;box-shadow:0 6px 20px rgba(0,0,0,0.5);"></div>
+                </div>
+                <!-- ASUNTO -->
+                <div style="margin-bottom:10px;">
+                  <label style="display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;margin-bottom:4px;">Asunto</label>
+                  <input type="text" id="mail-asunto" value="${escapeAttr(plantilla.asunto)}" style="width:100%;background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:8px 10px;border-radius:5px;font-size:12px;">
+                </div>
+                <!-- CUERPO -->
+                <div>
+                  <label style="display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.4px;font-weight:600;margin-bottom:4px;">Mensaje (editable · las URLs se vuelven enlaces · si pones "Códigos sin stock:" arriba, se inserta la tabla)</label>
+                  <textarea id="mail-cuerpo" rows="14" style="width:100%;background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:8px 10px;border-radius:5px;font-size:12px;font-family:inherit;resize:vertical;line-height:1.5;">${escapeHtml(plantilla.cuerpo)}</textarea>
+                </div>
+              </div>
+              <div>
+                <div style="background:#1c2740;border:1px solid #334155;border-radius:8px;padding:14px;text-align:center;">
+                  <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;margin-bottom:8px;">QR · ITSANET IMS</div>
+                  ${qrSrc ? '<img src="'+qrSrc+'" style="width:200px;height:200px;background:#fff;border-radius:6px;padding:6px;">' : '<div style="color:#94a3b8;font-size:11px;">QR no disponible (sin URL WMS configurada)</div>'}
+                  <div style="font-size:10px;color:#64748b;margin-top:8px;">Se adjuntará al correo HTML.</div>
+                </div>
+                <div style="background:#1c2740;border:1px solid #334155;border-radius:8px;padding:10px;margin-top:10px;font-size:11px;color:#94a3b8;">
+                  <div style="font-size:10px;text-transform:uppercase;color:#64748b;margin-bottom:6px;font-weight:600;">Vista del operativo</div>
+                  Cliente: <b style="color:#60a5fa;">${escapeHtml(datos.cliente || '—')}</b><br>
+                  Archivo: <span style="font-family:ui-monospace,monospace;font-size:10px;">${escapeHtml(datos.fileName || '—')}</span><br>
+                  Equipo cargado: <b>${escapeHtml(String(window._equipoEmails.length))}</b> contactos
+                </div>
+                <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;margin-top:10px;font-size:10px;color:#94a3b8;line-height:1.5;">
+                  💡 <b style="color:#60a5fa;">Tip</b><br>
+                  Escribe el nombre o correo en "Para" → autosugiere. Enter o coma confirma. Backspace elimina la última.
+                </div>
+              </div>
+            </div>
+            <div id="mail-status" style="font-size:11px;color:#94a3b8;margin-top:10px;"></div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;border-top:1px solid #334155;padding-top:12px;">
+              <button onclick="document.getElementById('mail-modal-bg').remove()" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Cancelar</button>
+              <button onclick="abrirEnClienteCorreo()" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Abrir en mi Gmail</button>
+              <button onclick="enviarCorreoSistema()" id="mail-send" style="background:#16a34a;color:#fff;border:none;padding:8px 18px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;">📤 Enviar desde el sistema</button>
+            </div>
+          </div>
+        </div>
+        <style>
+          #mail-modal-bg .chip { display:inline-flex;align-items:center;gap:5px;background:rgba(59,130,246,0.18);border:1px solid rgba(59,130,246,0.4);color:#bfdbfe;border-radius:14px;padding:3px 8px;font-size:11px; }
+          #mail-modal-bg .chip.invalid { background:rgba(239,68,68,0.18);border-color:rgba(239,68,68,0.4);color:#fca5a5; }
+          #mail-modal-bg .chip-x { cursor:pointer;font-weight:700;opacity:0.7; }
+          #mail-modal-bg .chip-x:hover { opacity:1; }
+          #mail-modal-bg .sug-item { padding:7px 10px;cursor:pointer;font-size:12px;border-bottom:1px solid #283352; }
+          #mail-modal-bg .sug-item:hover, #mail-modal-bg .sug-item.active { background:rgba(59,130,246,0.15); }
+          #mail-modal-bg .sug-name { font-weight:500;color:#e8ecf3; }
+          #mail-modal-bg .sug-mail { font-size:10px;color:#94a3b8; font-family:ui-monospace,monospace; }
+          #mail-modal-bg .sug-rol { font-size:9px;color:#60a5fa;text-transform:uppercase;letter-spacing:0.4px; }
+          #mail-modal-bg input:focus, #mail-modal-bg textarea:focus { outline:none; border-color:#3b82f6; }
+        </style>`;
+      document.body.insertAdjacentHTML('beforeend', html);
+      // Wire-up del autocomplete
+      _wireAutocompleteCorreos();
+    }
+
+    function _wireAutocompleteCorreos() {
+      const inp = document.getElementById('mail-to-inp');
+      const sug = document.getElementById('mail-sugerencias');
+      let activeIdx = -1;
+      let actuales = [];
+
+      function renderChips() {
+        // Quitar chips antiguos
+        document.querySelectorAll('#mail-chips .chip').forEach(c => c.remove());
+        const inpEl = document.getElementById('mail-to-inp');
+        window._destinatarios.forEach((d, i) => {
+          const chip = document.createElement('span');
+          const valid = d.indexOf('@') !== -1 && d.indexOf('.') > d.indexOf('@');
+          chip.className = 'chip' + (valid ? '' : ' invalid');
+          chip.innerHTML = '<span>' + d + '</span><span class="chip-x" onclick="_quitarDestinatario(' + i + ')">×</span>';
+          document.getElementById('mail-chips').insertBefore(chip, inpEl);
+        });
+      }
+
+      window._quitarDestinatario = function(i) {
+        window._destinatarios.splice(i, 1);
+        renderChips();
+        inp.focus();
+      };
+
+      function agregarDestinatario(valor) {
+        valor = valor.trim();
+        if (!valor) return;
+        if (window._destinatarios.indexOf(valor) !== -1) return; // ya está
+        window._destinatarios.push(valor);
+        renderChips();
+        inp.value = '';
+        sug.style.display = 'none';
+      }
+
+      inp.addEventListener('input', () => {
+        const q = inp.value.trim().toLowerCase();
+        if (!q) { sug.style.display = 'none'; return; }
+        actuales = window._equipoEmails.filter(u => {
+          if (window._destinatarios.indexOf(u.email) !== -1) return false; // ya agregado
+          return (u.nombre + ' ' + u.email + ' ' + (u.rol||'')).toLowerCase().indexOf(q) !== -1;
+        }).slice(0, 8);
+        if (actuales.length === 0) {
+          sug.innerHTML = '<div class="sug-item" style="color:#94a3b8;">' +
+            (q.indexOf('@') !== -1 ? 'Presiona Enter para agregar este correo' : 'Sin coincidencias') +
+            '</div>';
+          sug.style.display = 'block';
+          activeIdx = -1;
+          return;
+        }
+        activeIdx = 0;
+        sug.innerHTML = actuales.map((u, i) =>
+          '<div class="sug-item' + (i === 0 ? ' active' : '') + '" data-i="' + i + '">' +
+          '<div class="sug-name">' + escapeHtml(u.nombre) + ' <span class="sug-rol">' + escapeHtml(u.rol || '') + '</span></div>' +
+          '<div class="sug-mail">' + escapeHtml(u.email) + '</div>' +
+          '</div>').join('');
+        sug.style.display = 'block';
+        // Click handler
+        sug.querySelectorAll('.sug-item').forEach((el, i) => {
+          el.onclick = () => {
+            if (actuales[i]) agregarDestinatario(actuales[i].email);
+            inp.focus();
+          };
+        });
+      });
+
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ',') {
+          e.preventDefault();
+          if (activeIdx >= 0 && actuales[activeIdx]) {
+            agregarDestinatario(actuales[activeIdx].email);
+          } else if (inp.value.trim()) {
+            agregarDestinatario(inp.value.trim());
+          }
+        } else if (e.key === 'Backspace' && !inp.value && window._destinatarios.length > 0) {
+          window._destinatarios.pop();
+          renderChips();
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (actuales.length === 0) return;
+          activeIdx = Math.min(activeIdx + 1, actuales.length - 1);
+          _refreshActiveSug(activeIdx);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          activeIdx = Math.max(activeIdx - 1, 0);
+          _refreshActiveSug(activeIdx);
+        } else if (e.key === 'Escape') {
+          sug.style.display = 'none';
+        }
+      });
+
+      inp.addEventListener('blur', () => {
+        // Cerrar sugerencias con retardo (para permitir click)
+        setTimeout(() => { sug.style.display = 'none'; }, 200);
+        // Si quedó texto en el input al perder foco, agregarlo como destinatario
+        if (inp.value.trim()) {
+          agregarDestinatario(inp.value.trim());
+        }
+      });
+
+      function _refreshActiveSug(idx) {
+        sug.querySelectorAll('.sug-item').forEach((el, i) => {
+          el.classList.toggle('active', i === idx);
+        });
+      }
+    }
+
+    function enviarCorreoSistema() {
+      const dest = window._destinatarios.filter(d => d.indexOf('@') !== -1 && d.indexOf('.') > d.indexOf('@'));
+      if (dest.length === 0) {
+        document.getElementById('mail-status').innerText = '⚠ Indica al menos un correo válido en "Para"';
+        document.getElementById('mail-status').style.color = '#fbbf24';
+        return;
+      }
+      const btn = document.getElementById('mail-send');
+      btn.disabled = true; btn.innerText = 'Enviando…';
+      const r = window._postRes;
+      google.script.run.withSuccessHandler(res => {
+        document.getElementById('mail-status').innerText = '✓ Enviado a ' + res.enviados + ' destinatario(s).';
+        document.getElementById('mail-status').style.color = '#22c55e';
+        setTimeout(() => { document.getElementById('mail-modal-bg').remove(); }, 1200);
+      }).withFailureHandler(err => {
+        document.getElementById('mail-status').innerText = '❌ ' + err.message;
+        document.getElementById('mail-status').style.color = '#f87171';
+        btn.disabled = false; btn.innerText = '📤 Enviar desde el sistema';
+      }).enviarCorreoInventarioIniciado({
+        destinatarios: dest,
+        asunto: document.getElementById('mail-asunto').value,
+        cuerpo: document.getElementById('mail-cuerpo').value,
+        datos: { cliente: r.cliente, fileName: r.fileName, fileUrl: r.fileUrl, wmsUrl: r.wmsUrl, codigosSinStock: [] }
+      });
+    }
+
+    function abrirEnClienteCorreo() {
+      const dest = window._destinatarios.filter(d => d.indexOf('@') !== -1);
+      const subject = encodeURIComponent(document.getElementById('mail-asunto').value);
+      const body = encodeURIComponent(document.getElementById('mail-cuerpo').value);
+      // Usar Gmail directamente en navegador (más útil que mailto:)
+      const gmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1' +
+        '&to=' + encodeURIComponent(dest.join(',')) +
+        '&su=' + subject + '&body=' + body;
+      window.open(gmailUrl, '_blank');
+    }
+
+    /* Detecta si está en modal de Sheet (showModalDialog) o como página propia (modo Web App).
+       Cierra correctamente en cualquier contexto (modal Sheet o iframe Panel). */
+    function _volverAPanelOcerrar() {
+      _cerrarAsistente();
+    }
+  </script>
+</body>
+</html>
