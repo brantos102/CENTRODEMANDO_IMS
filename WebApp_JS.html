@@ -183,22 +183,24 @@ function pintarConsolidacion() {
 function pintarChart() {
   var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   var data = estado.chartAnual;
-  $('chart-anio').innerText = new Date().getFullYear() + ' · inventarios (izq) y unidades en miles (der)';
+  // FIX FASE 8.34: serie "Unidades (miles)" reemplazada por "Trabajos Slotting".
+  // Solo actualiza el subtítulo si la vista activa es el gráfico (no pisa el del calendario).
+  var _ca = $('chart-anio');
+  if (_ca && vistaTendActual === 'chart') _ca.innerText = new Date().getFullYear() + ' · inventarios entregados y trabajos de slotting';
   if (chart) chart.destroy();
   chart = new Chart($('chart-anual').getContext('2d'), {
     type:'line',
     data:{ labels:meses, datasets:[
       { label:'Inventarios entregados', data:data.map(d=>d.invent), borderColor:'#3b82f6',
         backgroundColor:'rgba(59,130,246,0.1)', yAxisID:'y1', tension:0.25, borderWidth:2, pointRadius:3, fill:true },
-      { label:'Unidades (miles)', data:data.map(d=>Math.round(d.unid/1000)), borderColor:'#22c55e',
-        backgroundColor:'rgba(34,197,94,0.05)', yAxisID:'y2', tension:0.25, borderWidth:2, pointRadius:3, borderDash:[4,3], fill:false }
+      { label:'Trabajos Slotting', data:data.map(d=>d.slotting||0), borderColor:'#a855f7',
+        backgroundColor:'rgba(168,85,247,0.08)', yAxisID:'y1', tension:0.25, borderWidth:2, pointRadius:3, borderDash:[4,3], fill:false }
     ]},
     options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
       plugins:{ legend:{labels:{color:'#e8ecf3',font:{size:11},boxWidth:12,usePointStyle:true}},
         tooltip:{backgroundColor:'#131c2e',borderColor:'#283352',borderWidth:1,titleColor:'#e8ecf3',bodyColor:'#e8ecf3',padding:10}},
       scales:{ x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8aa8',font:{size:10}}},
-        y1:{type:'linear',position:'left',grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8aa8',font:{size:10},stepSize:1},title:{display:true,text:'Inventarios',color:'#7d8aa8',font:{size:10}}},
-        y2:{type:'linear',position:'right',grid:{display:false},ticks:{color:'#7d8aa8',font:{size:10}},title:{display:true,text:'Unidades (k)',color:'#7d8aa8',font:{size:10}}}}}
+        y1:{type:'linear',position:'left',beginAtZero:true,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8aa8',font:{size:10},stepSize:1,precision:0},title:{display:true,text:'Eventos (cantidad)',color:'#7d8aa8',font:{size:10}}}}}
   });
   // FIX FASE 8.19: si el calendario estaba activo, re-renderizar con datos frescos
   if (vistaTendActual === 'cal') pintarCalendario();
@@ -209,35 +211,56 @@ function pintarChart() {
    Vista calendario muestra mes a mes los eventos del cronograma con
    colores por estado, sin afectar la vista de tendencia (chart).
    ════════════════════════════════════════════════════════════════════ */
-var vistaTendActual = 'chart';
-var calMesActual = new Date().getMonth(); // 0-11
-var calAnioActual = new Date().getFullYear();
+// FIX FASE 8.34: calendario primero por defecto, vista semanal por defecto,
+// con toggle Semana/Mes, filtro por estado y botón "Hoy".
+var vistaTendActual = 'cal';
+var calVista = 'semana';                 // 'semana' (default) | 'mes'
+var calRef = new Date(); calRef.setHours(0,0,0,0);  // fecha de referencia
+var calEstadoFiltro = 'all';             // all | prog | curso | ent | venc
 // FIX FASE 8.23: cache del último render para evitar repintado innecesario
 var _calCacheKey = '';
 
 function cambiarVistaTendencia(vista) {
   vistaTendActual = vista;
-  // Tabs
   document.querySelectorAll('.vt-tab').forEach(function(t){
     t.classList.toggle('active', t.getAttribute('data-vt') === vista);
   });
-  // Paneles
   document.querySelectorAll('.vt-pane').forEach(function(p){ p.classList.remove('vt-active'); });
   $('vt-' + vista).classList.add('vt-active');
-  // Título y render según vista
   if (vista === 'chart') {
-    $('tend-titulo').innerHTML = '📈 Tendencia anual <small id="chart-anio">' + (new Date().getFullYear() + ' · inventarios (izq) y unidades en miles (der)') + '</small>';
+    $('tend-titulo').innerHTML = '📈 Tendencia anual <small id="chart-anio">' + (new Date().getFullYear() + ' · inventarios entregados y trabajos de slotting') + '</small>';
+    if (chart) { try { chart.resize(); } catch(e){} }   // el canvas estaba oculto
   } else if (vista === 'cal') {
-    $('tend-titulo').innerHTML = '📅 Calendario operativo <small id="chart-anio">' + ' · vista por mes</small>';
+    $('tend-titulo').innerHTML = '📅 Calendario operativo <small id="chart-anio"> · vista por ' + (calVista==='semana'?'semana':'mes') + '</small>';
     pintarCalendario();
   }
 }
 
+function calSetVista(v) {
+  if (calVista === v) return;
+  calVista = v;
+  document.querySelectorAll('.cal-vt').forEach(function(b){
+    b.classList.toggle('active', b.getAttribute('data-cv') === v);
+  });
+  $('tend-titulo').innerHTML = '📅 Calendario operativo <small id="chart-anio"> · vista por ' + (v==='semana'?'semana':'mes') + '</small>';
+  _calCacheKey = ''; pintarCalendario();
+}
+
+function calSetEstado(v) { calEstadoFiltro = v || 'all'; _calCacheKey = ''; pintarCalendario(); }
+function calHoy() { calRef = new Date(); calRef.setHours(0,0,0,0); _calCacheKey = ''; pintarCalendario(); }
+
 function calMover(delta) {
-  calMesActual += delta;
-  if (calMesActual < 0) { calMesActual = 11; calAnioActual--; }
-  if (calMesActual > 11) { calMesActual = 0; calAnioActual++; }
-  pintarCalendario();
+  if (calVista === 'semana') calRef.setDate(calRef.getDate() + delta * 7);
+  else calRef.setMonth(calRef.getMonth() + delta);
+  _calCacheKey = ''; pintarCalendario();
+}
+
+// Lunes como inicio de semana
+function _inicioSemana(fecha) {
+  var d = new Date(fecha); d.setHours(0,0,0,0);
+  var dow = d.getDay();                   // 0=Dom..6=Sab
+  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+  return d;
 }
 
 function pintarCalendario() {
@@ -245,67 +268,84 @@ function pintarCalendario() {
     $('cal-body').innerHTML = '<div class="empty">Sin datos de cronograma.</div>';
     return;
   }
-  // FIX FASE 8.23: cache key — si el mes y la cantidad de eventos no cambiaron,
-  // y el último render fue reciente, no repintar (evita lag en cambio de tab).
-  var cacheKey = calAnioActual + '-' + calMesActual + '-' +
+  var nombresMes = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var mesesAbr = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  var diasSemAbr = ['D','L','M','M','J','V','S'];
+  var hoy = new Date(); hoy.setHours(0,0,0,0);
+
+  // Rango visible (array de Date a medianoche) según vista
+  var dias = [], rangoIni, rangoFin, titulo;
+  if (calVista === 'semana') {
+    rangoIni = _inicioSemana(calRef);
+    for (var i = 0; i < 7; i++) { var dw = new Date(rangoIni); dw.setDate(rangoIni.getDate()+i); dias.push(dw); }
+    rangoFin = new Date(dias[6]); rangoFin.setHours(23,59,59,999);
+    titulo = dias[0].getDate() + ' ' + mesesAbr[dias[0].getMonth()] + ' – ' +
+             dias[6].getDate() + ' ' + mesesAbr[dias[6].getMonth()] + ' ' + dias[6].getFullYear();
+  } else {
+    var y = calRef.getFullYear(), mm = calRef.getMonth();
+    var diasMes = new Date(y, mm+1, 0).getDate();
+    for (var j = 1; j <= diasMes; j++) dias.push(new Date(y, mm, j));
+    rangoIni = new Date(y, mm, 1);
+    rangoFin = new Date(y, mm, diasMes, 23,59,59,999);
+    titulo = nombresMes[mm] + ' ' + y;
+  }
+  $('cal-mes-titulo').innerText = titulo;
+  var colW = (calVista === 'semana') ? '78px' : '22px';
+
+  // FIX FASE 8.23/8.34: cache key incluye vista, rango, filtro y datos.
+  var cacheKey = calVista + '-' + (+rangoIni) + '-' + calEstadoFiltro + '-' +
                  estado.cronograma.length + '-' + (estado._cronoStamp || 0);
   if (cacheKey === _calCacheKey) return;
   _calCacheKey = cacheKey;
 
-  var nombresMes = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  $('cal-mes-titulo').innerText = nombresMes[calMesActual] + ' ' + calAnioActual;
-
-  // Días del mes
-  var ultimoDia = new Date(calAnioActual, calMesActual + 1, 0);
-  var diasMes = ultimoDia.getDate();
-
-  // Filtrar eventos que tocan este mes (por fechaInicio o fechaFin)
-  var hoy = new Date(); hoy.setHours(0,0,0,0);
-  var inicioMes = new Date(calAnioActual, calMesActual, 1);
-  var finMes = new Date(calAnioActual, calMesActual, diasMes, 23,59,59);
-
+  // Filtrar eventos por rango visible + estado
   var eventos = estado.cronograma.filter(function(d){
     if (!d.fechaInicio) return false;
-    var ini = new Date(d.fechaInicio);
-    var fin = d.fechaFin ? new Date(d.fechaFin) : ini;
-    return !(fin < inicioMes || ini > finMes);
+    var ini = new Date(d.fechaInicio); ini.setHours(0,0,0,0);
+    var fin = d.fechaFin ? new Date(d.fechaFin) : new Date(d.fechaInicio); fin.setHours(0,0,0,0);
+    if (fin < rangoIni || ini > rangoFin) return false;
+    if (calEstadoFiltro !== 'all') {
+      var est = String(d.estado||'').toLowerCase();
+      var entregado = est.indexOf('entregado')!==-1;
+      var enCurso = est.indexOf('curso')!==-1 || est.indexOf('proceso')!==-1;
+      var vencido = !entregado && fin < hoy;
+      if (calEstadoFiltro==='ent'   && !entregado) return false;
+      if (calEstadoFiltro==='curso' && !enCurso)   return false;
+      if (calEstadoFiltro==='venc'  && !vencido)   return false;
+      if (calEstadoFiltro==='prog'  && (entregado||enCurso||vencido)) return false;
+    }
+    return true;
   });
 
   if (eventos.length === 0) {
-    $('cal-body').innerHTML = '<div class="empty">Sin eventos programados para ' + nombresMes[calMesActual] + '.</div>';
+    $('cal-body').innerHTML = '<div class="empty">Sin eventos para ' + titulo +
+      (calEstadoFiltro!=='all' ? ' (con el filtro de estado activo)' : '') + '.</div>';
     return;
   }
-
   eventos.sort(function(a,b){ return (a.fechaInicio||0) - (b.fechaInicio||0); });
 
-  // FIX FASE 8.23: construir todo el HTML como string (más rápido que innerHTML++)
-  var partes = ['<div class="cal-grid" style="--cal-days:' + diasMes + ';">'];
+  var partes = ['<div class="cal-grid" style="--cal-days:' + dias.length + ';--cal-cw:' + colW + ';">'];
 
-  // Header con días
+  // Header
   partes.push('<div class="cal-grid-head"><div></div>');
-  for (var d = 1; d <= diasMes; d++) {
-    var fechaDia = new Date(calAnioActual, calMesActual, d);
-    var dow = fechaDia.getDay();
-    var esWeekend = (dow === 0 || dow === 6);
-    partes.push('<div class="cal-day-head' + (esWeekend ? ' cal-weekend' : '') + '">' + d + '</div>');
+  for (var h = 0; h < dias.length; h++) {
+    var fd = dias[h], dowh = fd.getDay(), wkh = (dowh===0||dowh===6);
+    var lbl = (calVista==='semana') ? (diasSemAbr[dowh] + ' ' + fd.getDate() + '/' + (fd.getMonth()+1)) : String(fd.getDate());
+    partes.push('<div class="cal-day-head' + (wkh?' cal-weekend':'') + '">' + lbl + '</div>');
   }
   partes.push('</div>');
 
   // Filas: una por evento
   for (var e = 0; e < eventos.length; e++) {
     var ev = eventos[e];
-    var ini = new Date(ev.fechaInicio);
-    var fin = ev.fechaFin ? new Date(ev.fechaFin) : new Date(ev.fechaInicio);
-    var diaIni = (ini.getMonth() === calMesActual && ini.getFullYear() === calAnioActual) ? ini.getDate() : 1;
-    var diaFin = (fin.getMonth() === calMesActual && fin.getFullYear() === calAnioActual) ? fin.getDate() : diasMes;
-    if (diaFin < diaIni) diaFin = diaIni;
-
-    var est = String(ev.estado || '').toLowerCase();
+    var iniE = new Date(ev.fechaInicio); iniE.setHours(0,0,0,0);
+    var finE = ev.fechaFin ? new Date(ev.fechaFin) : new Date(ev.fechaInicio); finE.setHours(0,0,0,0);
+    var este = String(ev.estado || '').toLowerCase();
     var claseEstado;
-    if (est.indexOf('entregado') !== -1) claseEstado = 'cal-bar-ent';
-    else if (est.indexOf('curso') !== -1 || est.indexOf('proceso') !== -1) claseEstado = 'cal-bar-curso';
-    else if (fin < hoy) claseEstado = 'cal-bar-venc';
+    if (este.indexOf('entregado') !== -1) claseEstado = 'cal-bar-ent';
+    else if (este.indexOf('curso') !== -1 || este.indexOf('proceso') !== -1) claseEstado = 'cal-bar-curso';
+    else if (finE < hoy) claseEstado = 'cal-bar-venc';
     else claseEstado = 'cal-bar-prog';
 
     var clienteCorto = (ev.cliente || '—').toString().substring(0, 15);
@@ -315,15 +355,13 @@ function pintarCalendario() {
                   (ev.estado || 'Pendiente') + ' · ' + (ev.responsable || 'Sin responsable');
 
     partes.push('<div class="cal-grid-row" title="' + tooltip.replace(/"/g,'&quot;') + '">');
-    partes.push('<div class="cal-cli">' + clienteCorto + '<small>' + titCorto + '</small></div>');
-    for (var dd = 1; dd <= diasMes; dd++) {
-      var fechaDia2 = new Date(calAnioActual, calMesActual, dd);
-      var dow2 = fechaDia2.getDay();
-      var esWk = (dow2 === 0 || dow2 === 6);
-      var esHoy = fechaDia2.getTime() === hoy.getTime();
-      var dentro = (dd >= diaIni && dd <= diaFin);
+    partes.push('<div class="cal-cli">' + escapeHtml(clienteCorto) + '<small>' + escapeHtml(titCorto) + '</small></div>');
+    for (var c = 0; c < dias.length; c++) {
+      var cd = dias[c], dowc = cd.getDay(), wkc = (dowc===0||dowc===6);
+      var esHoy = cd.getTime() === hoy.getTime();
+      var dentro = (cd >= iniE && cd <= finE);
       var cls = 'cal-cell';
-      if (esWk) cls += ' cal-weekend';
+      if (wkc) cls += ' cal-weekend';
       if (esHoy) cls += ' cal-today';
       if (dentro) cls += ' ' + claseEstado;
       partes.push('<div class="' + cls + '"></div>');
@@ -332,7 +370,6 @@ function pintarCalendario() {
   }
 
   partes.push('</div>');
-  // Una sola asignación al DOM (mucho más rápido que append iterativo)
   $('cal-body').innerHTML = partes.join('');
 }
 
@@ -419,18 +456,86 @@ function filaCron(d) {
 function pintarPan() {
   var datos = estado.panelUltimos;
   if (!datos || !datos.length) { $('pan-body').innerHTML = '<div class="empty">Sin datos.</div>'; return; }
+  var enProcesoN = datos.filter(function(d){ return String(d.avance||'').toLowerCase().indexOf('proceso')!==-1; }).length;
+  var rp = $('pan-resumen'); if (rp) rp.innerText = datos.length + ' recientes · ' + enProcesoN + ' en proceso';
   $('pan-body').innerHTML = datos.map(function(d){
     var av = String(d.avance||'').toLowerCase(), cls='pill-muted', txt=d.avance||'—';
     if (av.indexOf('entregado')!==-1) cls='pill-ok'; else if (av.indexOf('proceso')!==-1) cls='pill-warn';
-    var ef = d.efectividad ? Math.round(d.efectividad*100)+'%' : '—';
-    return '<div class="rw"><div><div style="font-weight:500;">'+escapeHtml(d.cliente)+'</div><div style="color:var(--muted);font-size:10px;">'+escapeHtml(d.link||'')+'</div></div><div>'+fmtNum(d.unidades)+'</div><div>'+ef+'</div><div><span class="pill '+cls+'">'+escapeHtml(txt)+'</span></div></div>';
+    // FIX FASE 8.34: efectividad con color (verde ≥90%, ámbar ≥70%, rojo <70%)
+    var efColor='var(--muted)', ef='—';
+    if (d.efectividad) {
+      var pe = Math.round(d.efectividad*100); ef = pe+'%';
+      efColor = pe>=90 ? 'var(--ok,#22c55e)' : (pe>=70 ? 'var(--warn,#eab308)' : 'var(--danger,#ef4444)');
+    }
+    // FIX FASE 8.34: botón de acceso al archivo (Excel para quien pueda; WMS para todos)
+    var acc = '';
+    if (d.urlArchivo) {
+      if (P.abrirLibro) acc += '<button class="icon-btn" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="Abrir Excel del inventario">📊</button>';
+      var wu = (d.wmsUrl ? d.wmsUrl : window.location.href.split('?')[0]) + '?vista=wms&fileId=' + encodeURIComponent(d.fileId||'') + '&cliente=' + encodeURIComponent(d.cliente||'') + (P.iniciarFin||P.abrirLibro?'&modo=op':'&modo=auditor');
+      acc += '<button class="icon-btn" onclick="window.open(\''+wu+'\',\'_blank\')" title="Abrir Terminal WMS">📦</button>';
+    } else { acc = '<span style="color:var(--muted);font-size:10px;">—</span>'; }
+    var resp = d.responsable ? escapeHtml(d.responsable) : '<i style="color:var(--muted)">—</i>';
+    return '<div class="rw">'+
+      '<div><div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente)+'</div></div>'+
+      '<div style="font-size:11px;color:var(--info);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+resp+'</div>'+
+      '<div>'+fmtNum(d.unidades)+'</div>'+
+      '<div style="color:'+efColor+';font-weight:500;">'+ef+'</div>'+
+      '<div><span class="pill '+cls+'">'+escapeHtml(txt)+'</span></div>'+
+      '<div class="act-grp">'+acc+'</div></div>';
   }).join('');
 }
 
+var _cargaArr = [];
 function pintarCarga() {
-  var arr = Object.entries(estado.cargaResp).sort((a,b)=>b[1]-a[1]);
-  if (!arr.length) { $('carga-resp').innerHTML = '<div class="empty">Sin pendientes.</div>'; return; }
-  $('carga-resp').innerHTML = arr.map(([n,c]) => '<div class="resp-row"><span>'+escapeHtml(n)+'</span><b>'+c+'</b></div>').join('');
+  _cargaArr = Object.entries(estado.cargaResp).sort((a,b)=>b[1]-a[1]);
+  if (!_cargaArr.length) { $('carga-resp').innerHTML = '<div class="empty">Sin pendientes.</div>'; return; }
+  // FIX FASE 8.34: cada operario es clickable → drilldown de sus tareas activas.
+  $('carga-resp').innerHTML = _cargaArr.map(function(pair, i){
+    return '<div class="resp-row" style="cursor:pointer;" title="Ver tareas activas de '+escapeHtml(pair[0])+'" onclick="verCargaOperario('+i+')">'+
+      '<span>'+escapeHtml(pair[0])+'</span><b>'+pair[1]+' ›</b></div>';
+  }).join('');
+}
+
+/* FIX FASE 8.34: drilldown de carga por operario — el coordinador ve las tareas
+   activas (no entregadas) del operario seleccionado, con estado y acceso. */
+function verCargaOperario(i) {
+  var nombre = (_cargaArr[i] || [])[0] || '';
+  if (!nombre) return;
+  var meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  var tareas = (estado.cronograma || []).filter(function(d){
+    return String(d.responsable||'').trim().toUpperCase() === String(nombre).trim().toUpperCase()
+        && String(d.estado||'').toLowerCase().indexOf('entregado') === -1;
+  });
+  tareas.sort(function(a,b){ return (a.fechaInicio||0) - (b.fechaInicio||0); });
+
+  var filas = tareas.map(function(d){
+    var est = String(d.estado||'').toLowerCase();
+    var enProc = est.indexOf('proceso')!==-1 || est.indexOf('curso')!==-1;
+    var pill='pill-muted', ptxt='Programado';
+    if (enProc){ pill='pill-info'; ptxt='En proceso'; }
+    else if (d.diasRestantes!==null && d.diasRestantes<0){ pill='pill-danger'; ptxt='Vencido '+Math.abs(d.diasRestantes)+'d'; }
+    else if (d.diasRestantes===0){ pill='pill-warn'; ptxt='Hoy'; }
+    else if (d.diasRestantes!==null && d.diasRestantes<=7){ pill='pill-info'; ptxt='En '+d.diasRestantes+'d'; }
+    var fStr='—'; if (d.fechaInicio){ var dt=new Date(d.fechaInicio); fStr=String(dt.getDate()).padStart(2,'0')+' '+meses[dt.getMonth()]; }
+    var cat = d.categoria ? '<div style="color:var(--muted);font-size:10px;">'+escapeHtml(d.categoria)+'</div>' : '';
+    var acc='';
+    if (d.urlArchivo){
+      var wu=(d.wmsUrl?d.wmsUrl:window.location.href.split('?')[0])+'?vista=wms&fileId='+encodeURIComponent(d.fileId||'')+'&cliente='+encodeURIComponent(d.cliente||'')+(P.iniciarFin||P.abrirLibro?'&modo=op':'&modo=auditor');
+      if (P.abrirLibro) acc+='<button class="icon-btn" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="Excel">📊</button>';
+      acc+='<button class="icon-btn" onclick="window.open(\''+wu+'\',\'_blank\')" title="WMS">📦</button>';
+    }
+    return '<div class="rw" style="grid-template-columns:54px 1fr 96px 64px;gap:6px;">'+
+      '<div style="color:var(--muted);font-size:11px;">'+fStr+'</div>'+
+      '<div><div style="font-weight:500;">'+escapeHtml(d.cliente||'—')+'</div>'+
+        '<div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo||'')+'</div>'+cat+'</div>'+
+      '<div><span class="pill '+pill+'">'+ptxt+'</span></div>'+
+      '<div class="act-grp">'+(acc||'<span style="color:var(--muted);font-size:10px;">—</span>')+'</div></div>';
+  }).join('');
+
+  var cuerpo = tareas.length
+    ? '<div class="tbl" style="font-size:12px;"><div class="scroll" style="max-height:50vh;">'+filas+'</div></div>'
+    : '<div class="empty">Sin tareas activas para este operario.</div>';
+  modalCustom('👤 '+nombre+' · '+tareas.length+' tarea(s) activa(s)', '', cuerpo, 'Cerrar', cerrarModal);
 }
 
 function setF(el, f) {

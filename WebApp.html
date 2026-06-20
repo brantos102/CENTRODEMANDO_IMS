@@ -88,7 +88,7 @@
     .tbl .rw { display:grid; gap:6px; padding:7px 4px; border-bottom:1px solid rgba(255,255,255,0.04); align-items:center; }
     .tbl .rw:hover { background:rgba(255,255,255,0.02); }
     .tbl-cron .hd, .tbl-cron .rw { grid-template-columns:58px 1fr 110px 80px 130px; }
-    .tbl-pan .hd, .tbl-pan .rw { grid-template-columns:1fr 78px 70px 84px; }
+    .tbl-pan .hd, .tbl-pan .rw { grid-template-columns:1.25fr 88px 58px 50px 78px 46px; }
     .tbl-usr .hd, .tbl-usr .rw { grid-template-columns:1.4fr 1fr 110px 70px 90px; }
     .tbl .scroll { max-height:260px; overflow-y:auto; padding-right:2px; }
     .tbl-pan .scroll { max-height:175px; }
@@ -196,6 +196,13 @@
                display:flex; align-items:center; justify-content:center; }
     .cal-nav:hover { background:var(--accent); border-color:var(--accent); }
     .cal-titulo { font-size:13px; font-weight:600; min-width:140px; text-align:center; }
+    .cal-vt-tabs { display:flex; gap:3px; }
+    .cal-vt { background:transparent; border:1px solid var(--border); color:var(--muted);
+              padding:3px 9px; border-radius:5px; cursor:pointer; font-size:10px; font-weight:500; }
+    .cal-vt:hover { color:var(--text); background:var(--panel-2); }
+    .cal-vt.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .cal-sel { background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+               font-size:10px; padding:3px 6px; border-radius:5px; }
     .cal-leyenda { display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
     .cal-lg { font-size:9px; padding:2px 6px; border-radius:8px; font-weight:500;
               border:1px solid var(--border); }
@@ -206,10 +213,10 @@
 
     .cal-wrap { max-height:320px; overflow-y:auto; overflow-x:auto; }
     .cal-grid { display:grid; gap:2px; min-width:100%; }
-    .cal-grid-head { display:grid; gap:1px; grid-template-columns:130px repeat(var(--cal-days,31),22px);
+    .cal-grid-head { display:grid; gap:1px; grid-template-columns:130px repeat(var(--cal-days,31),var(--cal-cw,22px));
                      position:sticky; top:0; background:var(--panel); z-index:2;
                      padding-bottom:4px; border-bottom:1px solid var(--border); }
-    .cal-grid-row { display:grid; gap:1px; grid-template-columns:130px repeat(var(--cal-days,31),22px);
+    .cal-grid-row { display:grid; gap:1px; grid-template-columns:130px repeat(var(--cal-days,31),var(--cal-cw,22px));
                     align-items:center; padding:2px 0; }
     .cal-grid-row:hover { background:rgba(59,130,246,0.05); }
     .cal-cli { font-size:10px; padding:0 6px; overflow:hidden; text-overflow:ellipsis;
@@ -303,22 +310,30 @@
         <div style="display:flex;flex-direction:column;gap:12px;">
           <div class="card">
             <div class="ttl" style="justify-content:space-between;">
-              <span id="tend-titulo">📈 Tendencia anual <small id="chart-anio">—</small></span>
+              <span id="tend-titulo">📅 Calendario operativo <small id="chart-anio"> · vista por semana</small></span>
               <div class="vt-tabs">
-                <button type="button" class="vt-tab active" data-vt="chart" onclick="cambiarVistaTendencia('chart')">📈 Tendencia</button>
-                <button type="button" class="vt-tab" data-vt="cal" onclick="cambiarVistaTendencia('cal')">📅 Calendario</button>
+                <button type="button" class="vt-tab active" data-vt="cal" onclick="cambiarVistaTendencia('cal')">📅 Calendario</button>
+                <button type="button" class="vt-tab" data-vt="chart" onclick="cambiarVistaTendencia('chart')">📈 Tendencia</button>
               </div>
             </div>
-            <!-- Vista 1: Tendencia (chart) -->
-            <div id="vt-chart" class="vt-pane vt-active">
-              <div id="chart-wrap"><canvas id="chart-anual"></canvas></div>
-            </div>
-            <!-- Vista 2: Calendario tipo Gantt -->
-            <div id="vt-cal" class="vt-pane">
+            <!-- Vista 1: Calendario tipo Gantt (por defecto: semana en curso) -->
+            <div id="vt-cal" class="vt-pane vt-active">
               <div class="cal-toolbar">
                 <button type="button" class="cal-nav" onclick="calMover(-1)">◀</button>
                 <div class="cal-titulo" id="cal-mes-titulo">—</div>
                 <button type="button" class="cal-nav" onclick="calMover(1)">▶</button>
+                <div class="cal-vt-tabs">
+                  <button type="button" class="cal-vt active" data-cv="semana" onclick="calSetVista('semana')">Semana</button>
+                  <button type="button" class="cal-vt" data-cv="mes" onclick="calSetVista('mes')">Mes</button>
+                </div>
+                <button type="button" class="cal-nav" style="width:auto;padding:0 8px;" onclick="calHoy()" title="Ir a hoy">Hoy</button>
+                <select id="cal-estado" class="cal-sel" onchange="calSetEstado(this.value)" title="Filtrar por estado">
+                  <option value="all">Todos</option>
+                  <option value="prog">Programado</option>
+                  <option value="curso">En curso</option>
+                  <option value="ent">Entregado</option>
+                  <option value="venc">Vencido</option>
+                </select>
                 <div class="cal-leyenda">
                   <span class="cal-lg cal-lg-prog">Programado</span>
                   <span class="cal-lg cal-lg-curso">En curso</span>
@@ -327,8 +342,12 @@
                 </div>
               </div>
               <div id="cal-body" class="cal-wrap">
-                <div class="empty">Selecciona la vista para cargar el calendario.</div>
+                <div class="empty">Cargando calendario…</div>
               </div>
+            </div>
+            <!-- Vista 2: Tendencia (chart) -->
+            <div id="vt-chart" class="vt-pane">
+              <div id="chart-wrap"><canvas id="chart-anual"></canvas></div>
             </div>
           </div>
           <div class="card">
@@ -349,9 +368,9 @@
             </div>
           </div>
           <div class="card">
-            <div class="ttl"><span>📊 Panel de Control — últimos inventarios</span></div>
+            <div class="ttl"><span>📊 Actividades actuales <small id="pan-resumen">—</small></span></div>
             <div class="tbl tbl-pan">
-              <div class="hd"><div>Cliente</div><div>Unidades</div><div>Efect.</div><div>Estado</div></div>
+              <div class="hd"><div>Cliente</div><div>Responsable</div><div>Unidades</div><div>Efect.</div><div>Estado</div><div></div></div>
               <div class="scroll" id="pan-body"><div class="empty">Cargando…</div></div>
             </div>
           </div>

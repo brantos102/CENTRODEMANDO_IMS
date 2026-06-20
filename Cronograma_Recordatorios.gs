@@ -874,6 +874,14 @@ function _idDeUrl(url) {
   return m ? m[0] : "";
 }
 
+// FIX FASE 8.34: ¿la categoría contiene 'slotting'? (ignora mayúsculas y tildes)
+function _contieneSlotting(txt) {
+  if (!txt) return false;
+  var s = String(txt).toLowerCase();
+  try { s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); } catch (e) {}
+  return s.indexOf("slotting") !== -1;
+}
+
 function _esManual() {
   try { SpreadsheetApp.getUi(); return true; } catch(e) { return false; }
 }
@@ -1687,6 +1695,10 @@ function obtenerEstadoIntegralDashboard() {
   // -------- Cronograma --------
   var cronograma = [];
   var cargaResp = {};
+  // FIX FASE 8.34: serie "Trabajos Slotting" del gráfico — se cuentan los
+  // eventos del CRONOGRAMA cuya CATEGORIA (col F) contenga 'slotting',
+  // entregados, agrupados por MES DE ENTREGA (col N) del año actual.
+  var chartSlotting = []; for (var ms0 = 0; ms0 < 12; ms0++) chartSlotting.push(0);
 
   // FIX FASE 8.9: Pre-cargar índice PANEL DE CONTROL por cliente (para resolver
   // urlArchivo cuando la columna Q del cronograma está vacía o apunta a archivo
@@ -1759,6 +1771,15 @@ function obtenerEstadoIntegralDashboard() {
       var estado = r[CRON_CFG.CR_COL_ESTADO - 1] || "Pendiente";
       var entregado = String(estado).toLowerCase().indexOf("entregado") !== -1;
       var responsable = r[CRON_CFG.CR_COL_RESP - 1] || "";
+      var categoria = r[CRON_CFG.CR_COL_CATEG - 1] || "";
+
+      // FIX FASE 8.34: serie Slotting — entregados por mes de entrega (col N).
+      if (entregado && _contieneSlotting(categoria)) {
+        var fEntSlot = r[CRON_CFG.CR_COL_FECHA_ENT - 1];
+        if (fEntSlot instanceof Date && fEntSlot.getFullYear() === anioActual) {
+          chartSlotting[fEntSlot.getMonth()]++;
+        }
+      }
 
       var urlArchivoExtraida = _extraerUrlSmartChip(rQ[i][0], r[CRON_CFG.CR_COL_ARCH - 1]);
       var fileIdExtraido = _idDeUrl(urlArchivoExtraida);
@@ -1819,6 +1840,7 @@ function obtenerEstadoIntegralDashboard() {
         fila: CRON_CFG.CR_FILA_INI + i,
         cliente:      r[CRON_CFG.CR_COL_CLIENTE - 1],
         titulo:       r[CRON_CFG.CR_COL_TITULO - 1] || "",
+        categoria:    categoria,          // FIX FASE 8.34
         responsable:  responsable,
         fechaInicio:  ts,
         fechaFin:     fechaFinTs,           // FIX 8.23
@@ -1864,9 +1886,10 @@ function obtenerEstadoIntegralDashboard() {
   var clientesActivosMes = {};
   var pendientesMes = 0, entregadosMes = 0;
 
-  // Para chart anual: por mes (0-11) → {invent: count, unid: suma}
+  // Para chart anual: por mes (0-11) → {invent: count, unid: suma, slotting: count}
+  // FIX FASE 8.34: slotting viene del CRONOGRAMA (calculado arriba); invent/unid del PANEL.
   var chart = [];
-  for (var m = 0; m < 12; m++) chart.push({ mes: m, invent: 0, unid: 0 });
+  for (var m = 0; m < 12; m++) chart.push({ mes: m, invent: 0, unid: 0, slotting: chartSlotting[m] });
 
   if (pan && pan.getLastRow() >= 2) {
     var pdat = pan.getRange(2, 1, pan.getLastRow() - 1, 15).getValues();
@@ -1908,11 +1931,19 @@ function obtenerEstadoIntegralDashboard() {
       var bt = bi instanceof Date ? bi.getTime() : 0;
       return bt - at;
     });
+    // FIX FASE 8.34: wms base + fileId/urlArchivo limpios para el botón de acceso.
+    var wmsBasePanel = _obtenerWmsUrl() || "";
     panelUltimos = orden.slice(0, 8).map(function(r){
+      var idLimpioPan = _idDeUrl(String(r[CRON_CFG.PA_COL_ID - 1] || "").trim()) ||
+                        _idDeUrl(String(r[CRON_CFG.PA_COL_LINK - 1] || "").trim());
       return {
         cliente: r[CRON_CFG.PA_COL_CLIENTE - 1],
         link: r[CRON_CFG.PA_COL_LINK - 1],
         id: r[CRON_CFG.PA_COL_ID - 1],
+        // FIX FASE 8.34: acceso al archivo (Excel + WMS) desde "Actividades actuales"
+        fileId: idLimpioPan,
+        urlArchivo: idLimpioPan ? "https://docs.google.com/spreadsheets/d/" + idLimpioPan + "/edit" : "",
+        wmsUrl: wmsBasePanel,
         fechaInicio: (r[CRON_CFG.PA_COL_FECHA_I - 1] instanceof Date) ?
                      r[CRON_CFG.PA_COL_FECHA_I - 1].getTime() : null,
         avance: r[CRON_CFG.PA_COL_AVANCE - 1],
