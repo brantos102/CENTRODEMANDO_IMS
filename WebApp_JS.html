@@ -7,6 +7,7 @@ var P = U.permisos || {};
 var estado = null;
 var chart = null;
 var filtroActual = 'all';
+var cronPeriodo = 'semana';   // FIX FASE 8.35: período del Cronograma operativo (semana/mes/all)
 
 function $(id){ return document.getElementById(id); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -124,8 +125,7 @@ function pintarDashboard() {
   $('kpi-avance-mes').innerText = Math.round(k.avanceGlobalMes * 100) + '%';
   var totalCronos = estado.cronograma.length;
   $('kpi-cumpl').innerText = Math.round((totalCronos > 0 ? k.entregadosCronos/totalCronos : 0) * 100) + '%';
-  var sinResp = estado.cronograma.filter(d => !d.responsable && String(d.estado).toLowerCase().indexOf('entregado')===-1).length;
-  $('cron-resumen').innerText = estado.cronograma.length + ' fichas · ' + sinResp + ' sin resp.';
+  // FIX FASE 8.35: el resumen del cronograma lo gestiona pintarCron (refleja el filtro/período).
   pintarChart(); pintarCron(); pintarPan(); pintarCarga();
   pintarConsolidacion();
 }
@@ -373,11 +373,37 @@ function pintarCalendario() {
   $('cal-body').innerHTML = partes.join('');
 }
 
+function setCronPeriodo(v) { cronPeriodo = v || 'semana'; pintarCron(); }
+
 function pintarCron() {
   var q = ($('f-cliente').value || '').toLowerCase().trim();
+
+  // FIX FASE 8.35: alcance por período (semana/mes), dinámico como tabla.
+  // 'semana' = semana en curso (lunes-domingo) · 'mes' = mes en curso · 'all' = todo.
+  // Los eventos SIN fecha que no están entregados se muestran siempre (tareas
+  // activas sin programar no deben ocultarse por el filtro de período).
+  var pIni = null, pFin = null;
+  if (cronPeriodo === 'semana') {
+    pIni = _inicioSemana(new Date());
+    pFin = new Date(pIni); pFin.setDate(pIni.getDate() + 6); pFin.setHours(23,59,59,999);
+  } else if (cronPeriodo === 'mes') {
+    var hy = new Date();
+    pIni = new Date(hy.getFullYear(), hy.getMonth(), 1);
+    pFin = new Date(hy.getFullYear(), hy.getMonth()+1, 0, 23,59,59,999);
+  }
+
+  function enPeriodo(d) {
+    if (!pIni) return true;                       // 'all'
+    if (!d.fechaInicio) return String(d.estado).toLowerCase().indexOf('entregado')===-1; // sin fecha y activa
+    var ini = new Date(d.fechaInicio);
+    var fin = d.fechaFin ? new Date(d.fechaFin) : ini;
+    return !(fin < pIni || ini > pFin);
+  }
+
   var filtrados = estado.cronograma.filter(d => {
     var est = String(d.estado).toLowerCase(), entregado = est.indexOf('entregado')!==-1;
     if (q && String(d.cliente).toLowerCase().indexOf(q)===-1 && String(d.titulo).toLowerCase().indexOf(q)===-1) return false;
+    if (!enPeriodo(d)) return false;
     switch (filtroActual) {
       case 'urgent': return !entregado && d.diasRestantes!==null && d.diasRestantes<=1;
       case 'upcoming': return !entregado && d.diasRestantes!==null && d.diasRestantes>0 && d.diasRestantes<=7;
@@ -385,8 +411,12 @@ function pintarCron() {
       case 'sinfile': return !d.urlArchivo && !entregado;
       default: return true;
     }
-  }).slice(0, 80);
-  if (filtrados.length === 0) { $('cron-body').innerHTML = '<div class="empty">Sin elementos.</div>'; return; }
+  }).slice(0, 120);
+
+  var etiqueta = cronPeriodo==='semana' ? 'esta semana' : (cronPeriodo==='mes' ? 'este mes' : 'todos');
+  var sinR = filtrados.filter(function(d){ return !d.responsable && String(d.estado).toLowerCase().indexOf('entregado')===-1; }).length;
+  var rc = $('cron-resumen'); if (rc) rc.innerText = filtrados.length + ' · ' + etiqueta + (sinR ? ' · ' + sinR + ' sin resp.' : '');
+  if (filtrados.length === 0) { $('cron-body').innerHTML = '<div class="empty">Sin elementos para el filtro/período actual.</div>'; return; }
   $('cron-body').innerHTML = filtrados.map(filaCron).join('');
 }
 
@@ -518,22 +548,31 @@ function verCargaOperario(i) {
     else if (d.diasRestantes!==null && d.diasRestantes<=7){ pill='pill-info'; ptxt='En '+d.diasRestantes+'d'; }
     var fStr='—'; if (d.fechaInicio){ var dt=new Date(d.fechaInicio); fStr=String(dt.getDate()).padStart(2,'0')+' '+meses[dt.getMonth()]; }
     var cat = d.categoria ? '<div style="color:var(--muted);font-size:10px;">'+escapeHtml(d.categoria)+'</div>' : '';
+    // FIX FASE 8.35: barra de avance (% del cronograma) por tarea.
+    var pct = Math.max(0, Math.min(100, Math.round((Number(d.pct)||0)*100)));
+    var barColor = pct>=100 ? '#22c55e' : (enProc ? '#3b82f6' : '#7d8aa8');
+    var avCell = '<div style="font-size:10px;color:var(--muted);margin-bottom:2px;">'+pct+'%</div>'+
+      '<div style="height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">'+
+        '<div style="height:100%;width:'+pct+'%;background:'+barColor+';"></div></div>';
     var acc='';
     if (d.urlArchivo){
       var wu=(d.wmsUrl?d.wmsUrl:window.location.href.split('?')[0])+'?vista=wms&fileId='+encodeURIComponent(d.fileId||'')+'&cliente='+encodeURIComponent(d.cliente||'')+(P.iniciarFin||P.abrirLibro?'&modo=op':'&modo=auditor');
       if (P.abrirLibro) acc+='<button class="icon-btn" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="Excel">📊</button>';
       acc+='<button class="icon-btn" onclick="window.open(\''+wu+'\',\'_blank\')" title="WMS">📦</button>';
     }
-    return '<div class="rw" style="grid-template-columns:54px 1fr 96px 64px;gap:6px;">'+
+    return '<div class="rw" style="grid-template-columns:50px 1fr 84px 92px 56px;gap:6px;">'+
       '<div style="color:var(--muted);font-size:11px;">'+fStr+'</div>'+
       '<div><div style="font-weight:500;">'+escapeHtml(d.cliente||'—')+'</div>'+
         '<div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo||'')+'</div>'+cat+'</div>'+
+      '<div>'+avCell+'</div>'+
       '<div><span class="pill '+pill+'">'+ptxt+'</span></div>'+
       '<div class="act-grp">'+(acc||'<span style="color:var(--muted);font-size:10px;">—</span>')+'</div></div>';
   }).join('');
 
+  var hdr = '<div class="rw" style="grid-template-columns:50px 1fr 84px 92px 56px;gap:6px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--border);padding-bottom:4px;">'+
+    '<div>Fecha</div><div>Cliente / Tarea</div><div>Avance</div><div>Estado</div><div></div></div>';
   var cuerpo = tareas.length
-    ? '<div class="tbl" style="font-size:12px;"><div class="scroll" style="max-height:50vh;">'+filas+'</div></div>'
+    ? '<div class="tbl" style="font-size:12px;">'+hdr+'<div class="scroll" style="max-height:50vh;">'+filas+'</div></div>'
     : '<div class="empty">Sin tareas activas para este operario.</div>';
   modalCustom('👤 '+nombre+' · '+tareas.length+' tarea(s) activa(s)', '', cuerpo, 'Cerrar', cerrarModal);
 }

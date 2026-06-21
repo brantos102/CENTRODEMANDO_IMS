@@ -360,6 +360,11 @@
                 <span class="chip" data-f="pending" onclick="setF(this,'pending')">Pendientes</span>
                 <span class="chip" data-f="sinfile" onclick="setF(this,'sinfile')">Sin archivo</span>
               </div>
+              <select id="cron-periodo" class="cal-sel" onchange="setCronPeriodo(this.value)" title="Período mostrado">
+                <option value="semana">Esta semana</option>
+                <option value="mes">Este mes</option>
+                <option value="all">Todos</option>
+              </select>
               <input class="input-mini" id="f-cliente" placeholder="Buscar cliente…" oninput="pintarCron()">
             </div>
             <div class="tbl tbl-cron">
