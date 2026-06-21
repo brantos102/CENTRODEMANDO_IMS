@@ -5910,6 +5910,27 @@ function buscarUbicacionesPorSku(sku, fileId) {
   } catch (e) { return []; }
 }
 
+/* ---------- Catálogo de SKUs para autocompletado del WMS ----------
+   FIX FASE 8.35: reconciliación con el proyecto WMS independiente — esta
+   función existía solo en el Codigo.gs standalone y BlindInventory.html la
+   invoca (cargarAutocompletadoSKU). Se incorpora tal cual (solo lectura). */
+function obtenerCatalogoSKUs(fileId) {
+  try {
+    var ss = getTargetSS(fileId);
+    var sheet = ss.getSheetByName("PLANILLA DE CONTEO FISICO");
+    if (!sheet) return [];
+    var lr = sheet.getLastRow();
+    if (lr < 2) return [];
+    var skus = sheet.getRange(2, 7, lr - 1, 1).getValues(); // columna G
+    var unicos = {};
+    skus.forEach(function(r){
+      var sku = String(r[0]).trim().toUpperCase();
+      if (sku) unicos[sku] = true;
+    });
+    return Object.keys(unicos).sort();
+  } catch (e) { return []; }
+}
+
 
 /* ---------- Guardar conteo en una fila ---------- */
 function guardarConteoFila(row, cantidad, observacion, usuarioManual, fileId) {
