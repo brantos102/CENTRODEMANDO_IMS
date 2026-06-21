@@ -1466,6 +1466,10 @@
       }
 
       const fileLink = res.fileUrl ? `<a href="${escapeAttr(res.fileUrl)}" target="_blank" style="color:#60a5fa;text-decoration:none;font-size:12px;">📊 Abrir Excel (solo Coordinador/Líder)</a>` : '';
+      // FIX FASE 8.36: CTA principal "ir directamente a contar" sobre el archivo recién creado.
+      const ctaContar = res.wmsUrl
+        ? `<button onclick="abrirWMS()" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;">▶ Ir a contar ahora (WMS)</button>`
+        : '';
 
       const modalHtml = `
         <div id="post-modal-bg" style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;">
@@ -1481,9 +1485,12 @@
             ${resumen}
             ${bloqueWMS}
             ${bloqueFaltantes}
-            <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div style="border-top:1px solid #334155;padding-top:10px;margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
               ${fileLink}
-              <button onclick="cerrarPostModal()" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Cerrar y volver al panel</button>
+              <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
+                ${ctaContar}
+                <button onclick="cerrarPostModal()" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Cerrar y volver al panel</button>
+              </div>
             </div>
           </div>
         </div>`;
