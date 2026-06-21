@@ -4131,6 +4131,15 @@ function finalizarEventoConOpciones(filaCronograma, opciones) {
   cron.getRange(f, CRON_CFG.CR_COL_FECHA_ENT).setValue(fechaCulm);
   cron.getRange(f, CRON_CFG.CR_COL_PCT).setValue(1);
 
+  // FIX FASE 8.36: alinear fecha de inicio ≤ fecha de entrega.
+  // Si el inicio falta o es posterior a la entrega (inconsistente), se corrige
+  // al valor de la entrega para que el cronograma/calendario queden coherentes.
+  var celIni = cron.getRange(f, CRON_CFG.CR_COL_FECHA);
+  var fIniAct = celIni.getValue();
+  if (!(fIniAct instanceof Date) || fIniAct.getTime() > fechaCulm.getTime()) {
+    celIni.setValue(fechaCulm);
+  }
+
   // Adjuntar archivo (Smart Chip en Q) — solo si Q estaba vacío
   var archivoAdjuntado = false;
   if (opciones && opciones.fileId && opciones.fileUrl) {
@@ -4145,9 +4154,41 @@ function finalizarEventoConOpciones(filaCronograma, opciones) {
     }
   }
 
+  // FIX FASE 8.36: espejo a PANEL DE CONTROL (sincronización inversa cronograma→panel).
+  // Solo se actualiza si hay un match SEGURO por fileId (evita tocar la fila equivocada).
+  // Alinea fecha fin (col E) = fecha de entrega y marca avance = "Entregado".
+  var panelSincronizado = false;
+  try {
+    var fidPanel = (opciones && opciones.fileId) ? String(opciones.fileId).trim() : "";
+    if (!fidPanel) {
+      var richQ = cron.getRange(f, CRON_CFG.CR_COL_ARCH).getRichTextValue();
+      var valQ  = cron.getRange(f, CRON_CFG.CR_COL_ARCH).getValue();
+      fidPanel = _idDeUrl(_extraerUrlSmartChip(richQ, valQ) || "");
+    }
+    if (fidPanel) {
+      var pan = ss.getSheetByName(CRON_CFG.HOJA_PANEL);
+      if (pan && pan.getLastRow() >= 2) {
+        var pd = pan.getRange(2, 1, pan.getLastRow() - 1, 7).getValues();
+        for (var pi = 0; pi < pd.length; pi++) {
+          var idP = _idDeUrl(String(pd[pi][CRON_CFG.PA_COL_ID - 1] || "")) ||
+                    _idDeUrl(String(pd[pi][CRON_CFG.PA_COL_LINK - 1] || ""));
+          if (idP && idP === fidPanel) {
+            var filaP = pi + 2;
+            pan.getRange(filaP, CRON_CFG.PA_COL_FECHA_F).setValue(fechaCulm);
+            if (String(pd[pi][CRON_CFG.PA_COL_AVANCE - 1] || "").toLowerCase().indexOf("entregado") === -1) {
+              pan.getRange(filaP, CRON_CFG.PA_COL_AVANCE).setValue("Entregado");
+            }
+            panelSincronizado = true;
+            break;
+          }
+        }
+      }
+    }
+  } catch (eSync) { Logger.log("FIX 8.36 espejo PANEL: " + eSync.message); }
+
   _registrarActividad(_usuarioActual(), "finalizar", f,
     "Cliente: " + cron.getRange(f, CRON_CFG.CR_COL_CLIENTE).getValue());
-  return { ok: true, fila: f, archivoAdjuntado: archivoAdjuntado };
+  return { ok: true, fila: f, archivoAdjuntado: archivoAdjuntado, panelSincronizado: panelSincronizado };
 }
 
 
