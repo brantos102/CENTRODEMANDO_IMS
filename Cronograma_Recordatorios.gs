@@ -5945,13 +5945,32 @@ function parseAnalysisData(data) {
     if (estado !== "PENDIENTE" && estado !== "") {
       refsCounted[sku] = true; posCounted[pos] = true;
       uContadasTeoricas += qTeo;
+
+      // FIX FASE 8.36: reconciliación con el WMS independiente — el reporte de
+      // discrepancias incluye trazabilidad completa (conteos, ajuste, motivo,
+      // justificación, obs, nueva posición). BlindInventory.html ya consume
+      // estos campos y "CORR. AJUSTADO"; sin esto el análisis salía incompleto.
+      var conteo1 = String(r[21]).trim(), conteo2 = String(r[22]).trim(), conteo3 = String(r[23]).trim();
+      var ajuste  = String(r[24]).trim(), motivo  = String(r[25]).trim(), justif = String(r[26]).trim();
+      var obs     = String(r[27]).trim(), nuevaPos = String(r[28]).trim();
+      var itemData = {
+        sku: sku, desc: desc, pos: pos, qTeo: qTeo, qFis: qFis, dif: qDif, estado: estado,
+        conteo1: conteo1, conteo2: conteo2, conteo3: conteo3, ajuste: ajuste,
+        motivo: motivo, justificacion: justif, obs: obs, nuevaPos: nuevaPos
+      };
+
       if (estado === "CORRECTO") {
         uCorrectas += qFis; refsCorrect[sku] = true; posCorrect[pos] = true;
+        // Correcto pero con ajuste/justificación/obs → al reporte como "CORR. AJUSTADO"
+        if (ajuste !== "" || motivo !== "" || justif !== "" || obs !== "") {
+          itemData.estado = "CORR. AJUSTADO";
+          discrepancias.push(itemData);
+        }
       } else if (estado === "FALTANTE" || estado === "SOBRANTE") {
         refsError[sku] = true; posError[pos] = true;
         if (estado === "SOBRANTE") uCorrectas += qTeo;
         if (estado === "FALTANTE") uCorrectas += qFis;
-        discrepancias.push({ sku: sku, desc: desc, pos: pos, qTeo: qTeo, qFis: qFis, dif: qDif, estado: estado });
+        discrepancias.push(itemData);
       }
     }
   }
