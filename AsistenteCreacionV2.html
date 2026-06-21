@@ -1567,6 +1567,17 @@
       // Guardar lista de emails para autocomplete
       window._equipoEmails = emailsEquipo || [];
       window._destinatarios = []; // chips seleccionadas
+      // FIX FASE 8.36: sumar destinatarios recientes del usuario al autocompletado (estilo Gmail).
+      try {
+        google.script.run.withSuccessHandler(function(recientes){
+          (recientes || []).forEach(function(em){
+            em = String(em || '').trim();
+            if (em && !window._equipoEmails.some(function(u){ return (u.email||'').toLowerCase() === em.toLowerCase(); })) {
+              window._equipoEmails.push({ nombre: '(reciente)', email: em, rol: '' });
+            }
+          });
+        }).obtenerDestinatariosRecientes();
+      } catch(e) {}
 
       const html = `
         <div id="mail-modal-bg" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10001;display:flex;align-items:center;justify-content:center;padding:20px;">

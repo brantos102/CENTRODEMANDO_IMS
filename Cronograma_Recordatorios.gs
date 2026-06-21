@@ -5362,12 +5362,23 @@ function enviarCorreoInventarioIniciado(payload) {
   );
 
   try {
-    MailApp.sendEmail({
-      bcc: payload.destinatarios.join(","),
+    // FIX FASE 8.36: el envío fallaba con bcc y sin 'to'. Ahora enviamos a los
+    // destinatarios en 'to' (estilo correo normal), con el remitente vinculado al
+    // usuario actual (name + replyTo) ya que MailApp envía desde la cuenta dueña.
+    var yo = "", nombreYo = "";
+    try { yo = String(_usuarioActual() || "").trim(); } catch (eu) {}
+    try { var uYo = yo ? _obtenerUsuario(yo) : null; if (uYo && uYo.nombre) nombreYo = uYo.nombre; } catch (eu2) {}
+
+    var opts = {
+      to: payload.destinatarios.join(","),
       subject: payload.asunto,
       htmlBody: html.join(""),
-      name: (payload.remitenteNombre || "Centro de Mando · Itsanet UIO")
-    });
+      name: (payload.remitenteNombre || nombreYo || "Centro de Mando · Itsanet UIO")
+    };
+    if (yo && yo.indexOf("@") !== -1) opts.replyTo = yo;
+
+    MailApp.sendEmail(opts);
+    _guardarDestinatariosRecientes(payload.destinatarios);   // FIX 8.36: recordar recientes
     _registrarActividad(_usuarioActual(), "correo_inicio_inventario", "",
       "Cliente: " + (d.cliente || "") +
       " · Destinatarios: " + payload.destinatarios.length);
@@ -5375,6 +5386,44 @@ function enviarCorreoInventarioIniciado(payload) {
   } catch (e) {
     throw new Error("Falló el envío: " + e.message);
   }
+}
+
+/* ==========================================================================
+   FIX FASE 8.36: destinatarios recientes por usuario (autocompletado estilo Gmail
+   entre compañeros, sin permisos nuevos). Se guardan en ScriptProperties con
+   clave por usuario activo, porque en una Web App "ejecutar como dueño" los
+   UserProperties son del dueño (no del operario que usa la app).
+   ========================================================================== */
+function _mailRecientesKey() {
+  var u = "";
+  try { u = String(Session.getActiveUser().getEmail() || "").toLowerCase(); } catch (e) {}
+  if (!u) { try { u = String(_usuarioActual() || "").toLowerCase(); } catch (e) {} }
+  return "MAIL_RECIENTES_" + (u || "anon");
+}
+
+function obtenerDestinatariosRecientes() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(_mailRecientesKey());
+    var arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function _guardarDestinatariosRecientes(lista) {
+  try {
+    if (!lista || !lista.length) return;
+    var props = PropertiesService.getScriptProperties();
+    var key = _mailRecientesKey();
+    var raw = props.getProperty(key);
+    var prev = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(prev)) prev = [];
+    var set = {}, merged = [];
+    lista.concat(prev).forEach(function (e) {
+      e = String(e || "").trim().toLowerCase();
+      if (e && e.indexOf("@") !== -1 && !set[e]) { set[e] = true; merged.push(e); }
+    });
+    props.setProperty(key, JSON.stringify(merged.slice(0, 30)));
+  } catch (e) {}
 }
 
 
