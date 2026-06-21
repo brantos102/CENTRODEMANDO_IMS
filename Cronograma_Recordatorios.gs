@@ -5480,6 +5480,61 @@ function obtenerDestinatariosRecientes() {
   } catch (e) { return []; }
 }
 
+/* ==========================================================================
+   FIX FASE 8.36: autocompletado de correos con CONTACTOS DE GOOGLE (People API).
+   Estilo Gmail: al escribir, busca en el DIRECTORIO del dominio (colegas Itsanet)
+   y en "otros contactos" (personas a las que se ha escrito). Requiere los scopes
+   directory.readonly y contacts.other.readonly (re-autorización de usuarios).
+   Nota: la Web App corre como el dueño (USER_DEPLOYING), por lo que el directorio
+   devuelto es el del dominio Itsanet (lo más útil para el equipo).
+   ========================================================================== */
+function buscarContactosGoogle(query) {
+  query = String(query || "").trim();
+  if (query.length < 2) return [];
+  var token;
+  try { token = ScriptApp.getOAuthToken(); } catch (e) { return []; }
+  var headers = { Authorization: "Bearer " + token };
+  var seen = {}, out = [];
+  function add(nm, em, tag) {
+    em = String(em || "").trim().toLowerCase();
+    if (!em || em.indexOf("@") === -1 || seen[em]) return;
+    seen[em] = true; out.push({ nombre: nm || em, email: em, rol: tag });
+  }
+  // 1) Directorio del dominio (colegas)
+  try {
+    var u1 = "https://people.googleapis.com/v1/people:searchDirectoryPeople" +
+      "?query=" + encodeURIComponent(query) +
+      "&readMask=names,emailAddresses" +
+      "&sources=DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE&pageSize=12";
+    var r1 = UrlFetchApp.fetch(u1, { headers: headers, muteHttpExceptions: true });
+    if (r1.getResponseCode() === 200) {
+      var d1 = JSON.parse(r1.getContentText());
+      (d1.people || []).forEach(function (p) {
+        var em = (p.emailAddresses && p.emailAddresses[0] && p.emailAddresses[0].value) || "";
+        var nm = (p.names && p.names[0] && p.names[0].displayName) || em;
+        add(nm, em, "directorio");
+      });
+    }
+  } catch (e) {}
+  // 2) Otros contactos (personas a las que se ha escrito)
+  try {
+    var u2 = "https://people.googleapis.com/v1/otherContacts:search" +
+      "?query=" + encodeURIComponent(query) +
+      "&readMask=names,emailAddresses&pageSize=10";
+    var r2 = UrlFetchApp.fetch(u2, { headers: headers, muteHttpExceptions: true });
+    if (r2.getResponseCode() === 200) {
+      var d2 = JSON.parse(r2.getContentText());
+      (d2.results || []).forEach(function (rr) {
+        var p = rr.person || {};
+        var em = (p.emailAddresses && p.emailAddresses[0] && p.emailAddresses[0].value) || "";
+        var nm = (p.names && p.names[0] && p.names[0].displayName) || em;
+        add(nm, em, "contacto");
+      });
+    }
+  } catch (e) {}
+  return out.slice(0, 20);
+}
+
 function _guardarDestinatariosRecientes(lista) {
   try {
     if (!lista || !lista.length) return;

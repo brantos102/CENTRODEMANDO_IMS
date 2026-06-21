@@ -1686,16 +1686,12 @@
         sug.style.display = 'none';
       }
 
-      inp.addEventListener('input', () => {
-        const q = inp.value.trim().toLowerCase();
-        if (!q) { sug.style.display = 'none'; return; }
-        actuales = window._equipoEmails.filter(u => {
-          if (window._destinatarios.indexOf(u.email) !== -1) return false; // ya agregado
-          return (u.nombre + ' ' + u.email + ' ' + (u.rol||'')).toLowerCase().indexOf(q) !== -1;
-        }).slice(0, 8);
+      // FIX FASE 8.36: render reutilizable de sugerencias (equipo/recientes + contactos Google)
+      function _pintarSug(lista) {
+        actuales = (lista || []).slice(0, 12);
         if (actuales.length === 0) {
           sug.innerHTML = '<div class="sug-item" style="color:#94a3b8;">' +
-            (q.indexOf('@') !== -1 ? 'Presiona Enter para agregar este correo' : 'Sin coincidencias') +
+            (inp.value.indexOf('@') !== -1 ? 'Presiona Enter para agregar este correo' : 'Sin coincidencias') +
             '</div>';
           sug.style.display = 'block';
           activeIdx = -1;
@@ -1708,13 +1704,37 @@
           '<div class="sug-mail">' + escapeHtml(u.email) + '</div>' +
           '</div>').join('');
         sug.style.display = 'block';
-        // Click handler
         sug.querySelectorAll('.sug-item').forEach((el, i) => {
-          el.onclick = () => {
-            if (actuales[i]) agregarDestinatario(actuales[i].email);
-            inp.focus();
-          };
+          el.onclick = () => { if (actuales[i]) agregarDestinatario(actuales[i].email); inp.focus(); };
         });
+      }
+
+      let _gContTimer = null;
+      inp.addEventListener('input', () => {
+        const q = inp.value.trim().toLowerCase();
+        if (!q) { sug.style.display = 'none'; return; }
+        // 1) Locales inmediatos (equipo + recientes)
+        const locales = window._equipoEmails.filter(u => {
+          if (window._destinatarios.indexOf(u.email) !== -1) return false;
+          return (u.nombre + ' ' + u.email + ' ' + (u.rol||'')).toLowerCase().indexOf(q) !== -1;
+        });
+        _pintarSug(locales);
+        // 2) Contactos de Google (People API), con debounce y validación por carácter
+        if (_gContTimer) clearTimeout(_gContTimer);
+        if (q.length >= 2) _gContTimer = setTimeout(() => {
+          if (inp.value.trim().toLowerCase() !== q) return; // siguió escribiendo
+          google.script.run.withSuccessHandler(googleC => {
+            if (inp.value.trim().toLowerCase() !== q) return; // resultado obsoleto
+            const combinados = locales.slice();
+            (googleC || []).forEach(g => {
+              const em = String(g.email || '').toLowerCase();
+              if (!em || window._destinatarios.indexOf(em) !== -1) return;
+              if (combinados.some(u => (u.email||'').toLowerCase() === em)) return;
+              combinados.push(g);
+            });
+            _pintarSug(combinados);
+          }).withFailureHandler(() => {}).buscarContactosGoogle(q);
+        }, 280);
       });
 
       inp.addEventListener('keydown', (e) => {
