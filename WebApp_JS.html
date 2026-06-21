@@ -187,6 +187,15 @@ function pintarChart() {
   // Solo actualiza el subtítulo si la vista activa es el gráfico (no pisa el del calendario).
   var _ca = $('chart-anio');
   if (_ca && vistaTendActual === 'chart') _ca.innerText = new Date().getFullYear() + ' · inventarios entregados y trabajos de slotting';
+  // FIX FASE 8.36 (render): si los datos no cambiaron y el gráfico ya existe, no
+  // lo reconstruimos (evita flicker/CPU en el refresco de 60s). El calendario sí
+  // se re-evalúa más abajo.
+  var _hash = JSON.stringify(data);
+  if (chart && _hash === window._chartHash) {
+    if (vistaTendActual === 'cal') pintarCalendario();
+    return;
+  }
+  window._chartHash = _hash;
   if (chart) chart.destroy();
   chart = new Chart($('chart-anual').getContext('2d'), {
     type:'line',
@@ -538,7 +547,18 @@ function verCargaOperario(i) {
   });
   tareas.sort(function(a,b){ return (a.fechaInicio||0) - (b.fechaInicio||0); });
 
-  var filas = tareas.map(function(d){
+  // FIX FASE 8.36: barra de avance reutilizable (cronograma=gris/azul; en vivo=azul claro).
+  function _avHTML(pct, live, texto) {
+    pct = Math.max(0, Math.min(100, Math.round(pct||0)));
+    var color = pct>=100 ? '#22c55e' : (live ? '#60a5fa' : '#7d8aa8');
+    var lblColor = live ? '#93c5fd' : 'var(--muted)';
+    return '<div style="font-size:10px;color:'+lblColor+';margin-bottom:2px;white-space:nowrap;">'+pct+'%'+(texto?' · '+escapeHtml(texto):'')+'</div>'+
+      '<div style="height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">'+
+        '<div style="height:100%;width:'+pct+'%;background:'+color+';"></div></div>';
+  }
+
+  var _tok = Date.now(); _cargaTok = _tok;   // evita actualizar un modal posterior
+  var filas = tareas.map(function(d, ti){
     var est = String(d.estado||'').toLowerCase();
     var enProc = est.indexOf('proceso')!==-1 || est.indexOf('curso')!==-1;
     var pill='pill-muted', ptxt='Programado';
@@ -548,12 +568,8 @@ function verCargaOperario(i) {
     else if (d.diasRestantes!==null && d.diasRestantes<=7){ pill='pill-info'; ptxt='En '+d.diasRestantes+'d'; }
     var fStr='—'; if (d.fechaInicio){ var dt=new Date(d.fechaInicio); fStr=String(dt.getDate()).padStart(2,'0')+' '+meses[dt.getMonth()]; }
     var cat = d.categoria ? '<div style="color:var(--muted);font-size:10px;">'+escapeHtml(d.categoria)+'</div>' : '';
-    // FIX FASE 8.35: barra de avance (% del cronograma) por tarea.
-    var pct = Math.max(0, Math.min(100, Math.round((Number(d.pct)||0)*100)));
-    var barColor = pct>=100 ? '#22c55e' : (enProc ? '#3b82f6' : '#7d8aa8');
-    var avCell = '<div style="font-size:10px;color:var(--muted);margin-bottom:2px;">'+pct+'%</div>'+
-      '<div style="height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">'+
-        '<div style="height:100%;width:'+pct+'%;background:'+barColor+';"></div></div>';
+    // % del cronograma como valor inicial (instantáneo); luego se refresca con el WMS.
+    var avCell = '<div id="cav-'+ti+'">'+ _avHTML((Number(d.pct)||0)*100, false, '') +'</div>';
     var acc='';
     if (d.urlArchivo){
       var wu=(d.wmsUrl?d.wmsUrl:window.location.href.split('?')[0])+'?vista=wms&fileId='+encodeURIComponent(d.fileId||'')+'&cliente='+encodeURIComponent(d.cliente||'')+(P.iniciarFin||P.abrirLibro?'&modo=op':'&modo=auditor');
@@ -575,7 +591,26 @@ function verCargaOperario(i) {
     ? '<div class="tbl" style="font-size:12px;">'+hdr+'<div class="scroll" style="max-height:50vh;">'+filas+'</div></div>'
     : '<div class="empty">Sin tareas activas para este operario.</div>';
   modalCustom('👤 '+nombre+' · '+tareas.length+' tarea(s) activa(s)', '', cuerpo, 'Cerrar', cerrarModal);
+
+  // FIX FASE 8.36: refrescar con el AVANCE EN VIVO del WMS (una sola llamada batch,
+  // sin bloquear: el modal ya se mostró con el % del cronograma).
+  var fids = [];
+  tareas.forEach(function(d){ if (d.fileId) fids.push(d.fileId); });
+  if (fids.length) {
+    google.script.run.withSuccessHandler(function(mapa){
+      if (_cargaTok !== _tok) return;     // se abrió otro drilldown; descartar
+      mapa = mapa || {};
+      tareas.forEach(function(d, ti){
+        if (!d.fileId) return;
+        var info = mapa[d.fileId];
+        if (!info || info.avance == null) return;
+        var cel = document.getElementById('cav-'+ti);
+        if (cel) cel.innerHTML = _avHTML(info.avance, true, (info.texto||'') + ' refs');
+      });
+    }).withFailureHandler(function(){}).obtenerAvancesWMS(fids);
+  }
 }
+var _cargaTok = 0;
 
 function setF(el, f) {
   document.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));

@@ -1912,7 +1912,11 @@ function obtenerEstadoIntegralDashboard() {
   for (var m = 0; m < 12; m++) chart.push({ mes: m, invent: 0, unid: 0, slotting: chartSlotting[m] });
 
   if (pan && pan.getLastRow() >= 2) {
-    var pdat = pan.getRange(2, 1, pan.getLastRow() - 1, 15).getValues();
+    // FIX FASE 8.36 (render): reutiliza pdatFull (ya leído arriba) en vez de releer
+    // el PANEL — una lectura menos por refresco del dashboard. Fallback defensivo.
+    var pdat = (typeof pdatFull !== "undefined" && pdatFull && pdatFull.length && pdatFull[0].length >= 15)
+             ? pdatFull
+             : pan.getRange(2, 1, pan.getLastRow() - 1, 15).getValues();
     for (var j = 0; j < pdat.length; j++) {
       var pr = pdat[j];
       var avance = String(pr[CRON_CFG.PA_COL_AVANCE - 1] || "");
@@ -1992,8 +1996,11 @@ function obtenerEstadoIntegralDashboard() {
   // Lista única de clientes (para autocomplete del wizard)
   var clientesSet = {};
   if (pan && pan.getLastRow() >= 2) {
-    var cliCol = pan.getRange(2, 1, pan.getLastRow() - 1, 1).getValues();
-    cliCol.forEach(function(r){ if (r[0]) clientesSet[String(r[0]).trim().toUpperCase()] = true; });
+    // FIX FASE 8.36 (render): reutiliza pdatFull en vez de releer la columna A.
+    var _cliSrc = (typeof pdatFull !== "undefined" && pdatFull && pdatFull.length)
+                ? pdatFull
+                : pan.getRange(2, 1, pan.getLastRow() - 1, 1).getValues();
+    _cliSrc.forEach(function(r){ if (r[0]) clientesSet[String(r[0]).trim().toUpperCase()] = true; });
   }
   cronograma.forEach(function(d){ if (d.cliente) clientesSet[String(d.cliente).trim().toUpperCase()] = true; });
   var clientesLista = Object.keys(clientesSet).sort();
@@ -4806,10 +4813,12 @@ function setupFase3() {
 // FIX FASE 8.5: URL del Terminal WMS configurada por defecto.
 // Bryan pidió usar este link externo del BlindInventory en lugar del consolidado.
 var WMS_CFG = {
-  // FIX FASE 8.24: URL del BlindInventory actualizada al deploy genérico.
-  // El deploy genérico NO requiere login forzado del dominio /a/macros/itsanet.com/
-  // — usa directamente la cuenta de Gmail logueada en el navegador.
-  DEPLOY_URL: "https://script.google.com/macros/s/AKfycbwjaQGMDdOzbdpjBBojyK9Lr2K55qdpcaLjW7eYHhxBFPsih38DCJ3mk8OPvoq_c7Vd/exec",
+  // FIX FASE 8.24/8.36: URL del Terminal WMS (deployment provisto por el operador).
+  // Se usa la FORMA GENÉRICA (/macros/s/<id>/exec) en vez de la del dominio
+  // (/a/macros/itsanet.com/s/<id>/exec) para NO forzar login de dominio a los
+  // operarios — el link de conteo se comparte ampliamente y debe abrir sin fricción.
+  // Si prefieres forzar dominio, ejecuta setWmsUrl() con la forma /a/macros/itsanet.com/.
+  DEPLOY_URL: "https://script.google.com/macros/s/AKfycbwBwuTEaaxpf3IWWt1iAT0DzI8QIqZSXm2SnA1otqttURsUi2mEwnvNU1a1xn-vu2N2/exec",
   // Para cambiar sin tocar código, usa setWmsUrl(url) desde el editor
   AUTO_REFRESH_SEGUNDOS: 60
 };
@@ -6123,6 +6132,43 @@ function obtenerCatalogoSKUs(fileId) {
     });
     return Object.keys(unicos).sort();
   } catch (e) { return []; }
+}
+
+/* ---------- Avance EN VIVO del WMS por archivo (batch, ligero) ----------
+   FIX FASE 8.36: para el drilldown "Carga por operario". Devuelve el % real de
+   conteo (refs validadas / total) leyendo solo lo necesario de cada PLANILLA.
+   Es una ÚNICA llamada para varias tareas (mapa fileId → {avance, texto}); el
+   frontend pinta primero el % del cronograma (instantáneo) y luego refresca con
+   este valor en vivo, sin bloquear (cero tiempos muertos). Cap de seguridad: 15. */
+function obtenerAvancesWMS(fileIds) {
+  var res = {};
+  if (!fileIds || !fileIds.length) return res;
+  try { _requiereRol(["Coordinador", "Líder de Conteo", "Auditor"]); } catch (e) { return res; }
+  var vistos = {}, procesados = 0;
+  for (var k = 0; k < fileIds.length; k++) {
+    if (procesados >= 15) break;
+    var fid = String(fileIds[k] || "").trim();
+    if (!fid || vistos[fid]) continue;
+    vistos[fid] = true; procesados++;
+    try {
+      var ss = getTargetSS(fid);
+      var sheet = ss.getSheetByName("PLANILLA DE CONTEO FISICO");
+      if (!sheet || sheet.getLastRow() < 2) { res[fid] = { avance: 0, texto: "0/0" }; continue; }
+      var lr = sheet.getLastRow();
+      var data = sheet.getRange(2, 1, lr - 1, 24).getValues();
+      var tRef = 0, cRef = 0;
+      for (var i = 0; i < data.length; i++) {
+        var sku = String(data[i][6]).trim();
+        var catLog = String(data[i][12]).trim().toUpperCase();
+        var estadoFinal = String(data[i][19]).trim().toUpperCase();
+        if (!sku || catLog === "DIF_INV") continue;
+        tRef++;
+        if (data[i][21] !== "" || data[i][22] !== "" || data[i][23] !== "" || estadoFinal === "CORRECTO") cRef++;
+      }
+      res[fid] = { avance: tRef === 0 ? 0 : Math.round((cRef / tRef) * 100), texto: cRef + "/" + tRef };
+    } catch (e) { res[fid] = { avance: null, texto: "—" }; }
+  }
+  return res;
 }
 
 
