@@ -874,6 +874,22 @@ function _idDeUrl(url) {
   return m ? m[0] : "";
 }
 
+// FIX FASE 8.36: normaliza a SOLO FECHA (medianoche local, sin hora) para que
+// los cálculos de cronograma/duración/slotting no se vean afectados por la hora.
+function _soloFecha(d) {
+  if (!(d instanceof Date)) d = new Date(d);
+  if (!d || isNaN(d.getTime())) d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+// FIX FASE 8.36: fecha de creación (solo fecha) del archivo asociado a un evento.
+// Coordina la fecha de inicio del cronograma con la creación real del archivo.
+function _fechaCreacionArchivo(fileId) {
+  if (!fileId) return null;
+  try { return _soloFecha(DriveApp.getFileById(String(fileId).trim()).getDateCreated()); }
+  catch (e) { return null; }
+}
+
 // FIX FASE 8.34: ¿la categoría contiene 'slotting'? (ignora mayúsculas y tildes)
 function _contieneSlotting(txt) {
   if (!txt) return false;
@@ -1383,10 +1399,13 @@ function asignarArchivoAEvento(filaCronograma, fileId, fileUrl, fileName) {
     .setText(nombreVisible).setLinkUrl(url).build();
   cron.getRange(filaCronograma, CRON_CFG.CR_COL_ARCH).setRichTextValue(rich);
 
-  // 2. Fecha de Inicio = hoy si está vacía
-  var hoy = new Date();
+  // 2. FIX FASE 8.36: Fecha de Inicio = fecha de CREACIÓN del archivo (solo fecha),
+  //    si está vacía. Así el inicio del cronograma coordina con el archivo asociado
+  //    y no afecta la duración (se guarda sin hora). Si no se obtiene, usa hoy.
   if (!cron.getRange(filaCronograma, CRON_CFG.CR_COL_FECHA).getValue()) {
-    cron.getRange(filaCronograma, CRON_CFG.CR_COL_FECHA).setValue(hoy);
+    var fIniArch = _fechaCreacionArchivo(fileId) || _soloFecha(new Date());
+    cron.getRange(filaCronograma, CRON_CFG.CR_COL_FECHA)
+        .setValue(fIniArch).setNumberFormat("dd/MM/yyyy");
   }
 
   // 3. Estado = "En Proceso" si estaba "Pendiente" o vacío
@@ -1428,8 +1447,9 @@ function crearEventoCronograma(datos) {
   if (!cron) throw new Error("No se encontró " + CRON_CFG.HOJA_CRONOGRAMA);
 
   var fila = _proximaFilaCronograma(cron);
-  var fechaIni = new Date(datos.fechaInicio);
-  var fechaEnt = datos.fechaEntrega ? new Date(datos.fechaEntrega) : null;
+  // FIX FASE 8.36: fechas SOLO FECHA (sin hora) para no afectar duración/cronograma.
+  var fechaIni = _soloFecha(new Date(datos.fechaInicio));
+  var fechaEnt = datos.fechaEntrega ? _soloFecha(new Date(datos.fechaEntrega)) : null;
   var anio = fechaIni.getFullYear();
   var mesNum = fechaIni.getMonth();
   var meses = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
@@ -1446,9 +1466,9 @@ function crearEventoCronograma(datos) {
   cron.getRange(fila, CRON_CFG.CR_COL_RESP).setValue(datos.responsable);
   cron.getRange(fila, CRON_CFG.CR_COL_PRIO).setValue(datos.prioridad || "Media");
   if (datos.observaciones) cron.getRange(fila, CRON_CFG.CR_COL_OBS).setValue(datos.observaciones);
-  cron.getRange(fila, CRON_CFG.CR_COL_FECHA).setValue(fechaIni);
+  cron.getRange(fila, CRON_CFG.CR_COL_FECHA).setValue(fechaIni).setNumberFormat("dd/MM/yyyy");
   cron.getRange(fila, CRON_CFG.CR_COL_ESTADO).setValue("Pendiente");
-  if (fechaEnt) cron.getRange(fila, CRON_CFG.CR_COL_FECHA_ENT).setValue(fechaEnt);
+  if (fechaEnt) cron.getRange(fila, CRON_CFG.CR_COL_FECHA_ENT).setValue(fechaEnt).setNumberFormat("dd/MM/yyyy");
   cron.getRange(fila, CRON_CFG.CR_COL_PCT).setValue(0);
 
   return { ok: true, fila: fila };
@@ -4113,7 +4133,7 @@ function finalizarEventoConOpciones(filaCronograma, opciones) {
 
   var f = filaCronograma;
 
-  // Fecha culminación: la del usuario o hoy
+  // Fecha culminación: la del usuario o hoy — FIX FASE 8.36: SOLO FECHA (sin hora).
   var fechaCulm;
   if (opciones && opciones.fechaCulminacion) {
     // Formato esperado: "YYYY-MM-DD"
@@ -4126,19 +4146,34 @@ function finalizarEventoConOpciones(filaCronograma, opciones) {
   } else {
     fechaCulm = new Date();
   }
+  fechaCulm = _soloFecha(fechaCulm);
+
+  // FIX FASE 8.36: resolver el fileId del evento (opciones o Smart Chip Q) UNA vez,
+  // para coordinar la fecha de inicio con la creación del archivo y el espejo a PANEL.
+  var fidEvento = (opciones && opciones.fileId) ? String(opciones.fileId).trim() : "";
+  if (!fidEvento) {
+    var richQ0 = cron.getRange(f, CRON_CFG.CR_COL_ARCH).getRichTextValue();
+    var valQ0  = cron.getRange(f, CRON_CFG.CR_COL_ARCH).getValue();
+    fidEvento = _idDeUrl(_extraerUrlSmartChip(richQ0, valQ0) || "");
+  }
 
   cron.getRange(f, CRON_CFG.CR_COL_ESTADO).setValue("Entregado");
-  cron.getRange(f, CRON_CFG.CR_COL_FECHA_ENT).setValue(fechaCulm);
+  cron.getRange(f, CRON_CFG.CR_COL_FECHA_ENT).setValue(fechaCulm).setNumberFormat("dd/MM/yyyy");
   cron.getRange(f, CRON_CFG.CR_COL_PCT).setValue(1);
 
-  // FIX FASE 8.36: alinear fecha de inicio ≤ fecha de entrega.
-  // Si el inicio falta o es posterior a la entrega (inconsistente), se corrige
-  // al valor de la entrega para que el cronograma/calendario queden coherentes.
+  // FIX FASE 8.36: fecha de inicio (col L) coordinada y SOLO FECHA.
+  //  • Si falta: usar la fecha de creación del archivo asociado; si no hay archivo, la entrega.
+  //  • Si existe: normalizar a solo-fecha y garantizar inicio ≤ entrega.
   var celIni = cron.getRange(f, CRON_CFG.CR_COL_FECHA);
   var fIniAct = celIni.getValue();
-  if (!(fIniAct instanceof Date) || fIniAct.getTime() > fechaCulm.getTime()) {
-    celIni.setValue(fechaCulm);
+  var fIniNueva;
+  if (!(fIniAct instanceof Date)) {
+    fIniNueva = _fechaCreacionArchivo(fidEvento) || fechaCulm;
+  } else {
+    fIniNueva = _soloFecha(fIniAct);
+    if (fIniNueva.getTime() > fechaCulm.getTime()) fIniNueva = fechaCulm;
   }
+  celIni.setValue(fIniNueva).setNumberFormat("dd/MM/yyyy");
 
   // Adjuntar archivo (Smart Chip en Q) — solo si Q estaba vacío
   var archivoAdjuntado = false;
@@ -4159,12 +4194,7 @@ function finalizarEventoConOpciones(filaCronograma, opciones) {
   // Alinea fecha fin (col E) = fecha de entrega y marca avance = "Entregado".
   var panelSincronizado = false;
   try {
-    var fidPanel = (opciones && opciones.fileId) ? String(opciones.fileId).trim() : "";
-    if (!fidPanel) {
-      var richQ = cron.getRange(f, CRON_CFG.CR_COL_ARCH).getRichTextValue();
-      var valQ  = cron.getRange(f, CRON_CFG.CR_COL_ARCH).getValue();
-      fidPanel = _idDeUrl(_extraerUrlSmartChip(richQ, valQ) || "");
-    }
+    var fidPanel = fidEvento;   // FIX FASE 8.36: ya resuelto arriba
     if (fidPanel) {
       var pan = ss.getSheetByName(CRON_CFG.HOJA_PANEL);
       if (pan && pan.getLastRow() >= 2) {
@@ -4174,7 +4204,7 @@ function finalizarEventoConOpciones(filaCronograma, opciones) {
                     _idDeUrl(String(pd[pi][CRON_CFG.PA_COL_LINK - 1] || ""));
           if (idP && idP === fidPanel) {
             var filaP = pi + 2;
-            pan.getRange(filaP, CRON_CFG.PA_COL_FECHA_F).setValue(fechaCulm);
+            pan.getRange(filaP, CRON_CFG.PA_COL_FECHA_F).setValue(fechaCulm).setNumberFormat("dd/MM/yyyy");
             if (String(pd[pi][CRON_CFG.PA_COL_AVANCE - 1] || "").toLowerCase().indexOf("entregado") === -1) {
               pan.getRange(filaP, CRON_CFG.PA_COL_AVANCE).setValue("Entregado");
             }
