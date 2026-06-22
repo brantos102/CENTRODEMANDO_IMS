@@ -2905,6 +2905,74 @@ function consolidarConAuditoria(opciones) {
      una pasada única; cero duplicados nuevos; cero impacto Power BI.
    La lógica de validación por archivo se mantiene byte a byte.
    ========================================================================== */
+/* ==========================================================================
+   FIX FASE 8.37: LOG_CONSOLIDACION — un solo resumen legible de la consolidación
+   --------------------------------------------------------------------------
+   Reúne en UNA hoja lo necesario para revisar de un vistazo:
+     1) Archivos con incidencias (filas excluidas / no consolidadas) y su motivo.
+     2) Validaciones por fila (duplicados y demás) con severidad.
+   Lee las hojas de auditoría que YA genera la consolidación (no cambia su lógica).
+   Se regenera al terminar cada consolidación; también se puede ejecutar a mano. */
+function generarLogConsolidacion() {
+  var ss = _getSS();
+  var aud = ss.getSheetByName("AUDITORIA_CONSOLIDACION");
+  var det = ss.getSheetByName("ERRORES_VALIDACION_DETALLE");
+
+  // 1) Archivos con incidencias (excluidas > 0 o status no-OK)
+  var incid = [];
+  if (aud && aud.getLastRow() > 1) {
+    aud.getRange(2, 1, aud.getLastRow() - 1, 11).getValues().forEach(function(r){
+      if (String(r[0]) === "TOTAL") return;
+      var excl = Number(r[5]) || 0;
+      var status = String(r[10] || "");
+      var statusMalo = status && status.toUpperCase().indexOf("OK") === -1 && status.indexOf("📊") === -1;
+      if (excl > 0 || statusMalo) incid.push([r[1], r[2], r[3], r[4], r[5], r[6], r[10]]);
+    });
+  }
+  // 2) Validaciones por fila (duplicados y demás)
+  var vals = [], nDup = 0;
+  if (det && det.getLastRow() > 1) {
+    det.getRange(2, 1, det.getLastRow() - 1, 9).getValues().forEach(function(r){
+      vals.push([r[0], r[1], r[3], r[4], r[5], r[6], r[7], r[8]]);
+      if (String(r[6] || "").toLowerCase().indexOf("duplic") !== -1) nDup++;
+    });
+  }
+
+  var log = ss.getSheetByName("LOG_CONSOLIDACION") || ss.insertSheet("LOG_CONSOLIDACION");
+  log.clear();
+  var out = [], titulos = [], secciones = [], cabeceras = [];
+  function add(arr, tipo) {
+    while (arr.length < 8) arr.push("");
+    out.push(arr);
+    if (tipo === "titulo") titulos.push(out.length);
+    else if (tipo === "seccion") secciones.push(out.length);
+    else if (tipo === "col") cabeceras.push(out.length);
+  }
+  var fecha = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm");
+  add(["LOG DE CONSOLIDACIÓN — " + fecha], "titulo");
+  add(["Resumen: " + incid.length + " archivo(s) con incidencias · " + vals.length +
+       " validación(es) · " + nDup + " duplicado(s)"]);
+  add([""]);
+  add(["1) ARCHIVOS CON INCIDENCIAS (filas excluidas / no consolidadas)"], "seccion");
+  add(["Cliente", "ID Archivo", "Filas leídas", "Filas incluidas", "Filas excluidas", "Motivo principal", "Status"], "col");
+  if (incid.length) incid.forEach(function(r){ add(r); });
+  else add(["(Sin archivos con incidencias — todos consolidados)"]);
+  add([""]);
+  add(["2) VALIDACIONES POR FILA (duplicados y demás)"], "seccion");
+  add(["Cliente", "ID Archivo", "Fila", "Columna", "Valor", "Motivo", "Acción", "Severidad"], "col");
+  if (vals.length) vals.forEach(function(r){ add(r); });
+  else add(["(Sin incidencias de validación)"]);
+
+  log.getRange(1, 1, out.length, 8).setValues(out);
+  titulos.forEach(function(n){ log.getRange(n,1,1,8).setFontWeight("bold").setBackground("#0f172a").setFontColor("#ffffff"); });
+  secciones.forEach(function(n){ log.getRange(n,1,1,8).setFontWeight("bold").setBackground("#b45309").setFontColor("#ffffff"); });
+  cabeceras.forEach(function(n){ log.getRange(n,1,1,8).setFontWeight("bold").setBackground("#374151").setFontColor("#ffffff"); });
+  try { log.autoResizeColumns(1, 8); } catch(e) {}
+  try { log.setFrozenRows(2); } catch(e) {}
+
+  return { ok: true, archivosConIncidencias: incid.length, validaciones: vals.length, duplicados: nDup };
+}
+
 function _consolidarNucleo(opciones) {
   // FIX FASE 8.16: acepta opciones = { modo: 'tolerante'|'estricto'|'reporte_solo' }
   // FIX FASE 8.17: acepta opciones = { incluir: 'INV'|'REG'|'ALL' } (default 'ALL')
@@ -3614,6 +3682,8 @@ function _consolidarNucleo(opciones) {
     // COMPLETADO — se procesaron todos los archivos del snapshot.
     // ════════════════════════════════════════════════════════════════════════
     invalidarCacheSeries();
+    // FIX FASE 8.37: regenerar el LOG único de consolidación (nunca rompe el flujo).
+    try { generarLogConsolidacion(); } catch (eLog) {}
 
     // Totales GRANDES: en batch vienen del estado acumulado entre lotes;
     // en estricto (pasada única) son los locales de esta ejecución.
