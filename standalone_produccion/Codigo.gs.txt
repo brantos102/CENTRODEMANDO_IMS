@@ -12,8 +12,8 @@ const USUARIOS_BASE = {
 
 };
 
-// FIX 8.37: COPIA DE PRUEBAS. Para PRODUCCION usa: "1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk"
-const MASTER_DB_ID = "1_-tI6nvzofHRVZKJTU55AeLgEpkaUoXhtHbMakNGOt8";
+// PRODUCCION (actual). Para PROBAR en la copia cambia a: "1_-tI6nvzofHRVZKJTU55AeLgEpkaUoXhtHbMakNGOt8"
+const MASTER_DB_ID = "1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk";
 
 function doGet(e) {
   var template = HtmlService.createTemplateFromFile('BlindInventory');
@@ -72,6 +72,15 @@ function getTargetSS(fileId) {
   return SpreadsheetApp.getActiveSpreadsheet();
 }
 
+/*function getTodosLosUsuarios() {
+  let usuarios = JSON.parse(JSON.stringify(USUARIOS_BASE)); 
+  let props = PropertiesService.getScriptProperties().getProperty('WMS_TEMP_USERS');
+  if (props) {
+      let tempUsers = JSON.parse(props);
+      for (let email in tempUsers) { usuarios[email] = tempUsers[email]; }
+  }
+  return usuarios;
+}*/
 function getTodosLosUsuarios() {
   let usuarios = JSON.parse(JSON.stringify(USUARIOS_BASE));
   let props = PropertiesService.getScriptProperties().getProperty('WMS_TEMP_USERS');
@@ -79,8 +88,9 @@ function getTodosLosUsuarios() {
     let tempUsers = JSON.parse(props);
     for (let email in tempUsers) { usuarios[email] = tempUsers[email]; }
   }
-  // FIX 8.37: lista UNICA - lee tambien la hoja USUARIOS del libro maestro (la que
-  // administra el Panel). La hoja MANDA sobre la base.
+  // FIX 8.37: lista ÚNICA — lee también la hoja USUARIOS del libro maestro (la que
+  // administra el Panel de Control). La hoja MANDA sobre la base hardcodeada.
+  // Esquema USUARIOS: A Email | B Nombre | C Rol(panel) | E Activo | H Rol WMS | I Contraseña
   try {
     const sh = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("USUARIOS");
     if (sh && sh.getLastRow() > 1) {
@@ -93,7 +103,7 @@ function getTodosLosUsuarios() {
         const rolPanel = String(r[2] || "").trim();
         let rolWms = (nc >= 8 && String(r[7] || "").trim())
           ? String(r[7]).trim().toUpperCase()
-          : ((rolPanel === "Coordinador" || rolPanel === "Lider de Conteo" || rolPanel === "Líder de Conteo") ? "ADMIN" : "OPERADOR");
+          : ((rolPanel === "Coordinador" || rolPanel === "Líder de Conteo") ? "ADMIN" : "OPERADOR");
         let pass = (nc >= 9 && String(r[8] || "").trim())
           ? String(r[8]).trim()
           : ((usuarios[em] && usuarios[em].pass) ? usuarios[em].pass : "1234");
@@ -103,7 +113,7 @@ function getTodosLosUsuarios() {
         };
       });
     }
-  } catch (e) {}
+  } catch (e) { /* si falla, se usa la base; nunca rompe el login */ }
   return usuarios;
 }
 
@@ -853,7 +863,29 @@ function obtenerCatalogoSKUs(fileId) {
   } catch(e) { return []; }
 }
 
-/* ===== FIX 8.37: conexion con el Centro de Mando (dos codigos) ===== */
+/* =====================================================================================
+   PARCHE PARA EL "Codigo.gs" DEL TERMINAL WMS (proyecto standalone)
+   =====================================================================================
+   Aplica 3 cambios. NO reescribas todo el archivo: solo estos 3 puntos.
+   Es compatible con tu código actual y NO cambia el conteo ni la auditoría.
+
+   1) REEMPLAZA tu función getTodosLosUsuarios() por la versión de abajo
+      (ahora también lee la hoja USUARIOS del libro maestro = lista ÚNICA con el Panel).
+   2) AÑADE la función obtenerSesionWMSActual()  (login con el Gmail actual).
+   3) AÑADE la función obtenerDatosAnalisis()    (la INTERFAZ ya la llama; hoy falta).
+
+   MASTER_DB_ID: déjalo en el libro de PRODUCCIÓN cuando publiques:
+     PRODUCCIÓN  -> "1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk"
+     COPIA PRUEBA-> "1_-tI6nvzofHRVZKJTU55AeLgEpkaUoXhtHbMakNGOt8"
+   ===================================================================================== */
+
+
+
+
+
+/* ---------- 2) AÑADIR obtenerSesionWMSActual() ---------- */
+/* Login con el Gmail actual (misma sesión que el Panel). Si el correo no está
+   registrado, entra como AUDITOR (solo lectura) pero con su propio correo. */
 function obtenerSesionWMSActual() {
   var email = "";
   try { email = Session.getActiveUser().getEmail() || ""; } catch (e) {}
@@ -871,6 +903,10 @@ function obtenerSesionWMSActual() {
   };
 }
 
+
+/* ---------- 3) AÑADIR obtenerDatosAnalisis() ---------- */
+/* La INTERFAZ (BlindInventory) llama obtenerDatosAnalisis(fileId) y hoy no existe,
+   por eso el ANÁLISIS se queda girando. Devuelve lo mismo que parseAnalysisData. */
 function obtenerDatosAnalisis(fileId) {
   var vacio = {
     exito: true,
@@ -888,6 +924,7 @@ function obtenerDatosAnalisis(fileId) {
   } catch (e) { vacio.exito = false; vacio.error = e.message; return vacio; }
 }
 
+/* FIX 8.37: el deep-link del BlindInventory llama registrarAccesoWMS; no-op seguro. */
 function registrarAccesoWMS(fileId, cliente, viaCorreo) {
   try { CacheService.getScriptCache().put("WMS_ACCESO_" + fileId, Date.now().toString(), 21600); } catch (e) {}
   return true;

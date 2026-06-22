@@ -1315,8 +1315,43 @@
 
           filtrarInventarios();
 
+        /*if (DEEPLINK_FILE_ID && DEEPLINK_FILE_ID.length > 10) {
+          const invEncontrado = ALL_INVENTORIES.find(inv => inv.id === DEEPLINK_FILE_ID);
+          if (invEncontrado) {
+            const saved = localStorage.getItem('wms_session');
+            let yaSesionada = false;
+            if (saved) {
+              try {
+                const data = JSON.parse(saved);
+                if (data.rol && data.rol !== 'GUEST' && data.email && data.email !== 'INVITADO') {
+                  USER_EMAIL = data.email;
+                  USER_ROLE = data.rol;
+                  CURRENT_FILE_ID = DEEPLINK_FILE_ID;
+                  localStorage.setItem('wms_session', JSON.stringify({
+                    email: data.email, rol: data.rol, fileId: DEEPLINK_FILE_ID,
+                    invName: invEncontrado.link, userName: data.userName
+                  }));
+                  yaSesionada = true;
+                  if (DEEPLINK_CLIENTE) cargarBaseEAN(DEEPLINK_CLIENTE);
+                  iniciarSesionExitosa(data.userName, invEncontrado.link);
+                }
+              } catch(e) {}
+            }
+
+            if (!yaSesionada) {
+              if (DEEPLINK_CLIENTE) document.getElementById('clientSelector').value = DEEPLINK_CLIENTE;
+              filtrarInventarios();
+              document.getElementById('fileSelector').value = DEEPLINK_FILE_ID;
+              document.getElementById('userSelector').value = 'AUDITOR';
+              try { google.script.run.registrarAccesoWMS(DEEPLINK_FILE_ID, DEEPLINK_CLIENTE, true); } catch(e) {}
+              setTimeout(() => confirmarUsuario(), 300);
+            }
+            return;
+          }
+        }*/
+
         if (DEEPLINK_FILE_ID && DEEPLINK_FILE_ID.length > 10) {
-          // FIX 8.37: deep-link ROBUSTO + AUTO-LOGIN con el Gmail actual.
+          // FIX 8.37: deep-link robusto + auto-login con el Gmail actual.
           CURRENT_FILE_ID = DEEPLINK_FILE_ID;
           const invEnc = ALL_INVENTORIES.find(inv => inv.id === DEEPLINK_FILE_ID);
           const invName = invEnc ? invEnc.link : (DEEPLINK_CLIENTE || "Inventario");
@@ -1342,11 +1377,7 @@
 
         if (!checkSavedSession()) { document.getElementById('modalLogin').style.display = 'flex'; }
       }).withFailureHandler(err => {
-          var msg = (err && err.message) ? err.message : 'No se pudo cargar la configuracion.';
-          document.getElementById('startLoading').innerHTML =
-            '<div style="color:var(--danger);font-weight:700;margin-bottom:8px;">No se pudo iniciar el WMS</div>' +
-            '<div style="color:var(--muted);font-size:0.85rem;margin-bottom:12px;max-width:340px;">' + msg + '</div>' +
-            '<button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;padding:9px 20px;border-radius:6px;cursor:pointer;font-weight:600;">Reintentar</button>';
+          document.getElementById('startLoading').innerHTML = `<span style="color:var(--danger)">Error de permisos. Autoriza el script en Google y vuelve a cargar.</span>`;
       }).obtenerConfiguracionApp();
     };
 

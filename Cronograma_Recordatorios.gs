@@ -5852,14 +5852,15 @@ function consolidarUsuarios() {
     existentes[e] = true;
     nuevos.push([email, nombre, rolPanel, "", true, new Date(), nota, rolWms, pass]);
   }
-  // 2a) Hardcodeados del WMS → a la hoja (pass por defecto "1234": CAMBIAR luego)
+  // 2a) Hardcodeados del WMS → a la hoja. CONTRASEÑA VACÍA a propósito: así el
+  // Terminal WMS usa su contraseña REAL (de su USUARIOS_BASE) y NO se pisa nada.
   for (var em in USUARIOS_BASE_WMS) {
     var u = USUARIOS_BASE_WMS[em];
     var rolW = String(u.rol || "OPERADOR").toUpperCase();
     var rolPanel = (rolW === "ADMIN") ? "Líder de Conteo" : "Auditor";
-    añadir(em, u.nombre, rolPanel, rolW, u.pass || "1234", "Importado de USUARIOS_BASE_WMS");
+    añadir(em, u.nombre, rolPanel, rolW, "", "Importado de USUARIOS_BASE_WMS");
   }
-  // 2b) EQUIPO_OPERATIVO → a la hoja
+  // 2b) EQUIPO_OPERATIVO → a la hoja (contraseña vacía; se asigna solo si hace falta)
   try {
     var eq = ss.getSheetByName(CRON_CFG.HOJA_EQUIPO);
     if (eq && eq.getLastRow() > 1) {
@@ -5867,7 +5868,7 @@ function consolidarUsuarios() {
         var nombre = String(r[0] || "").trim(), email = String(r[1] || "").trim();
         var rolEq = String(r[2] || "").trim();
         var rolPanel = rolEq.toLowerCase().indexOf("coordinador") !== -1 ? "Coordinador" : "Líder de Conteo";
-        añadir(email, nombre, rolPanel, "ADMIN", "1234", "Importado de EQUIPO_OPERATIVO");
+        añadir(email, nombre, rolPanel, "ADMIN", "", "Importado de EQUIPO_OPERATIVO");
       });
     }
   } catch (e) {}
@@ -5876,8 +5877,9 @@ function consolidarUsuarios() {
   var msg = "✓ Consolidación lista. Usuarios añadidos: " + nuevos.length + ".\n\n" +
             "La hoja USUARIOS es ahora la lista única:\n" +
             "  • Rol panel = columna C\n  • Rol WMS = columna H\n  • Contraseña = columna I\n\n" +
-            "IMPORTANTE: revisa la columna I — los importados quedaron con '1234'. " +
-            "Cámbialos por las contraseñas reales del WMS.";
+            "Contraseñas: se dejaron VACÍAS a propósito → el Terminal WMS sigue usando las " +
+            "contraseñas reales actuales (no se pisó ninguna). Solo llena la columna I si " +
+            "quieres asignar/cambiar una contraseña para un usuario.";
   try { _alert(msg); } catch (e) {}
   return { ok: true, agregados: nuevos.length };
 }
