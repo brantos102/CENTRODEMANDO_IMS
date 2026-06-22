@@ -1352,7 +1352,11 @@
 
         if (!checkSavedSession()) { document.getElementById('modalLogin').style.display = 'flex'; }
       }).withFailureHandler(err => {
-          document.getElementById('startLoading').innerHTML = `<span style="color:var(--danger)">Error de permisos. Autoriza el script en Google y vuelve a cargar.</span>`;
+          var msg = (err && err.message) ? err.message : 'No se pudo cargar la configuración.';
+          document.getElementById('startLoading').innerHTML =
+            '<div style="color:var(--danger);font-weight:700;margin-bottom:8px;">No se pudo iniciar el WMS</div>' +
+            '<div style="color:var(--muted);font-size:0.85rem;margin-bottom:12px;max-width:340px;">' + msg + '</div>' +
+            '<button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;padding:9px 20px;border-radius:6px;cursor:pointer;font-weight:600;">↻ Reintentar</button>';
       }).obtenerConfiguracionApp();
     };
 

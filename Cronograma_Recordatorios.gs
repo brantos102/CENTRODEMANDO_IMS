@@ -5490,14 +5490,19 @@ function obtenerDestinatariosRecientes() {
 }
 
 /* ==========================================================================
-   FIX FASE 8.36: autocompletado de correos con CONTACTOS DE GOOGLE (People API).
-   Estilo Gmail: al escribir, busca en el DIRECTORIO del dominio (colegas Itsanet)
-   y en "otros contactos" (personas a las que se ha escrito). Requiere los scopes
-   directory.readonly y contacts.other.readonly (re-autorización de usuarios).
-   Nota: la Web App corre como el dueño (USER_DEPLOYING), por lo que el directorio
-   devuelto es el del dominio Itsanet (lo más útil para el equipo).
+   FIX FASE 8.37: contactos de Google DESACTIVADO.
+   Los scopes directory.readonly / contacts.other.readonly obligaban a RE-AUTORIZAR
+   el script y eso CONGELABA el WMS ("Error de permisos. Autoriza el script…").
+   Para que todo funcione sin fricción se retiran esos scopes y esta función
+   devuelve [] (el autocompletado del correo sigue con equipo + recientes).
+   Si en el futuro se quieren contactos de Google, hay que volver a añadir los
+   scopes y RE-AUTORIZAR la cuenta dueña una vez.
    ========================================================================== */
 function buscarContactosGoogle(query) {
+  return [];
+}
+
+function _buscarContactosGoogle_DESACTIVADO(query) {
   query = String(query || "").trim();
   if (query.length < 2) return [];
   var token;
@@ -5775,12 +5780,18 @@ function obtenerListadoConsolidadoUsuarios() {
 }
 
 
-/* ---------- Configuración inicial de la app WMS (carga inventarios) ---------- */
+/* ---------- Configuración inicial de la app WMS (carga inventarios) ----------
+   FIX FASE 8.37: BLINDADO para no congelar el WMS. Si algo falla (hoja, parseo,
+   permisos parciales), devuelve igualmente una config válida con los usuarios
+   base, de modo que el login del WMS SIEMPRE pueda mostrarse. */
 function obtenerConfiguracionApp() {
-  var usersDb = getTodosLosUsuarios();
+  // Usuarios: nunca lanzar. Si getTodosLosUsuarios falla, caer a la base hardcodeada.
+  var usersDb;
+  try { usersDb = getTodosLosUsuarios(); }
+  catch (e) { usersDb = JSON.parse(JSON.stringify(USUARIOS_BASE_WMS)); }
   var usuarios = Object.keys(usersDb).map(function(em){
-    return { email: em, nombre: usersDb[em].nombre };
-  }).sort(function(a,b){ return a.nombre.localeCompare(b.nombre); });
+    return { email: em, nombre: (usersDb[em] && usersDb[em].nombre) || em };
+  }).sort(function(a,b){ return String(a.nombre).localeCompare(String(b.nombre)); });
 
   // Responsables: solo los del USUARIOS_BASE_WMS (no temporales)
   var responsables = Object.keys(USUARIOS_BASE_WMS).map(function(em){
@@ -6131,6 +6142,31 @@ function parseCountData(data, target) {
 }
 
 
+/* ---------- Datos de ANÁLISIS por archivo (lo llama el WMS: obtenerDatosAnalisis) ----------
+   FIX FASE 8.37: faltaba en este backend (la INTERFAZ BlindInventory lo invoca y
+   antes fallaba en silencio dejando el análisis girando). Devuelve exactamente lo
+   que produce parseAnalysisData sobre la PLANILLA del archivo, igual que la ruta
+   ANALYSIS de pollRealTime. Nunca lanza. */
+function obtenerDatosAnalisis(fileId) {
+  var vacio = {
+    exito: true,
+    kpis: { efectividadUnidades:0, efectividadRef:0, efectividadPos:0,
+            uniValidadas:0, uniTotal:0, refValidadas:0, refTotal:0,
+            posValidadas:0, posTotal:0 },
+    discrepancias: []
+  };
+  try {
+    var ss = getTargetSS(fileId);
+    var sheet = ss.getSheetByName("PLANILLA DE CONTEO FISICO");
+    if (!sheet || sheet.getLastRow() < 2) return vacio;
+    var fullData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 28).getValues();
+    return parseAnalysisData(fullData);
+  } catch (e) {
+    vacio.exito = false; vacio.error = e.message;
+    return vacio;
+  }
+}
+
 /* ---------- Parser ANALYSIS (KPIs de efectividad — LÓGICA VALIDADA POR BRYAN) ---------- */
 function parseAnalysisData(data) {
   var qFisicaTotal = 0, qTeoricaTotal = 0, uCorrectas = 0, uContadasTeoricas = 0;
@@ -6292,7 +6328,11 @@ function obtenerAvancesWMS(fileIds) {
 
 
 /* ---------- Guardar conteo en una fila ---------- */
-function guardarConteoFila(row, cantidad, observacion, usuarioManual, fileId) {
+function guardarConteoFila(row, cantidad, observacion, nuevaPosicion, usuarioManual, fileId) {
+  // FIX FASE 8.37: la INTERFAZ (BlindInventory) llama con 6 argumentos:
+  // (row, cantidad, observacion, nuevaPosicion, usuarioManual, fileId). El backend
+  // tenía 5 (sin nuevaPosicion) y mapeaba mal fileId=email → guardaba en el sitio
+  // equivocado y se perdía la "nueva posición". Corregido.
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(12000);
@@ -6321,6 +6361,9 @@ function guardarConteoFila(row, cantidad, observacion, usuarioManual, fileId) {
       resConteo.estado = String(sheet.getRange(row, 20).getValue()).trim().toUpperCase();
     }
     if (observacion !== undefined && observacion !== null) sheet.getRange(row, 28).setValue(observacion);
+    // FIX FASE 8.37: nueva posición → columna 29 (igual que la lee parseHomeData).
+    if (nuevaPosicion !== undefined && nuevaPosicion !== null && String(nuevaPosicion).trim() !== "")
+      sheet.getRange(row, 29).setValue(nuevaPosicion);
 
     notificarCambioBD(fileId);
     return resConteo;
@@ -6358,6 +6401,9 @@ function guardarConteoMasivo(listaCambios, emailOperario, fileId) {
         if (targetColIndex !== -1 && item.val !== "") {
           valoresMatriz[arrayIdx][targetColIndex] = item.val;
           if (item.obs) sheet.getRange(item.row, 28).setValue(item.obs);
+          // FIX FASE 8.37: nueva posición (col 29) — antes se ignoraba en el masivo.
+          if (item.nueva_posicion && String(item.nueva_posicion).trim() !== "")
+            sheet.getRange(item.row, 29).setValue(item.nueva_posicion);
           var metaData = sheet.getRange(item.row, 3, 1, 13).getValues()[0];
           auditoria.push([
             timestamp, "", "", "", emailFinal,
