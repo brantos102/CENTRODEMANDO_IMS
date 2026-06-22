@@ -517,7 +517,13 @@
           <label style="font-weight:800; font-size:12px; color:var(--secondary); margin-bottom:8px; display:block;">1. FILTRAR POR CLIENTE:</label>
           <select id="clientSelector" class="data-mono" style="margin-bottom: 25px;" onchange="filtrarInventarios()"></select>
           <label style="font-weight:800; font-size:12px; color:var(--secondary); margin-bottom:8px; display:block;">2. SELECCIONE INVENTARIO BASE:</label>
-          <select id="fileSelector" class="data-mono" style="margin-bottom: 25px; border:2px solid var(--accent) !important;"></select>
+          <select id="fileSelector" class="data-mono" style="margin-bottom: 20px; border:2px solid var(--accent) !important;"></select>
+
+          <!-- FIX FASE 8.37: entrar con la MISMA cuenta Google del Panel (sin contraseña) -->
+          <button id="btnEntrarGoogle" class="btn-primary" onclick="entrarConGoogle()" style="width:100%; padding:16px; font-size:14px; margin-bottom: 10px; background:#16a34a;"><span class="material-icons">account_circle</span> ENTRAR CON MI CUENTA GOOGLE</button>
+          <div id="googleMailHint" style="text-align:center; font-size:11px; color:var(--secondary); margin-bottom:18px;">Usa tu sesión actual de Gmail (igual que el Panel)</div>
+          <div style="text-align:center; font-size:11px; color:var(--secondary); font-weight:800; margin-bottom:14px;">— o entra como operario con PIN —</div>
+
           <label style="font-weight:800; font-size:12px; color:var(--secondary); margin-bottom:8px; display:block;">3. SELECCIONE OPERARIO:</label>
           <select id="userSelector" class="data-mono" style="margin-bottom: 25px;" onchange="togglePass()"></select>
           <div id="passContainer" style="display:none;">
@@ -1316,38 +1322,30 @@
           filtrarInventarios();
 
         if (DEEPLINK_FILE_ID && DEEPLINK_FILE_ID.length > 10) {
-          const invEncontrado = ALL_INVENTORIES.find(inv => inv.id === DEEPLINK_FILE_ID);
-          if (invEncontrado) {
-            const saved = localStorage.getItem('wms_session');
-            let yaSesionada = false;
-            if (saved) {
-              try {
-                const data = JSON.parse(saved);
-                if (data.rol && data.rol !== 'GUEST' && data.email && data.email !== 'INVITADO') {
-                  USER_EMAIL = data.email;
-                  USER_ROLE = data.rol;
-                  CURRENT_FILE_ID = DEEPLINK_FILE_ID;
-                  localStorage.setItem('wms_session', JSON.stringify({
-                    email: data.email, rol: data.rol, fileId: DEEPLINK_FILE_ID,
-                    invName: invEncontrado.link, userName: data.userName
-                  }));
-                  yaSesionada = true;
-                  if (DEEPLINK_CLIENTE) cargarBaseEAN(DEEPLINK_CLIENTE);
-                  iniciarSesionExitosa(data.userName, invEncontrado.link);
-                }
-              } catch(e) {}
+          // FIX FASE 8.37: deep-link ROBUSTO + AUTO-LOGIN con el Gmail actual.
+          // No exige que el archivo esté ya en la lista (puede ser recién creado):
+          // usa el fileId directo. Entra con la MISMA cuenta Google del Panel.
+          CURRENT_FILE_ID = DEEPLINK_FILE_ID;
+          const invEnc = ALL_INVENTORIES.find(inv => inv.id === DEEPLINK_FILE_ID);
+          const invName = invEnc ? invEnc.link : (DEEPLINK_CLIENTE || "Inventario");
+          if (DEEPLINK_CLIENTE) cargarBaseEAN(DEEPLINK_CLIENTE);
+          try { google.script.run.registrarAccesoWMS(DEEPLINK_FILE_ID, DEEPLINK_CLIENTE, true); } catch(e) {}
+          google.script.run.withSuccessHandler(function(s){
+            if (s && s.autenticado && s.registrado && (s.rol === 'ADMIN' || s.rol === 'OPERADOR')) {
+              USER_EMAIL = s.email; USER_ROLE = s.rol;
+              iniciarSesionExitosa(s.nombre, invName);
+            } else if (s && s.autenticado) {
+              USER_EMAIL = s.email; USER_ROLE = 'GUEST';
+              iniciarSesionExitosa(s.nombre + " (lectura)", invName);
+            } else {
+              USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST";
+              iniciarSesionExitosa("Auditor", invName);
             }
-
-            if (!yaSesionada) {
-              if (DEEPLINK_CLIENTE) document.getElementById('clientSelector').value = DEEPLINK_CLIENTE;
-              filtrarInventarios();
-              document.getElementById('fileSelector').value = DEEPLINK_FILE_ID;
-              document.getElementById('userSelector').value = 'AUDITOR';
-              try { google.script.run.registrarAccesoWMS(DEEPLINK_FILE_ID, DEEPLINK_CLIENTE, true); } catch(e) {}
-              setTimeout(() => confirmarUsuario(), 300);
-            }
-            return;
-          }
+          }).withFailureHandler(function(){
+            USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST";
+            iniciarSesionExitosa("Auditor", invName);
+          }).obtenerSesionWMSActual();
+          return;
         }
 
         if (!checkSavedSession()) { document.getElementById('modalLogin').style.display = 'flex'; }
@@ -1604,6 +1602,31 @@ function cargarAutocompletadoSKU() {
                 Swal.fire("Error de Red", "Fallo al validar credenciales con el servidor.", "error");
             }).validarCredenciales(elUser.value, passInput.value);
         }
+    }
+
+    // FIX FASE 8.37: entrar con la cuenta Google actual (misma sesión que el Panel).
+    function entrarConGoogle() {
+        const elFile = document.getElementById('fileSelector');
+        const clientStr = document.getElementById('clientSelector').value;
+        if (!elFile.value) return Swal.fire("Falta Información", "Seleccione primero un inventario base.", "warning");
+        CURRENT_FILE_ID = elFile.value;
+        const invName = elFile.options[elFile.selectedIndex].text.split('] ')[1] || "Inventario Activo";
+        const btn = document.getElementById('btnEntrarGoogle');
+        const txt = btn.innerHTML; btn.innerText = "Verificando cuenta Google..."; btn.disabled = true;
+        google.script.run.withSuccessHandler(function(s){
+            btn.innerHTML = txt; btn.disabled = false;
+            if (s && s.autenticado) {
+                USER_EMAIL = s.email;
+                USER_ROLE = (s.registrado && (s.rol === 'ADMIN' || s.rol === 'OPERADOR')) ? s.rol : 'GUEST';
+                cargarBaseEAN(clientStr);
+                iniciarSesionExitosa(s.registrado ? s.nombre : (s.nombre + " (lectura)"), invName);
+            } else {
+                Swal.fire("Sin sesión Google", "No se detectó tu cuenta Google. Usa el ingreso con PIN.", "info");
+            }
+        }).withFailureHandler(function(){
+            btn.innerHTML = txt; btn.disabled = false;
+            Swal.fire("Error de Red", "No se pudo validar tu cuenta Google.", "error");
+        }).obtenerSesionWMSActual();
     }
 
     function procesarLoginRapido() {

@@ -5886,6 +5886,26 @@ function validarCredenciales(email, password) {
   return { exito: false, mensaje: "Contraseña incorrecta o usuario no encontrado." };
 }
 
+/* ---------- FIX FASE 8.37: sesión del WMS con el GMAIL ACTUAL (igual que el Panel) ----------
+   Permite que el Terminal WMS entre SIN pedir correo+contraseña cuando se abre con la
+   cuenta Google ya logueada (la misma sesión del Panel de Control). Devuelve la
+   identidad y el rol WMS. Si el Gmail no está registrado, entra como AUDITOR (lectura).
+   La Web App corre como dueño con acceso de DOMINIO, por lo que getActiveUser() es el
+   correo del usuario que accede. */
+function obtenerSesionWMSActual() {
+  var email = "";
+  try { email = Session.getActiveUser().getEmail() || ""; } catch (e) {}
+  if (!email) { try { email = Session.getEffectiveUser().getEmail() || ""; } catch (e) {} }
+  if (!email) return { autenticado: false };
+  var emailN = String(email).trim().toLowerCase();
+  var db = {};
+  try { db = getTodosLosUsuarios(); } catch (e) {}
+  var u = db[emailN] || db[email] || null;
+  var rol = (u && u.rol) ? String(u.rol).toUpperCase() : "AUDITOR";
+  var nombre = (u && u.nombre) ? u.nombre : emailN.split("@")[0];
+  return { autenticado: true, email: emailN, nombre: nombre, rol: rol, registrado: !!u };
+}
+
 
 /* ---------- Registrar operario temporal ---------- */
 function registrarNuevoUsuario(data) {
