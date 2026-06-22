@@ -307,6 +307,28 @@ function _listarEmailsEquipoActivo() {
   return Object.keys(set);
 }
 
+// FIX FASE 8.37: comparte como EDITOR sin enviar correo de notificación
+// (Drive API v3, sendNotificationEmail=false). Elimina los avisos
+// "Se compartió una hoja de cálculo…". Usa scopes ya presentes (drive + external_request).
+function _addEditorSilencioso(fileId, email) {
+  try {
+    var url = "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId) +
+              "/permissions?sendNotificationEmail=false&supportsAllDrives=true&fields=id";
+    var resp = UrlFetchApp.fetch(url, {
+      method: "post",
+      contentType: "application/json",
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      payload: JSON.stringify({ role: "writer", type: "user", emailAddress: String(email).trim() }),
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    if (code >= 200 && code < 300) return { ok: true };
+    return { ok: false, error: code + ": " + resp.getContentText() };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+
 function _compartirArchivoConEquipo(file) {
   var resultado = {
     dominio: false,
@@ -318,9 +340,13 @@ function _compartirArchivoConEquipo(file) {
     errores: []
   };
 
-  // 1) Dominio Itsanet en modo LECTURA
+  // 1) Dominio Itsanet en modo LECTURA — solo si aún no está (evita ops redundantes)
   try {
-    file.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW);
+    var accActual = null;
+    try { accActual = file.getSharingAccess(); } catch (eAcc) {}
+    if (accActual !== DriveApp.Access.DOMAIN_WITH_LINK && accActual !== DriveApp.Access.DOMAIN) {
+      file.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW);
+    }
     resultado.dominio = true;
     resultado.dominioModo = "view";
   } catch (e1) {
@@ -333,56 +359,46 @@ function _compartirArchivoConEquipo(file) {
     }
   }
 
-  // 2) Agregar editores específicos del equipo activo
+  // 2) Agregar editores del equipo — SILENCIOSO (sin correos) e IDEMPOTENTE
+  //    (no re-comparte a quien ya tiene acceso; así una consolidación no re-envía nada)
   try {
+    var fileId = file.getId();
     var emails = _listarEmailsEquipoActivo();
 
-    // FIX FASE 8.29: distinguir correctamente ACTIVE vs EFFECTIVE user.
-    // En una Web App deployada como "Ejecutar como: yo":
-    //   - getActiveUser()    = el operario que está USANDO la app (hace clic en crear)
-    //   - getEffectiveUser() = el dueño del script (queda como OWNER del archivo)
-    // Antes excluíamos al "creador" del addEditor pensando que era owner,
-    // pero estábamos excluyendo al OPERARIO (active user), que NO es owner.
-    // Resultado: quien clic en "crear archivo" quedaba sin permisos explícitos.
     var ownerReal = "";  // EFFECTIVE — quien ejecuta el script y queda como owner
-    var operario = "";   // ACTIVE   — quien usó la WebApp e hizo clic en crear
+    var operario  = "";  // ACTIVE   — quien usó la WebApp e hizo clic en crear
     try { ownerReal = String(Session.getEffectiveUser().getEmail() || "").toLowerCase(); } catch(eO) {}
     try { operario  = String(Session.getActiveUser().getEmail()    || "").toLowerCase(); } catch(eA) {}
 
-    // PRIORIDAD 1: el operario que CREÓ el archivo SIEMPRE debe ser editor,
-    // aunque no esté en USUARIOS hoja (puede ser una cuenta válida en el equipo
-    // que no esté registrada aún). Solo se omite si coincide con el owner real.
-    if (operario && operario.indexOf("@") !== -1 && operario !== ownerReal) {
-      try {
-        file.addEditor(operario);
-        resultado.editoresAgregados++;
-        resultado.emailsAgregados.push(operario + " (creador)");
-      } catch (eOp) {
-        // Si falla (ya tenía acceso, etc.), no es crítico — la mayoría de casos
-        // significa que ya estaba como editor por addEditor previo o por dominio
-        resultado.emailsFallidos.push({
-          email: operario + " (creador)",
-          error: String(eOp.message || eOp)
-        });
-      }
-    }
+    // Quién YA tiene acceso (editores + owner) → se respeta y NO se re-comparte.
+    var yaTiene = {};
+    try { file.getEditors().forEach(function(u){ var e = String(u.getEmail()||"").toLowerCase(); if (e) yaTiene[e] = true; }); } catch(eEd) {}
+    try { var ow = file.getOwner(); if (ow) { var oe = String(ow.getEmail()||"").toLowerCase(); if (oe) yaTiene[oe] = true; } } catch(eOw) {}
+    if (ownerReal) yaTiene[ownerReal] = true;
 
-    // PRIORIDAD 2: equipo activo desde USUARIOS — solo se excluye al OWNER REAL
-    // (no al operario, que ya agregamos arriba con tag "(creador)")
-    emails.forEach(function(em){
-      if (em === ownerReal) return;  // owner real ya tiene el archivo (no se puede addEditor a uno mismo)
-      if (em === operario) return;   // ya lo agregamos arriba como "(creador)"
-      try {
-        file.addEditor(em);
+    // Cola sin duplicados ni los que ya tienen acceso
+    var aAgregar = [];
+    function _encolar(em, tag) {
+      em = String(em || "").trim().toLowerCase();
+      if (!em || em.indexOf("@") === -1 || yaTiene[em]) return;
+      yaTiene[em] = true;
+      aAgregar.push({ email: em, tag: tag });
+    }
+    _encolar(operario, "creador");
+    emails.forEach(function(em){ _encolar(em, "equipo"); });
+
+    aAgregar.forEach(function(it){
+      var r = _addEditorSilencioso(fileId, it.email);
+      if (r.ok) {
         resultado.editoresAgregados++;
-        resultado.emailsAgregados.push(em);
-      } catch (eE) {
+        resultado.emailsAgregados.push(it.email + (it.tag === "creador" ? " (creador)" : ""));
+      } else {
         resultado.editoresFallidos++;
-        resultado.emailsFallidos.push({ email: em, error: String(eE.message || eE) });
+        resultado.emailsFallidos.push({ email: it.email, error: r.error });
       }
     });
   } catch (e3) {
-    resultado.errores.push("addEditors falló: " + e3.message);
+    resultado.errores.push("addEditores (silencioso) falló: " + e3.message);
   }
 
   // FIX 8.29: log también muestra quién es active vs effective para diagnóstico
