@@ -1,0 +1,95 @@
+/* =====================================================================================
+   PARCHE PARA EL "Codigo.gs" DEL TERMINAL WMS (proyecto standalone)
+   =====================================================================================
+   Aplica 3 cambios. NO reescribas todo el archivo: solo estos 3 puntos.
+   Es compatible con tu código actual y NO cambia el conteo ni la auditoría.
+
+   1) REEMPLAZA tu función getTodosLosUsuarios() por la versión de abajo
+      (ahora también lee la hoja USUARIOS del libro maestro = lista ÚNICA con el Panel).
+   2) AÑADE la función obtenerSesionWMSActual()  (login con el Gmail actual).
+   3) AÑADE la función obtenerDatosAnalisis()    (la INTERFAZ ya la llama; hoy falta).
+
+   MASTER_DB_ID: déjalo en el libro de PRODUCCIÓN cuando publiques:
+     PRODUCCIÓN  -> "1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk"
+     COPIA PRUEBA-> "1_-tI6nvzofHRVZKJTU55AeLgEpkaUoXhtHbMakNGOt8"
+   ===================================================================================== */
+
+
+/* ---------- 1) REEMPLAZAR getTodosLosUsuarios() ---------- */
+function getTodosLosUsuarios() {
+  let usuarios = JSON.parse(JSON.stringify(USUARIOS_BASE));
+  let props = PropertiesService.getScriptProperties().getProperty('WMS_TEMP_USERS');
+  if (props) {
+    let tempUsers = JSON.parse(props);
+    for (let email in tempUsers) { usuarios[email] = tempUsers[email]; }
+  }
+  // FIX 8.37: lista ÚNICA — lee también la hoja USUARIOS del libro maestro (la que
+  // administra el Panel de Control). La hoja MANDA sobre la base hardcodeada.
+  // Esquema USUARIOS: A Email | B Nombre | C Rol(panel) | E Activo | H Rol WMS | I Contraseña
+  try {
+    const sh = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("USUARIOS");
+    if (sh && sh.getLastRow() > 1) {
+      const nc = Math.max(5, sh.getLastColumn());
+      const v = sh.getRange(2, 1, sh.getLastRow() - 1, nc).getValues();
+      v.forEach(function (r) {
+        const em = String(r[0] || "").trim().toLowerCase();
+        const activo = (r[4] === true || String(r[4]).toUpperCase() === "TRUE" || r[4] === "");
+        if (!em || em.indexOf("@") === -1 || !activo) return;
+        const rolPanel = String(r[2] || "").trim();
+        let rolWms = (nc >= 8 && String(r[7] || "").trim())
+          ? String(r[7]).trim().toUpperCase()
+          : ((rolPanel === "Coordinador" || rolPanel === "Líder de Conteo") ? "ADMIN" : "OPERADOR");
+        let pass = (nc >= 9 && String(r[8] || "").trim())
+          ? String(r[8]).trim()
+          : ((usuarios[em] && usuarios[em].pass) ? usuarios[em].pass : "1234");
+        usuarios[em] = {
+          nombre: String(r[1] || "").trim() || (usuarios[em] && usuarios[em].nombre) || em.split("@")[0],
+          rol: rolWms, pass: pass
+        };
+      });
+    }
+  } catch (e) { /* si falla, se usa la base; nunca rompe el login */ }
+  return usuarios;
+}
+
+
+/* ---------- 2) AÑADIR obtenerSesionWMSActual() ---------- */
+/* Login con el Gmail actual (misma sesión que el Panel). Si el correo no está
+   registrado, entra como AUDITOR (solo lectura) pero con su propio correo. */
+function obtenerSesionWMSActual() {
+  var email = "";
+  try { email = Session.getActiveUser().getEmail() || ""; } catch (e) {}
+  if (!email) { try { email = Session.getEffectiveUser().getEmail() || ""; } catch (e) {} }
+  if (!email) return { autenticado: false };
+  var emailN = String(email).trim().toLowerCase();
+  var db = getTodosLosUsuarios();
+  var u = db[emailN] || db[email] || null;
+  return {
+    autenticado: true,
+    email: emailN,
+    nombre: (u && u.nombre) ? u.nombre : emailN.split("@")[0],
+    rol: (u && u.rol) ? String(u.rol).toUpperCase() : "AUDITOR",
+    registrado: !!u
+  };
+}
+
+
+/* ---------- 3) AÑADIR obtenerDatosAnalisis() ---------- */
+/* La INTERFAZ (BlindInventory) llama obtenerDatosAnalisis(fileId) y hoy no existe,
+   por eso el ANÁLISIS se queda girando. Devuelve lo mismo que parseAnalysisData. */
+function obtenerDatosAnalisis(fileId) {
+  var vacio = {
+    exito: true,
+    kpis: { efectividadUnidades:0, efectividadRef:0, efectividadPos:0,
+            uniValidadas:0, uniTotal:0, refValidadas:0, refTotal:0,
+            posValidadas:0, posTotal:0 },
+    discrepancias: []
+  };
+  try {
+    var ss = getTargetSS(fileId);
+    var sheet = ss.getSheetByName("PLANILLA DE CONTEO FISICO");
+    if (!sheet || sheet.getLastRow() < 2) return vacio;
+    var fullData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 29).getValues();
+    return parseAnalysisData(fullData);
+  } catch (e) { vacio.exito = false; vacio.error = e.message; return vacio; }
+}
