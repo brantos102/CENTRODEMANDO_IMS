@@ -5623,36 +5623,155 @@ function getTargetSS(fileId) {
 
 /* ---------- Lista combinada de usuarios (base + temporales) ---------- */
 function getTodosLosUsuarios() {
-  var usuarios = JSON.parse(JSON.stringify(USUARIOS_BASE_WMS));
+  var usuarios = JSON.parse(JSON.stringify(USUARIOS_BASE_WMS));  // respaldo (sin pass)
   // Los usuarios temporales del WMS se guardan en ScriptProperties
   var props = PropertiesService.getScriptProperties().getProperty("WMS_TEMP_USERS");
   if (props) {
     var tempUsers = JSON.parse(props);
-    for (var em in tempUsers) usuarios[em] = tempUsers[em];
+    for (var em0 in tempUsers) usuarios[em0] = tempUsers[em0];
   }
-  // Y también añadir los usuarios activos de la hoja USUARIOS si existen
+  // FIX FASE 8.37 (consolidación): la HOJA USUARIOS es la FUENTE ÚNICA y SOBRESCRIBE
+  // base/temp. Lee "Rol WMS" (col 8) y "Contraseña" (col 9) si existen; si no, mapea
+  // desde el rol del panel y usa el pass previo (temp) o "1234". 100% retrocompatible:
+  // hojas con 5-7 columnas se comportan igual que antes.
   try {
     var ss = _getSS();
     var sh = ss.getSheetByName(USR_CFG.HOJA);
     if (sh && sh.getLastRow() > 1) {
-      var v = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
+      var nc = Math.max(5, sh.getLastColumn());
+      var v = sh.getRange(2, 1, sh.getLastRow() - 1, nc).getValues();
       v.forEach(function(r) {
         var em = String(r[0] || "").trim().toLowerCase();
         var nm = String(r[1] || "").trim();
         var rolHoja = String(r[2] || "").trim();
         var activo = (r[4] === true || String(r[4]).toUpperCase() === "TRUE" || r[4] === "");
-        if (em && activo && em.indexOf("@") !== -1 && !usuarios[em]) {
-          // Mapear rol del panel al rol del WMS
-          var rolWms = rolHoja === "Coordinador" ? "ADMIN" :
-                       rolHoja === "Líder de Conteo" ? "ADMIN" : "OPERADOR";
-          // No tenemos contraseña en la hoja USUARIOS, ponemos "1234" como default
-          // El usuario puede cambiarla via WMS_TEMP_USERS si quiere.
-          usuarios[em] = { nombre: nm, rol: rolWms, pass: "1234" };
-        }
+        if (!em || em.indexOf("@") === -1 || !activo) return;
+        var rolWms = (nc >= 8 && String(r[7] || "").trim())
+          ? String(r[7]).trim().toUpperCase()
+          : ((rolHoja === "Coordinador" || rolHoja === "Líder de Conteo") ? "ADMIN" : "OPERADOR");
+        var pass = (nc >= 9 && String(r[8] || "").trim())
+          ? String(r[8]).trim()
+          : ((usuarios[em] && usuarios[em].pass) ? usuarios[em].pass : "1234");
+        usuarios[em] = {
+          nombre: nm || (usuarios[em] && usuarios[em].nombre) || em.split("@")[0],
+          rol: rolWms, pass: pass, rolPanel: rolHoja
+        };
       });
     }
   } catch (e) {}
   return usuarios;
+}
+
+
+/* ==========================================================================
+   FIX FASE 8.37 — CONSOLIDACIÓN DE USUARIOS EN UNA SOLA LISTA (hoja USUARIOS)
+   ==========================================================================
+   La hoja USUARIOS del libro maestro pasa a ser la FUENTE ÚNICA para ambos
+   sistemas (Centro de Control + Terminal WMS). Esquema único:
+     A Email · B Nombre · C Rol (panel) · D Teléfono · E Activo ·
+     F Fecha Ingreso · G Notas · H Rol WMS · I Contraseña
+   consolidarUsuarios() es ADITIVO e IDEMPOTENTE: no borra ni cambia filas
+   existentes; solo añade columnas/usuarios que falten. */
+function consolidarUsuarios() {
+  var ss = _getSS();
+  var sh = ss.getSheetByName(USR_CFG.HOJA);
+  if (!sh) { setupUsuarios(); sh = ss.getSheetByName(USR_CFG.HOJA); }
+  if (!sh) throw new Error("No se pudo crear/abrir la hoja USUARIOS.");
+
+  // 1) Esquema: encabezados de col 8 (Rol WMS) y col 9 (Contraseña) si faltan
+  var anchoLeer = Math.max(9, sh.getLastColumn());
+  var headers = sh.getRange(1, 1, 1, anchoLeer).getValues()[0];
+  if (!String(headers[7] || "").trim()) sh.getRange(1, 8).setValue("Rol WMS");
+  if (!String(headers[8] || "").trim()) sh.getRange(1, 9).setValue("Contraseña");
+  sh.getRange(1, 1, 1, 9).setFontWeight("bold").setBackground("#1a73e8").setFontColor("#ffffff");
+  var ruleW = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["ADMIN", "OPERADOR", "AUDITOR", "TEMPORAL"], true).build();
+  sh.getRange(2, 8, 500, 1).setDataValidation(ruleW);
+
+  // 2) Emails ya presentes (no se tocan)
+  var existentes = {};
+  if (sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function(r){
+      var e = String(r[0] || "").trim().toLowerCase(); if (e) existentes[e] = true;
+    });
+  }
+  var nuevos = [];
+  function añadir(email, nombre, rolPanel, rolWms, pass, nota) {
+    var e = String(email || "").trim().toLowerCase();
+    if (!e || e.indexOf("@") === -1 || existentes[e]) return;
+    existentes[e] = true;
+    nuevos.push([email, nombre, rolPanel, "", true, new Date(), nota, rolWms, pass]);
+  }
+  // 2a) Hardcodeados del WMS → a la hoja (pass por defecto "1234": CAMBIAR luego)
+  for (var em in USUARIOS_BASE_WMS) {
+    var u = USUARIOS_BASE_WMS[em];
+    var rolW = String(u.rol || "OPERADOR").toUpperCase();
+    var rolPanel = (rolW === "ADMIN") ? "Líder de Conteo" : "Auditor";
+    añadir(em, u.nombre, rolPanel, rolW, u.pass || "1234", "Importado de USUARIOS_BASE_WMS");
+  }
+  // 2b) EQUIPO_OPERATIVO → a la hoja
+  try {
+    var eq = ss.getSheetByName(CRON_CFG.HOJA_EQUIPO);
+    if (eq && eq.getLastRow() > 1) {
+      eq.getRange(2, 1, eq.getLastRow() - 1, 3).getValues().forEach(function(r){
+        var nombre = String(r[0] || "").trim(), email = String(r[1] || "").trim();
+        var rolEq = String(r[2] || "").trim();
+        var rolPanel = rolEq.toLowerCase().indexOf("coordinador") !== -1 ? "Coordinador" : "Líder de Conteo";
+        añadir(email, nombre, rolPanel, "ADMIN", "1234", "Importado de EQUIPO_OPERATIVO");
+      });
+    }
+  } catch (e) {}
+
+  if (nuevos.length) sh.getRange(sh.getLastRow() + 1, 1, nuevos.length, 9).setValues(nuevos);
+  var msg = "✓ Consolidación lista. Usuarios añadidos: " + nuevos.length + ".\n\n" +
+            "La hoja USUARIOS es ahora la lista única:\n" +
+            "  • Rol panel = columna C\n  • Rol WMS = columna H\n  • Contraseña = columna I\n\n" +
+            "IMPORTANTE: revisa la columna I — los importados quedaron con '1234'. " +
+            "Cámbialos por las contraseñas reales del WMS.";
+  try { _alert(msg); } catch (e) {}
+  return { ok: true, agregados: nuevos.length };
+}
+
+/* ---------- Listado unificado (solo lectura) para verlo en un solo lugar ---------- */
+function obtenerListadoConsolidadoUsuarios() {
+  _requiereRol(["Coordinador", "Líder de Conteo"]);
+  var mapa = {};
+  function put(email, nombre, rolPanel, rolWms, activo, fuente) {
+    var e = String(email || "").trim().toLowerCase();
+    if (!e || e.indexOf("@") === -1) return;
+    if (!mapa[e]) mapa[e] = { email: e, nombre: "", rolPanel: "", rolWms: "", activo: activo !== false, fuentes: {} };
+    var m = mapa[e];
+    if (nombre && !m.nombre) m.nombre = nombre;
+    if (rolPanel && !m.rolPanel) m.rolPanel = rolPanel;
+    if (rolWms && !m.rolWms) m.rolWms = rolWms;
+    m.fuentes[fuente] = true;
+  }
+  for (var em in USUARIOS_BASE_WMS)
+    put(em, USUARIOS_BASE_WMS[em].nombre, "", String(USUARIOS_BASE_WMS[em].rol || "").toUpperCase(), true, "WMS_BASE");
+  try {
+    var tp = PropertiesService.getScriptProperties().getProperty("WMS_TEMP_USERS");
+    if (tp) { var t = JSON.parse(tp); for (var e2 in t) put(e2, t[e2].nombre, "", String(t[e2].rol || "").toUpperCase(), true, "TEMP"); }
+  } catch (e) {}
+  try {
+    var ss = _getSS(), sh = ss.getSheetByName(USR_CFG.HOJA);
+    if (sh && sh.getLastRow() > 1) {
+      var nc = Math.max(5, sh.getLastColumn());
+      sh.getRange(2, 1, sh.getLastRow() - 1, nc).getValues().forEach(function(r){
+        var activo = (r[4] === true || String(r[4]).toUpperCase() === "TRUE" || r[4] === "");
+        var rolWms = nc >= 8 ? String(r[7] || "").trim().toUpperCase() : "";
+        put(r[0], String(r[1] || "").trim(), String(r[2] || "").trim(), rolWms, activo, "USUARIOS");
+      });
+    }
+  } catch (e) {}
+  try {
+    var ss2 = _getSS(), eq = ss2.getSheetByName(CRON_CFG.HOJA_EQUIPO);
+    if (eq && eq.getLastRow() > 1)
+      eq.getRange(2, 1, eq.getLastRow() - 1, 3).getValues().forEach(function(r){
+        put(r[1], String(r[0] || "").trim(), String(r[2] || "").trim(), "", true, "EQUIPO");
+      });
+  } catch (e) {}
+  return Object.keys(mapa).map(function(k){ var m = mapa[k]; m.fuentes = Object.keys(m.fuentes); return m; })
+    .sort(function(a, b){ return (a.nombre || a.email).localeCompare(b.nombre || b.email); });
 }
 
 
