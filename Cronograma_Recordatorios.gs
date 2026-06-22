@@ -4966,23 +4966,25 @@ function setWmsUrl(url) {
 }
 
 function _obtenerWmsUrl() {
-  // FIX FASE 8.37 (Opción B): el WMS es ESTE mismo proyecto (vía ?vista=wms).
-  // Prioridad: 1) override explícito (setWmsUrl) · 2) URL de ESTE deployment ·
-  // 3) constante (standalone) como último respaldo. Así el link "ir a contar"
-  // coordina archivos/usuarios sin duplicar código ni configurar nada.
+  // FIX FASE 8.37 (dos códigos): el WMS es el proyecto STANDALONE (link /exec).
+  // Prioridad: 1) override explícito (setWmsUrl) · 2) constante DEPLOY_URL (standalone).
+  // OJO: NO usar ScriptApp.getService().getUrl() — en el editor devuelve /dev y
+  // genera links rotos para los operarios (esa era la falla del modo "un solo código").
   var prop = PropertiesService.getScriptProperties().getProperty("WMS_DEPLOY_URL");
   if (prop) return prop;
-  try { var u = ScriptApp.getService().getUrl(); if (u) return u; } catch (e) {}
   return WMS_CFG.DEPLOY_URL || "";
 }
 
-// FIX FASE 8.37: usar el WMS de ESTE proyecto (borra un override previo a otro deployment).
-// Ejecutar UNA vez desde el editor si antes se fijó setWmsUrl a un link externo.
-function usarWmsDeEstaApp() {
-  PropertiesService.getScriptProperties().deleteProperty("WMS_DEPLOY_URL");
-  var url = "";
-  try { url = ScriptApp.getService().getUrl(); } catch (e) {}
-  try { _alert("✓ El WMS ahora es este proyecto:\n" + (url || "(se resolverá al desplegar)") + "?vista=wms"); } catch (e) {}
+// Devuelve la URL base del Terminal WMS (para el botón "Abrir Terminal WMS").
+function obtenerWmsUrlBase() {
+  return _obtenerWmsUrl();
+}
+
+// FIX FASE 8.37: fija el WMS al proyecto STANDALONE (link /exec estable).
+function usarWmsStandalone() {
+  var url = "https://script.google.com/macros/s/AKfycbwBwuTEaaxpf3IWWt1iAT0DzI8QIqZSXm2SnA1otqttURsUi2mEwnvNU1a1xn-vu2N2/exec";
+  PropertiesService.getScriptProperties().setProperty("WMS_DEPLOY_URL", url);
+  try { _alert("✓ Terminal WMS fijado al standalone:\n" + url); } catch (e) {}
   return { ok: true, url: url };
 }
 

@@ -770,6 +770,16 @@ function abrirLibro() {
   google.script.run.withSuccessHandler(url=>{window.open(url,'_blank');toast('Abriendo libro','success');}).obtenerUrlLibro();
 }
 
+/* FIX FASE 8.37: abrir el Terminal WMS independientemente (sin archivo) para que el
+   operario seleccione manualmente el inventario. Abre la URL base del WMS standalone. */
+function abrirTerminalWMS() {
+  toast('Abriendo Terminal WMS…');
+  google.script.run.withSuccessHandler(function(url){
+    if (!url) { toast('WMS no configurado (usa setWmsUrl)','error'); return; }
+    window.open(url, '_blank');
+  }).withFailureHandler(function(e){ toast('Error: '+e.message,'error'); }).obtenerWmsUrlBase();
+}
+
 /* FIX FASE 7.4: Exportar reporte por cliente desde Web App.
    Muestra selector de cliente → llama backend que actualiza el archivo
    EXISTENTE en HISTORIAL_REPORTES (no crea uno nuevo si ya existe). */
