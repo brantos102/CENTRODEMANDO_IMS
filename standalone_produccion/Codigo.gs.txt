@@ -929,3 +929,96 @@ function registrarAccesoWMS(fileId, cliente, viaCorreo) {
   try { CacheService.getScriptCache().put("WMS_ACCESO_" + fileId, Date.now().toString(), 21600); } catch (e) {}
   return true;
 }
+
+
+/* FIX 8.37: marcar inventario como ENTREGADO desde el WMS. Coordina fecha fin
+   (PLANILLA fila 2, col B = FECHA FINAL) y el Panel (PANEL DE CONTROL avance=Entregado).
+   Pide confirmacion si el avance < 100%. No afecta nada mas. */
+function finalizarInventarioWMS(fileId, confirmar) {
+  try {
+    const ss = getTargetSS(fileId);
+    const sheet = ss.getSheetByName("PLANILLA DE CONTEO FISICO");
+    if (!sheet) return { exito: false, mensaje: "Falta PLANILLA DE CONTEO FISICO" };
+    const lastRow = sheet.getLastRow();
+    let tRef = 0, cRef = 0;
+    if (lastRow >= 2) {
+      const d = sheet.getRange(2, 1, lastRow - 1, 24).getValues();
+      for (let i = 0; i < d.length; i++) {
+        const sku = String(d[i][6]).trim();
+        const catLog = String(d[i][12]).trim().toUpperCase();
+        const est = String(d[i][19]).trim().toUpperCase();
+        if (!sku || catLog === "DIF_INV") continue;
+        tRef++;
+        if (d[i][21] !== "" || d[i][22] !== "" || d[i][23] !== "" || est === "CORRECTO") cRef++;
+      }
+    }
+    const avance = tRef === 0 ? 0 : Math.round((cRef / tRef) * 100);
+    if (avance < 100 && !confirmar) {
+      return { exito: false, requiereConfirmacion: true, avance: avance, texto: cRef + " / " + tRef + " Refs" };
+    }
+    const hoy = new Date();
+    const soloFecha = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    sheet.getRange(2, 2).setValue(soloFecha).setNumberFormat("dd/MM/yyyy");
+    let panelOk = false;
+    try {
+      const pan = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("PANEL DE CONTROL");
+      if (pan && pan.getLastRow() > 1) {
+        const ids = pan.getRange(2, 3, pan.getLastRow() - 1, 1).getValues();
+        for (let i = 0; i < ids.length; i++) {
+          if (String(ids[i][0]).trim() === String(fileId).trim()) {
+            pan.getRange(i + 2, 7).setValue("Entregado");
+            panelOk = true; break;
+          }
+        }
+      }
+    } catch (e) {}
+    notificarCambioBD(fileId);
+    return {
+      exito: true, avance: avance, texto: cRef + " / " + tRef + " Refs",
+      fechaFin: Utilities.formatDate(soloFecha, Session.getScriptTimeZone(), "dd/MM/yyyy"),
+      panelActualizado: panelOk
+    };
+  } catch (e) { return { exito: false, mensaje: e.message }; }
+}
+
+/* Correo de finalizacion (formato) para que el operario lo envie desde Gmail. */
+function generarCorreoFinalizacionWMS(fileId) {
+  try {
+    let cliente = "", fileName = "";
+    try {
+      const pan = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("PANEL DE CONTROL");
+      if (pan && pan.getLastRow() > 1) {
+        const data = pan.getRange(2, 1, pan.getLastRow() - 1, 7).getValues();
+        for (let i = 0; i < data.length; i++) {
+          if (String(data[i][2]).trim() === String(fileId).trim()) { cliente = String(data[i][0]).trim(); fileName = String(data[i][1]).trim(); break; }
+        }
+      }
+    } catch (e) {}
+    try { if (!fileName) fileName = SpreadsheetApp.openById(fileId).getName(); } catch (e) {}
+    let tRef = 0, cRef = 0;
+    try {
+      const sheet = getTargetSS(fileId).getSheetByName("PLANILLA DE CONTEO FISICO");
+      const lr = sheet.getLastRow();
+      if (lr >= 2) {
+        const d = sheet.getRange(2, 1, lr - 1, 24).getValues();
+        for (let i = 0; i < d.length; i++) {
+          const sku = String(d[i][6]).trim(), cat = String(d[i][12]).trim().toUpperCase(), est = String(d[i][19]).trim().toUpperCase();
+          if (!sku || cat === "DIF_INV") continue; tRef++;
+          if (d[i][21] !== "" || d[i][22] !== "" || d[i][23] !== "" || est === "CORRECTO") cRef++;
+        }
+      }
+    } catch (e) {}
+    const avance = tRef === 0 ? 0 : Math.round((cRef / tRef) * 100);
+    const fechaTxt = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm");
+    const asunto = "Finalizacion de Inventario - " + (cliente || "Cliente") + (fileName ? " - " + fileName : "");
+    let cuerpo = "Estimados,\n\n";
+    cuerpo += "Por medio del presente se informa la FINALIZACION del inventario";
+    cuerpo += cliente ? " del cliente " + cliente + "." : ".";
+    cuerpo += "\n\nFecha y hora de finalizacion: " + fechaTxt + "\n";
+    cuerpo += "Avance de conteo: " + avance + "% (" + cRef + " / " + tRef + " referencias)\n";
+    if (avance < 100) cuerpo += "NOTA: La entrega se confirma con avance PARCIAL (" + avance + "%).\n";
+    cuerpo += "\nEl detalle de conteos, diferencias y trazabilidad queda registrado en el archivo del inventario.\n";
+    cuerpo += "\nQuedamos atentos a cualquier observacion o requerimiento adicional.\n\nSaludos cordiales.";
+    return { exito: true, asunto: asunto, cuerpo: cuerpo, cliente: cliente, avance: avance };
+  } catch (e) { return { exito: false, mensaje: e.message }; }
+}

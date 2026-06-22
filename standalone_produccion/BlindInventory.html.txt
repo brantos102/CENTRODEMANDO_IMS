@@ -493,6 +493,7 @@
 
         <button id="btnCambiarBase" onclick="cambiarInventario()" class="btn-neutral" style="display:none; padding:8px 16px; margin-left:5px;" title="Cambiar Base"><span class="material-icons" style="font-size:16px;">swap_horiz</span> BASE</button>
         <button id="btnLogout" onclick="cerrarSesion()" class="btn-danger" style="display:none; padding:8px 16px; margin-left:5px;" title="Cerrar Sesión"><span class="material-icons" style="font-size:16px;">logout</span> SALIR</button>
+        <button id="btnEntregar" onclick="entregarInventarioWMS()" class="btn-success" style="display:none; padding:8px 16px; margin-left:5px;" title="Marcar inventario como Entregado"><span class="material-icons" style="font-size:16px;">task_alt</span> ENTREGADO</button>
     </div>
   </header>
 
@@ -1663,6 +1664,50 @@ function cargarAutocompletadoSKU() {
         }).validarCredenciales(elUser.value, pass);
     }
 
+    // FIX 8.37: marcar inventario como ENTREGADO desde el WMS (coordina fecha fin + Panel).
+    function entregarInventarioWMS() {
+        if (USER_ROLE === 'GUEST') { return checkAuth(); }
+        if (!CURRENT_FILE_ID || CURRENT_FILE_ID === 'LOCAL') { return Swal.fire("Sin inventario","Primero selecciona un inventario.","warning"); }
+        const ejecutar = (confirmar) => {
+            Swal.fire({ title: confirmar ? 'Confirmando entrega...' : 'Verificando avance...', didOpen: () => Swal.showLoading() });
+            google.script.run.withSuccessHandler(res => {
+                if (res && res.requiereConfirmacion) {
+                    Swal.fire({
+                        title: 'Avance incompleto (' + res.avance + '%)',
+                        html: 'El inventario esta en <b>' + res.texto + '</b> (' + res.avance + '%).<br>Confirmas igualmente la <b>ENTREGA</b>?',
+                        icon: 'warning', showCancelButton: true,
+                        confirmButtonText: 'Si, entregar', cancelButtonText: 'Cancelar', confirmButtonColor: '#16a34a'
+                    }).then(r => { if (r.isConfirmed) ejecutar(true); });
+                    return;
+                }
+                if (res && res.exito) {
+                    forceSync();
+                    Swal.fire({
+                        title: 'Inventario Entregado',
+                        html: 'Fecha fin: <b>' + res.fechaFin + '</b><br>Avance: <b>' + res.avance + '%</b>' +
+                              (res.panelActualizado ? '<br><span style="color:#16a34a">Panel de Control actualizado</span>' : ''),
+                        icon: 'success', showCancelButton: true,
+                        confirmButtonText: 'Generar correo de finalizacion', cancelButtonText: 'Cerrar', confirmButtonColor: '#2563eb'
+                    }).then(r => { if (r.isConfirmed) generarCorreoFinalWMS(); });
+                } else {
+                    Swal.fire("Error", (res && res.mensaje) || "No se pudo registrar la entrega.", "error");
+                }
+            }).withFailureHandler(e => Swal.fire("Error de Red", e.message, "error")).finalizarInventarioWMS(CURRENT_FILE_ID, confirmar);
+        };
+        ejecutar(false);
+    }
+
+    // Abre Gmail con el correo de finalizacion prellenado (formato de finalizacion).
+    function generarCorreoFinalWMS() {
+        Swal.fire({ title: 'Generando correo...', didOpen: () => Swal.showLoading() });
+        google.script.run.withSuccessHandler(cc => {
+            Swal.close();
+            if (!cc || !cc.exito) { return Swal.fire("Error", (cc && cc.mensaje) || "No se pudo generar el correo.", "error"); }
+            const url = 'https://mail.google.com/mail/?view=cm&fs=1&su=' + encodeURIComponent(cc.asunto) + '&body=' + encodeURIComponent(cc.cuerpo);
+            window.open(url, '_blank');
+        }).withFailureHandler(e => { Swal.close(); Swal.fire("Error de Red", e.message, "error"); }).generarCorreoFinalizacionWMS(CURRENT_FILE_ID);
+    }
+
     function iniciarSesionExitosa(userName, invName) {
         document.getElementById('modalLogin').style.display = 'none';
         
@@ -1679,6 +1724,8 @@ function cargarAutocompletadoSKU() {
 
         document.getElementById('btnCambiarBase').style.display = "inline-flex";
         document.getElementById('btnLogout').style.display = "inline-flex";
+        // FIX 8.37: boton Entregado solo para usuarios con permiso (no auditor/GUEST)
+        document.getElementById('btnEntregar').style.display = (USER_ROLE !== 'GUEST') ? "inline-flex" : "none";
         
         if(USER_ROLE !== 'GUEST') {
             const btnLogin = document.getElementById('btnLoginHeader');
