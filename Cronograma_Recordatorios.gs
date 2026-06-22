@@ -4692,6 +4692,28 @@ function obtenerUrlLibroMaestro() {
   try { return _getSS().getUrl(); } catch (e) { return ""; }
 }
 
+/* ---------- FIX FASE 8.37: diagnóstico — ejecútalo en el editor y mira el REGISTRO.
+   Imprime con Logger.log (el valor de retorno NO sale solo en el log). ---------- */
+function diagnosticoWMS() {
+  var L = [];
+  L.push("===== DIAGNÓSTICO ITSANET / WMS =====");
+  try { L.push("Correo ACTIVO (usuario): " + (Session.getActiveUser().getEmail() || "(vacío)")); }
+  catch (e) { L.push("Correo ACTIVO: ERROR " + e.message); }
+  try { L.push("Correo EFECTIVO (dueño): " + (Session.getEffectiveUser().getEmail() || "(vacío)")); } catch (e) {}
+  try { L.push("Libro maestro: " + obtenerUrlLibroMaestro()); } catch (e) { L.push("Libro maestro: ERROR " + e.message); }
+  try { L.push("WMS URL (_obtenerWmsUrl): " + _obtenerWmsUrl()); } catch (e) { L.push("WMS URL: ERROR (¿función no existe?) " + e.message); }
+  try { L.push("URL de ESTA app (ScriptApp): " + ScriptApp.getService().getUrl()); } catch (e) { L.push("ScriptApp URL: " + e.message); }
+  try { L.push("Sesión WMS actual: " + JSON.stringify(obtenerSesionWMSActual())); }
+  catch (e) { L.push("obtenerSesionWMSActual: NO EXISTE/ERROR → falta desplegar el código nuevo. " + e.message); }
+  var p = PropertiesService.getScriptProperties();
+  L.push("ITSANET_API_BASE: " + (p.getProperty("ITSANET_API_BASE") || "(no configurado)"));
+  L.push("ITSANET_API_KEY:  " + (p.getProperty("ITSANET_API_KEY") ? "(configurada)" : "(no)"));
+  L.push("ITSANET_TOKEN_URL:" + (p.getProperty("ITSANET_TOKEN_URL") || "(no)"));
+  var msg = L.join("\n");
+  Logger.log(msg);   // ← esto SÍ aparece en el Registro de ejecución
+  return msg;
+}
+
 function _permisosDeRol(rol) {
   // FIX FASE 7.2: Sanitizar rol para no caer en default por espacios o mayúsculas.
   var rolN = String(rol || "").trim().toLowerCase();
@@ -6030,6 +6052,15 @@ function itsanetProbar() { return itsanetApi("/health", "get"); }
 
 /* ---------- Base de códigos EAN13 (lectura del CSV en Drive) ---------- */
 function obtenerBaseEAN(clienteActual) {
+  // FIX FASE 8.37: si hay API ITSANET configurada (Propiedades del script), se usa
+  // la API por token; si no, se mantiene el CSV de Drive (comportamiento actual).
+  try {
+    if (PropertiesService.getScriptProperties().getProperty("ITSANET_API_BASE")) {
+      var apiRes = _obtenerBaseEAN_desdeItsanet(clienteActual);
+      if (apiRes && !apiRes.error && apiRes.data && Object.keys(apiRes.data).length) return apiRes;
+      // si la API falla o viene vacía, NO rompemos: caemos al CSV de respaldo.
+    }
+  } catch (eApi) {}
   try {
     var iter = DriveApp.searchFiles("title contains 'RL_PRODUCTO_CODIGOS EAN13'");
     if (!iter.hasNext()) return { error: "Archivo EAN no encontrado en Drive." };
@@ -6059,6 +6090,29 @@ function obtenerBaseEAN(clienteActual) {
     }
     return { data: eanMap };
   } catch (e) { return { error: "Error leyendo EAN: " + e.message }; }
+}
+
+/* ---------- FIX FASE 8.37: base EAN→SKU desde la API de ITSANET (por token) ----------
+   👉 ADAPTA dos cosas a tu API real:
+      (1) la RUTA del endpoint que devuelve productos con EAN y SKU,
+      (2) los NOMBRES de campo (ean / sku) según el JSON que regrese tu API.
+   Devuelve { data: { "EAN": "SKU", ... } } igual que el CSV. */
+function _obtenerBaseEAN_desdeItsanet(clienteActual) {
+  try {
+    // (1) 👇 CAMBIA la ruta por el endpoint real de ITSANET:
+    var resp = itsanetApi("/productos?cliente=" + encodeURIComponent(clienteActual || ""), "get");
+    // La respuesta puede venir como array directo o dentro de data/items/productos:
+    var lista = (resp && (resp.data || resp.items || resp.productos)) || resp || [];
+    if (!Array.isArray(lista)) lista = [];
+    var eanMap = {};
+    lista.forEach(function(p){
+      // (2) 👇 AJUSTA los nombres de campo a los de tu API:
+      var ean = String(p.ean || p.codigoEAN || p.barcode || p.EAN || "").trim().toUpperCase();
+      var sku = String(p.sku || p.codigo || p.realSku || p.SKU || "").trim().toUpperCase();
+      if (ean && sku) eanMap[ean] = sku;
+    });
+    return { data: eanMap };
+  } catch (e) { return { error: "API ITSANET: " + e.message }; }
 }
 
 
