@@ -5842,6 +5842,86 @@ function obtenerConfiguracionApp() {
 }
 
 
+/* ==========================================================================
+   INTEGRACIÓN API ITSANET (FIX FASE 8.37) — andamiaje listo para conectar
+   --------------------------------------------------------------------------
+   ► DÓNDE VAN LAS CREDENCIALES (NO se escriben en el código; van en Propiedades):
+     Apps Script  →  ⚙ Configuración del proyecto  →  "Propiedades del script"  →
+     Agregar propiedad, según cómo autentique la API de ITSANET:
+       • Si usa API KEY:
+           ITSANET_API_BASE = https://api.itsanet.com        (URL base, sin / final)
+           ITSANET_API_KEY  = <tu_api_key>
+       • Si usa OAuth2 (client_credentials / token):
+           ITSANET_API_BASE      = https://api.itsanet.com
+           ITSANET_TOKEN_URL     = https://api.itsanet.com/oauth/token
+           ITSANET_CLIENT_ID     = <client_id>
+           ITSANET_CLIENT_SECRET = <client_secret>
+     (Alternativa: completar y ejecutar UNA vez setupCredencialesItsanet(), luego
+      borrar los valores del código para no dejar secretos en el repositorio.)
+   ► El permiso de red (script.external_request) YA está habilitado en appsscript.json.
+   ► CÓMO USARLA: llama itsanetApi('/ruta', 'get'|'post', body). Ejemplos abajo.
+   ========================================================================== */
+
+function setupCredencialesItsanet() {
+  // Completa SOLO lo que use tu API, ejecútalo una vez desde el editor y luego
+  // vuelve a vaciar los valores (quedan guardados en Propiedades del script).
+  PropertiesService.getScriptProperties().setProperties({
+    "ITSANET_API_BASE": "",        // p.ej. https://api.itsanet.com
+    "ITSANET_API_KEY": "",         // si la API usa API key
+    "ITSANET_TOKEN_URL": "",       // si usa OAuth2
+    "ITSANET_CLIENT_ID": "",
+    "ITSANET_CLIENT_SECRET": ""
+  }, false);
+  return "Credenciales ITSANET guardadas en Propiedades del script.";
+}
+
+// Obtiene (y cachea) el token OAuth2. Devuelve null si la API usa API key.
+function _itsanetToken() {
+  var p = PropertiesService.getScriptProperties();
+  var tokenUrl = p.getProperty("ITSANET_TOKEN_URL");
+  if (!tokenUrl) return null;                       // → se usará API key
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get("ITSANET_TOKEN");
+  if (cached) return cached;
+  var resp = UrlFetchApp.fetch(tokenUrl, {
+    method: "post",
+    payload: {
+      grant_type: "client_credentials",
+      client_id: p.getProperty("ITSANET_CLIENT_ID") || "",
+      client_secret: p.getProperty("ITSANET_CLIENT_SECRET") || ""
+    },
+    muteHttpExceptions: true
+  });
+  if (resp.getResponseCode() !== 200)
+    throw new Error("ITSANET token " + resp.getResponseCode() + ": " + resp.getContentText());
+  var data = JSON.parse(resp.getContentText());
+  var ttl = Math.max(60, (data.expires_in || 3600) - 60);
+  cache.put("ITSANET_TOKEN", data.access_token, ttl);
+  return data.access_token;
+}
+
+// Llamada genérica a la API ITSANET. Maneja Bearer (OAuth2) o x-api-key.
+function itsanetApi(path, method, body) {
+  var p = PropertiesService.getScriptProperties();
+  var base = p.getProperty("ITSANET_API_BASE");
+  if (!base) throw new Error("Falta ITSANET_API_BASE en Propiedades del script (ver setupCredencialesItsanet).");
+  var headers = {};
+  var token = _itsanetToken();
+  if (token) headers["Authorization"] = "Bearer " + token;            // OAuth2
+  else if (p.getProperty("ITSANET_API_KEY")) headers["x-api-key"] = p.getProperty("ITSANET_API_KEY"); // API key
+  var opt = { method: method || "get", headers: headers, muteHttpExceptions: true, contentType: "application/json" };
+  if (body) opt.payload = JSON.stringify(body);
+  var resp = UrlFetchApp.fetch(base + path, opt);
+  var code = resp.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error("ITSANET API " + code + ": " + resp.getContentText());
+  var txt = resp.getContentText();
+  try { return JSON.parse(txt); } catch (e) { return txt; }
+}
+
+// Prueba rápida desde el editor: cambia '/health' por un endpoint real.
+function itsanetProbar() { return itsanetApi("/health", "get"); }
+
+
 /* ---------- Base de códigos EAN13 (lectura del CSV en Drive) ---------- */
 function obtenerBaseEAN(clienteActual) {
   try {
