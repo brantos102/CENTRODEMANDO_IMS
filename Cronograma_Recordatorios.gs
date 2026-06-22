@@ -4729,13 +4729,18 @@ function listarUsuarios() {
   var ss = _getSS();
   var sh = ss.getSheetByName(USR_CFG.HOJA);
   if (!sh || sh.getLastRow() < 2) return [];
-  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues();
+  // FIX FASE 8.37: incluye Rol WMS (col 8) y Contraseña (col 9) — listado ÚNICO Panel+WMS
+  var nc = Math.max(7, sh.getLastColumn());
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, nc).getValues();
   return v.map(function(r, i){
     return {
       email: r[0], nombre: r[1], rol: r[2], telefono: r[3],
       activo: (r[4] === true || String(r[4]).toUpperCase() === "TRUE" || r[4] === ""),
       fechaIngreso: (r[5] instanceof Date) ? r[5].getTime() : null,
-      notas: r[6], fila: i + 2
+      notas: r[6],
+      rolWms: nc >= 8 ? String(r[7] || "").trim().toUpperCase() : "",
+      pass:   nc >= 9 ? String(r[8] || "").trim() : "",
+      fila: i + 2
     };
   }).filter(function(u){ return u.email; });
 }
@@ -4753,9 +4758,19 @@ function crearUsuario(datos) {
   }
   var ss = _getSS();
   var sh = ss.getSheetByName(USR_CFG.HOJA);
+  // FIX FASE 8.37: garantizar encabezados de Rol WMS (H) y Contraseña (I)
+  if (sh.getLastColumn() < 9) {
+    if (!String(sh.getRange(1,8).getValue()).trim()) sh.getRange(1,8).setValue("Rol WMS");
+    if (!String(sh.getRange(1,9).getValue()).trim()) sh.getRange(1,9).setValue("Contraseña");
+  }
+  // Rol WMS y Contraseña: si no se especifican, se derivan del rol del panel.
+  var rolWms = String(datos.rolWms || "").trim().toUpperCase();
+  if (!rolWms) rolWms = (datos.rol === "Coordinador" || datos.rol === "Líder de Conteo") ? "ADMIN" : "AUDITOR";
+  var pass = String(datos.pass || "").trim() || "1234";
   sh.appendRow([
     datos.email.trim(), datos.nombre.trim(), datos.rol,
-    datos.telefono || "", true, new Date(), datos.notas || ""
+    datos.telefono || "", true, new Date(), datos.notas || "",
+    rolWms, pass
   ]);
   _registrarActividad(_usuarioActual(), "crear_usuario", "", "Creó: " + datos.email);
   return { ok: true };
@@ -4773,6 +4788,11 @@ function actualizarUsuario(fila, datos) {
   if (datos.telefono !== undefined) sh.getRange(fila, 4).setValue(datos.telefono);
   if (datos.activo   !== undefined) sh.getRange(fila, 5).setValue(!!datos.activo);
   if (datos.notas    !== undefined) sh.getRange(fila, 7).setValue(datos.notas);
+  // FIX FASE 8.37: Rol WMS (col 8) y Contraseña (col 9) — listado único Panel+WMS
+  if (datos.rolWms !== undefined && String(datos.rolWms).trim() !== "")
+    sh.getRange(fila, 8).setValue(String(datos.rolWms).trim().toUpperCase());
+  if (datos.pass !== undefined && String(datos.pass).trim() !== "")
+    sh.getRange(fila, 9).setValue(String(datos.pass).trim());
   _registrarActividad(_usuarioActual(), "editar_usuario", "", "Editó fila " + fila);
   return { ok: true };
 }

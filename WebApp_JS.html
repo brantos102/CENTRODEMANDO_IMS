@@ -1116,20 +1116,24 @@ function cargarUsuarios() {
 function filaUsuario(u) {
   var rolCls = u.rol==='Coordinador'?'pill-info':(u.rol==='Auditor'?'pill-muted':'pill-ok');
   var estPill = u.activo ? '<span class="pill pill-ok">Activo</span>' : '<span class="pill pill-danger">Inactivo</span>';
+  var wmsBadge = u.rolWms ? ' <span class="pill pill-muted" style="font-size:9px;">WMS:'+escapeHtml(u.rolWms)+'</span>' : '';
   return '<div class="rw"><div><div style="font-weight:500;">'+escapeHtml(u.nombre)+'</div><div style="font-size:10px;color:var(--muted);">'+escapeHtml(u.email)+'</div></div>'+
-    '<div><span class="pill '+rolCls+'">'+escapeHtml(u.rol)+'</span></div><div style="font-size:11px;">'+escapeHtml(u.telefono||'—')+'</div>'+
+    '<div><span class="pill '+rolCls+'">'+escapeHtml(u.rol)+'</span>'+wmsBadge+'</div><div style="font-size:11px;">'+escapeHtml(u.telefono||'—')+'</div>'+
     '<div>'+estPill+'</div><div class="act-grp"><button class="mini-btn" onclick=\'editarUsuario('+JSON.stringify(u)+')\'>✎</button>'+
     (u.activo?'<button class="mini-btn" onclick="desactUsuario('+u.fila+')">⊘</button>':'')+'</div></div>';
 }
 function abrirNuevoUsuario() {
   var roles = ['Coordinador','Líder de Conteo','Auditor'].map(r=>'<option>'+r+'</option>').join('');
-  modalCustom('＋ Nuevo usuario', 'Registra un nuevo miembro del equipo:',
+  var rolesWms = ['ADMIN','OPERADOR','AUDITOR'].map(r=>'<option>'+r+'</option>').join('');
+  modalCustom('＋ Nuevo usuario', 'Vale para Panel de Control y Terminal WMS (mismos usuarios y rangos):',
     '<div class="field"><label>Email *</label><input type="text" id="nu-email" placeholder="correo@itsanet.com"></div>'+
     '<div class="field"><label>Nombre *</label><input type="text" id="nu-nombre"></div>'+
-    '<div class="field"><label>Rol *</label><select id="nu-rol">'+roles+'</select></div>'+
+    '<div class="field"><label>Rol Panel *</label><select id="nu-rol">'+roles+'</select></div>'+
+    '<div class="field"><label>Rol WMS</label><select id="nu-rolwms">'+rolesWms+'</select></div>'+
+    '<div class="field"><label>Contraseña WMS (PIN)</label><input type="text" id="nu-pass" placeholder="1234 (por defecto)"></div>'+
     '<div class="field"><label>Teléfono</label><input type="text" id="nu-tel"></div>',
     'Crear usuario', function(){
-      var datos = { email:$('nu-email').value.trim(), nombre:$('nu-nombre').value.trim(), rol:$('nu-rol').value, telefono:$('nu-tel').value.trim() };
+      var datos = { email:$('nu-email').value.trim(), nombre:$('nu-nombre').value.trim(), rol:$('nu-rol').value, rolWms:$('nu-rolwms').value, pass:$('nu-pass').value.trim(), telefono:$('nu-tel').value.trim() };
       if (!datos.email||!datos.nombre) { toast('Email y nombre obligatorios','error'); return false; }
       cerrarModal(); toast('Creando…');
       google.script.run.withSuccessHandler(()=>{toast('✓ Usuario creado','success');cargarUsuarios();})
@@ -1138,13 +1142,16 @@ function abrirNuevoUsuario() {
 }
 function editarUsuario(u) {
   var roles = ['Coordinador','Líder de Conteo','Auditor'].map(r=>'<option'+(r===u.rol?' selected':'')+'>'+r+'</option>').join('');
-  modalCustom('✎ Editar — '+escapeHtml(u.nombre), '',
+  var rolesWms = ['ADMIN','OPERADOR','AUDITOR'].map(r=>'<option'+(r===u.rolWms?' selected':'')+'>'+r+'</option>').join('');
+  modalCustom('✎ Editar — '+escapeHtml(u.nombre), 'Mismo usuario para Panel y WMS:',
     '<div class="field"><label>Nombre</label><input type="text" id="eu-nombre" value="'+escapeHtml(u.nombre)+'"></div>'+
-    '<div class="field"><label>Rol</label><select id="eu-rol">'+roles+'</select></div>'+
+    '<div class="field"><label>Rol Panel</label><select id="eu-rol">'+roles+'</select></div>'+
+    '<div class="field"><label>Rol WMS</label><select id="eu-rolwms">'+rolesWms+'</select></div>'+
+    '<div class="field"><label>Contraseña WMS (PIN)</label><input type="text" id="eu-pass" value="'+escapeHtml(u.pass||'')+'" placeholder="(sin cambios si se deja igual)"></div>'+
     '<div class="field"><label>Teléfono</label><input type="text" id="eu-tel" value="'+escapeHtml(u.telefono||'')+'"></div>'+
     '<div class="field"><label>Estado</label><select id="eu-activo"><option value="true"'+(u.activo?' selected':'')+'>Activo</option><option value="false"'+(!u.activo?' selected':'')+'>Inactivo</option></select></div>',
     'Guardar', function(){
-      var datos = { nombre:$('eu-nombre').value.trim(), rol:$('eu-rol').value, telefono:$('eu-tel').value.trim(), activo:$('eu-activo').value==='true' };
+      var datos = { nombre:$('eu-nombre').value.trim(), rol:$('eu-rol').value, rolWms:$('eu-rolwms').value, pass:$('eu-pass').value.trim(), telefono:$('eu-tel').value.trim(), activo:$('eu-activo').value==='true' };
       cerrarModal(); toast('Guardando…');
       google.script.run.withSuccessHandler(()=>{toast('✓ Actualizado','success');cargarUsuarios();})
         .withFailureHandler(e=>toast('Error: '+e.message,'error')).actualizarUsuario(u.fila, datos);
