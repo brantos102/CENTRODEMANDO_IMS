@@ -4813,13 +4813,11 @@ function setupFase3() {
 // FIX FASE 8.5: URL del Terminal WMS configurada por defecto.
 // Bryan pidió usar este link externo del BlindInventory en lugar del consolidado.
 var WMS_CFG = {
-  // FIX FASE 8.24/8.36: URL del Terminal WMS (deployment provisto por el operador).
-  // Se usa la FORMA GENÉRICA (/macros/s/<id>/exec) en vez de la del dominio
-  // (/a/macros/itsanet.com/s/<id>/exec) para NO forzar login de dominio a los
-  // operarios — el link de conteo se comparte ampliamente y debe abrir sin fricción.
-  // Si prefieres forzar dominio, ejecuta setWmsUrl() con la forma /a/macros/itsanet.com/.
+  // FIX FASE 8.37 (Opción B): el WMS es ESTE proyecto (?vista=wms). Este DEPLOY_URL
+  // queda solo como ÚLTIMO respaldo (deployment standalone), por si ScriptApp no
+  // pudiera resolver la URL de esta app. Para forzar un WMS externo: setWmsUrl(url);
+  // para volver a este proyecto: usarWmsDeEstaApp().
   DEPLOY_URL: "https://script.google.com/macros/s/AKfycbwBwuTEaaxpf3IWWt1iAT0DzI8QIqZSXm2SnA1otqttURsUi2mEwnvNU1a1xn-vu2N2/exec",
-  // Para cambiar sin tocar código, usa setWmsUrl(url) desde el editor
   AUTO_REFRESH_SEGUNDOS: 60
 };
 
@@ -4840,7 +4838,24 @@ function setWmsUrl(url) {
 }
 
 function _obtenerWmsUrl() {
-  return PropertiesService.getScriptProperties().getProperty("WMS_DEPLOY_URL") || WMS_CFG.DEPLOY_URL || "";
+  // FIX FASE 8.37 (Opción B): el WMS es ESTE mismo proyecto (vía ?vista=wms).
+  // Prioridad: 1) override explícito (setWmsUrl) · 2) URL de ESTE deployment ·
+  // 3) constante (standalone) como último respaldo. Así el link "ir a contar"
+  // coordina archivos/usuarios sin duplicar código ni configurar nada.
+  var prop = PropertiesService.getScriptProperties().getProperty("WMS_DEPLOY_URL");
+  if (prop) return prop;
+  try { var u = ScriptApp.getService().getUrl(); if (u) return u; } catch (e) {}
+  return WMS_CFG.DEPLOY_URL || "";
+}
+
+// FIX FASE 8.37: usar el WMS de ESTE proyecto (borra un override previo a otro deployment).
+// Ejecutar UNA vez desde el editor si antes se fijó setWmsUrl a un link externo.
+function usarWmsDeEstaApp() {
+  PropertiesService.getScriptProperties().deleteProperty("WMS_DEPLOY_URL");
+  var url = "";
+  try { url = ScriptApp.getService().getUrl(); } catch (e) {}
+  try { _alert("✓ El WMS ahora es este proyecto:\n" + (url || "(se resolverá al desplegar)") + "?vista=wms"); } catch (e) {}
+  return { ok: true, url: url };
 }
 
 
