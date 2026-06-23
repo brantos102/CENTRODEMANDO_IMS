@@ -1316,41 +1316,6 @@
 
           filtrarInventarios();
 
-        /*if (DEEPLINK_FILE_ID && DEEPLINK_FILE_ID.length > 10) {
-          const invEncontrado = ALL_INVENTORIES.find(inv => inv.id === DEEPLINK_FILE_ID);
-          if (invEncontrado) {
-            const saved = localStorage.getItem('wms_session');
-            let yaSesionada = false;
-            if (saved) {
-              try {
-                const data = JSON.parse(saved);
-                if (data.rol && data.rol !== 'GUEST' && data.email && data.email !== 'INVITADO') {
-                  USER_EMAIL = data.email;
-                  USER_ROLE = data.rol;
-                  CURRENT_FILE_ID = DEEPLINK_FILE_ID;
-                  localStorage.setItem('wms_session', JSON.stringify({
-                    email: data.email, rol: data.rol, fileId: DEEPLINK_FILE_ID,
-                    invName: invEncontrado.link, userName: data.userName
-                  }));
-                  yaSesionada = true;
-                  if (DEEPLINK_CLIENTE) cargarBaseEAN(DEEPLINK_CLIENTE);
-                  iniciarSesionExitosa(data.userName, invEncontrado.link);
-                }
-              } catch(e) {}
-            }
-
-            if (!yaSesionada) {
-              if (DEEPLINK_CLIENTE) document.getElementById('clientSelector').value = DEEPLINK_CLIENTE;
-              filtrarInventarios();
-              document.getElementById('fileSelector').value = DEEPLINK_FILE_ID;
-              document.getElementById('userSelector').value = 'AUDITOR';
-              try { google.script.run.registrarAccesoWMS(DEEPLINK_FILE_ID, DEEPLINK_CLIENTE, true); } catch(e) {}
-              setTimeout(() => confirmarUsuario(), 300);
-            }
-            return;
-          }
-        }*/
-
         if (DEEPLINK_FILE_ID && DEEPLINK_FILE_ID.length > 10) {
           // FIX 8.37: deep-link robusto + auto-login con el Gmail actual.
           CURRENT_FILE_ID = DEEPLINK_FILE_ID;
@@ -1360,18 +1325,14 @@
           try { google.script.run.registrarAccesoWMS(DEEPLINK_FILE_ID, DEEPLINK_CLIENTE, true); } catch(e) {}
           google.script.run.withSuccessHandler(function(s){
             if (s && s.autenticado && s.registrado && (s.rol === 'ADMIN' || s.rol === 'OPERADOR')) {
-              USER_EMAIL = s.email; USER_ROLE = s.rol;
-              iniciarSesionExitosa(s.nombre, invName);
+              USER_EMAIL = s.email; USER_ROLE = s.rol; iniciarSesionExitosa(s.nombre, invName);
             } else if (s && s.autenticado) {
-              USER_EMAIL = s.email; USER_ROLE = 'GUEST';
-              iniciarSesionExitosa(s.nombre + " (lectura)", invName);
+              USER_EMAIL = s.email; USER_ROLE = 'GUEST'; iniciarSesionExitosa(s.nombre + " (lectura)", invName);
             } else {
-              USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST";
-              iniciarSesionExitosa("Auditor", invName);
+              USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST"; iniciarSesionExitosa("Auditor", invName);
             }
           }).withFailureHandler(function(){
-            USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST";
-            iniciarSesionExitosa("Auditor", invName);
+            USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST"; iniciarSesionExitosa("Auditor", invName);
           }).obtenerSesionWMSActual();
           return;
         }
@@ -1664,7 +1625,6 @@ function cargarAutocompletadoSKU() {
         }).validarCredenciales(elUser.value, pass);
     }
 
-    // FIX 8.37: marcar inventario como ENTREGADO desde el WMS (coordina fecha fin + Panel).
     function entregarInventarioWMS() {
         if (USER_ROLE === 'GUEST') { return checkAuth(); }
         if (!CURRENT_FILE_ID || CURRENT_FILE_ID === 'LOCAL') { return Swal.fire("Sin inventario","Primero selecciona un inventario.","warning"); }
@@ -1672,39 +1632,30 @@ function cargarAutocompletadoSKU() {
             Swal.fire({ title: confirmar ? 'Confirmando entrega...' : 'Verificando avance...', didOpen: () => Swal.showLoading() });
             google.script.run.withSuccessHandler(res => {
                 if (res && res.requiereConfirmacion) {
-                    Swal.fire({
-                        title: 'Avance incompleto (' + res.avance + '%)',
-                        html: 'El inventario esta en <b>' + res.texto + '</b> (' + res.avance + '%).<br>Confirmas igualmente la <b>ENTREGA</b>?',
-                        icon: 'warning', showCancelButton: true,
-                        confirmButtonText: 'Si, entregar', cancelButtonText: 'Cancelar', confirmButtonColor: '#16a34a'
+                    Swal.fire({ title:'Avance incompleto ('+res.avance+'%)',
+                        html:'El inventario esta en <b>'+res.texto+'</b> ('+res.avance+'%).<br>Confirmas igualmente la <b>ENTREGA</b>?',
+                        icon:'warning', showCancelButton:true, confirmButtonText:'Si, entregar', cancelButtonText:'Cancelar', confirmButtonColor:'#16a34a'
                     }).then(r => { if (r.isConfirmed) ejecutar(true); });
                     return;
                 }
                 if (res && res.exito) {
                     forceSync();
-                    Swal.fire({
-                        title: 'Inventario Entregado',
-                        html: 'Fecha fin: <b>' + res.fechaFin + '</b><br>Avance: <b>' + res.avance + '%</b>' +
-                              (res.panelActualizado ? '<br><span style="color:#16a34a">Panel de Control actualizado</span>' : ''),
-                        icon: 'success', showCancelButton: true,
-                        confirmButtonText: 'Generar correo de finalizacion', cancelButtonText: 'Cerrar', confirmButtonColor: '#2563eb'
+                    Swal.fire({ title:'Inventario Entregado',
+                        html:'Fecha fin: <b>'+res.fechaFin+'</b><br>Avance: <b>'+res.avance+'%</b>'+(res.panelActualizado?'<br><span style="color:#16a34a">Panel actualizado</span>':''),
+                        icon:'success', showCancelButton:true, confirmButtonText:'Generar correo de finalizacion', cancelButtonText:'Cerrar', confirmButtonColor:'#2563eb'
                     }).then(r => { if (r.isConfirmed) generarCorreoFinalWMS(); });
-                } else {
-                    Swal.fire("Error", (res && res.mensaje) || "No se pudo registrar la entrega.", "error");
-                }
+                } else { Swal.fire("Error", (res && res.mensaje) || "No se pudo registrar la entrega.", "error"); }
             }).withFailureHandler(e => Swal.fire("Error de Red", e.message, "error")).finalizarInventarioWMS(CURRENT_FILE_ID, confirmar);
         };
         ejecutar(false);
     }
 
-    // Abre Gmail con el correo de finalizacion prellenado (formato de finalizacion).
     function generarCorreoFinalWMS() {
-        Swal.fire({ title: 'Generando correo...', didOpen: () => Swal.showLoading() });
+        Swal.fire({ title:'Generando correo...', didOpen:()=>Swal.showLoading() });
         google.script.run.withSuccessHandler(cc => {
             Swal.close();
             if (!cc || !cc.exito) { return Swal.fire("Error", (cc && cc.mensaje) || "No se pudo generar el correo.", "error"); }
-            const url = 'https://mail.google.com/mail/?view=cm&fs=1&su=' + encodeURIComponent(cc.asunto) + '&body=' + encodeURIComponent(cc.cuerpo);
-            window.open(url, '_blank');
+            window.open('https://mail.google.com/mail/?view=cm&fs=1&su='+encodeURIComponent(cc.asunto)+'&body='+encodeURIComponent(cc.cuerpo), '_blank');
         }).withFailureHandler(e => { Swal.close(); Swal.fire("Error de Red", e.message, "error"); }).generarCorreoFinalizacionWMS(CURRENT_FILE_ID);
     }
 
@@ -1724,7 +1675,6 @@ function cargarAutocompletadoSKU() {
 
         document.getElementById('btnCambiarBase').style.display = "inline-flex";
         document.getElementById('btnLogout').style.display = "inline-flex";
-        // FIX 8.37: boton Entregado solo para usuarios con permiso (no auditor/GUEST)
         document.getElementById('btnEntregar').style.display = (USER_ROLE !== 'GUEST') ? "inline-flex" : "none";
         
         if(USER_ROLE !== 'GUEST') {

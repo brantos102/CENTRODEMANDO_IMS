@@ -12,7 +12,7 @@ const USUARIOS_BASE = {
 
 };
 
-// PRODUCCION (actual). Para PROBAR en la copia cambia a: "1_-tI6nvzofHRVZKJTU55AeLgEpkaUoXhtHbMakNGOt8"
+// PRODUCCION. Para PROBAR en copia cambia a: "1_-tI6nvzofHRVZKJTU55AeLgEpkaUoXhtHbMakNGOt8"
 const MASTER_DB_ID = "1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk";
 
 function doGet(e) {
@@ -72,7 +72,7 @@ function getTargetSS(fileId) {
   return SpreadsheetApp.getActiveSpreadsheet();
 }
 
-/*function getTodosLosUsuarios() {
+function getTodosLosUsuarios() {
   let usuarios = JSON.parse(JSON.stringify(USUARIOS_BASE)); 
   let props = PropertiesService.getScriptProperties().getProperty('WMS_TEMP_USERS');
   if (props) {
@@ -80,45 +80,49 @@ function getTargetSS(fileId) {
       for (let email in tempUsers) { usuarios[email] = tempUsers[email]; }
   }
   return usuarios;
-}*/
-function getTodosLosUsuarios() {
-  let usuarios = JSON.parse(JSON.stringify(USUARIOS_BASE));
-  let props = PropertiesService.getScriptProperties().getProperty('WMS_TEMP_USERS');
-  if (props) {
-    let tempUsers = JSON.parse(props);
-    for (let email in tempUsers) { usuarios[email] = tempUsers[email]; }
-  }
-  // FIX 8.37: lista ÚNICA — lee también la hoja USUARIOS del libro maestro (la que
-  // administra el Panel de Control). La hoja MANDA sobre la base hardcodeada.
-  // Esquema USUARIOS: A Email | B Nombre | C Rol(panel) | E Activo | H Rol WMS | I Contraseña
+}
+
+/* FIX 8.37: lista CONSOLIDADA (base + temporales + hoja USUARIOS del maestro).
+   SOLO se usa en LOGIN (no en el sondeo) y la hoja se CACHEA 5 min, para NO abrir
+   el libro maestro en cada llamada (eso colgaba el WMS). La hoja manda en rol/nombre;
+   contrasena vacia en la hoja => se conserva la contrasena real de la base. */
+function getUsuariosConHoja() {
+  var usuarios = getTodosLosUsuarios();
   try {
-    const sh = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("USUARIOS");
-    if (sh && sh.getLastRow() > 1) {
-      const nc = Math.max(5, sh.getLastColumn());
-      const v = sh.getRange(2, 1, sh.getLastRow() - 1, nc).getValues();
-      v.forEach(function (r) {
-        const em = String(r[0] || "").trim().toLowerCase();
-        const activo = (r[4] === true || String(r[4]).toUpperCase() === "TRUE" || r[4] === "");
-        if (!em || em.indexOf("@") === -1 || !activo) return;
-        const rolPanel = String(r[2] || "").trim();
-        let rolWms = (nc >= 8 && String(r[7] || "").trim())
-          ? String(r[7]).trim().toUpperCase()
-          : ((rolPanel === "Coordinador" || rolPanel === "Líder de Conteo") ? "ADMIN" : "OPERADOR");
-        let pass = (nc >= 9 && String(r[8] || "").trim())
-          ? String(r[8]).trim()
-          : ((usuarios[em] && usuarios[em].pass) ? usuarios[em].pass : "1234");
-        usuarios[em] = {
-          nombre: String(r[1] || "").trim() || (usuarios[em] && usuarios[em].nombre) || em.split("@")[0],
-          rol: rolWms, pass: pass
-        };
-      });
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get('WMS_USUARIOS_HOJA');
+    var hoja;
+    if (cached) { hoja = JSON.parse(cached); }
+    else {
+      hoja = {};
+      var sh = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("USUARIOS");
+      if (sh && sh.getLastRow() > 1) {
+        var nc = Math.max(5, sh.getLastColumn());
+        var v = sh.getRange(2, 1, sh.getLastRow() - 1, nc).getValues();
+        v.forEach(function (r) {
+          var em = String(r[0] || "").trim().toLowerCase();
+          var activo = (r[4] === true || String(r[4]).toUpperCase() === "TRUE" || r[4] === "");
+          if (!em || em.indexOf("@") === -1 || !activo) return;
+          var rolPanel = String(r[2] || "").trim();
+          var rolWms = (nc >= 8 && String(r[7] || "").trim())
+            ? String(r[7]).trim().toUpperCase()
+            : ((rolPanel === "Coordinador" || rolPanel === "Lider de Conteo" || rolPanel === "Líder de Conteo") ? "ADMIN" : "OPERADOR");
+          var pass = (nc >= 9 && String(r[8] || "").trim()) ? String(r[8]).trim() : "";
+          hoja[em] = { nombre: String(r[1] || "").trim() || em.split("@")[0], rol: rolWms, pass: pass };
+        });
+      }
+      cache.put('WMS_USUARIOS_HOJA', JSON.stringify(hoja), 300);
     }
-  } catch (e) { /* si falla, se usa la base; nunca rompe el login */ }
+    for (var em in hoja) {
+      var h = hoja[em];
+      usuarios[em] = { nombre: h.nombre, rol: h.rol, pass: h.pass || (usuarios[em] && usuarios[em].pass) || "1234" };
+    }
+  } catch (e) { /* si falla, queda la base; nunca rompe el login */ }
   return usuarios;
 }
 
 function obtenerConfiguracionApp() {
-  const usersDb = getTodosLosUsuarios();
+  const usersDb = getUsuariosConHoja();
   const usuarios = Object.keys(usersDb).map(email => ({ email: email, nombre: usersDb[email].nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre));
   const responsables = Object.keys(USUARIOS_BASE).map(email => ({ email: email, nombre: USUARIOS_BASE[email].nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
@@ -182,8 +186,8 @@ function obtenerBaseEAN(clienteActual) {
 }
 
 function validarCredenciales(email, password) {
-   const usersDb = getTodosLosUsuarios();
-   const user = usersDb[email];
+   const usersDb = getUsuariosConHoja();
+   const user = usersDb[email] || usersDb[String(email).trim().toLowerCase()];
    if (user && user.pass === password) return { exito: true, nombre: user.nombre, rol: user.rol, email: email };
    return { exito: false, mensaje: "Contraseña incorrecta o usuario no encontrado." };
 }
@@ -863,162 +867,96 @@ function obtenerCatalogoSKUs(fileId) {
   } catch(e) { return []; }
 }
 
-/* =====================================================================================
-   PARCHE PARA EL "Codigo.gs" DEL TERMINAL WMS (proyecto standalone)
-   =====================================================================================
-   Aplica 3 cambios. NO reescribas todo el archivo: solo estos 3 puntos.
-   Es compatible con tu código actual y NO cambia el conteo ni la auditoría.
+/* ===== FIX 8.37: conexion con Centro de Mando + boton Entregado (todo NUEVO) ===== */
 
-   1) REEMPLAZA tu función getTodosLosUsuarios() por la versión de abajo
-      (ahora también lee la hoja USUARIOS del libro maestro = lista ÚNICA con el Panel).
-   2) AÑADE la función obtenerSesionWMSActual()  (login con el Gmail actual).
-   3) AÑADE la función obtenerDatosAnalisis()    (la INTERFAZ ya la llama; hoy falta).
-
-   MASTER_DB_ID: déjalo en el libro de PRODUCCIÓN cuando publiques:
-     PRODUCCIÓN  -> "1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk"
-     COPIA PRUEBA-> "1_-tI6nvzofHRVZKJTU55AeLgEpkaUoXhtHbMakNGOt8"
-   ===================================================================================== */
-
-
-
-
-
-/* ---------- 2) AÑADIR obtenerSesionWMSActual() ---------- */
-/* Login con el Gmail actual (misma sesión que el Panel). Si el correo no está
-   registrado, entra como AUDITOR (solo lectura) pero con su propio correo. */
 function obtenerSesionWMSActual() {
   var email = "";
   try { email = Session.getActiveUser().getEmail() || ""; } catch (e) {}
   if (!email) { try { email = Session.getEffectiveUser().getEmail() || ""; } catch (e) {} }
   if (!email) return { autenticado: false };
   var emailN = String(email).trim().toLowerCase();
-  var db = getTodosLosUsuarios();
+  var db = getUsuariosConHoja();
   var u = db[emailN] || db[email] || null;
-  return {
-    autenticado: true,
-    email: emailN,
-    nombre: (u && u.nombre) ? u.nombre : emailN.split("@")[0],
-    rol: (u && u.rol) ? String(u.rol).toUpperCase() : "AUDITOR",
-    registrado: !!u
-  };
+  return { autenticado: true, email: emailN,
+           nombre: (u && u.nombre) ? u.nombre : emailN.split("@")[0],
+           rol: (u && u.rol) ? String(u.rol).toUpperCase() : "AUDITOR", registrado: !!u };
 }
 
-
-/* ---------- 3) AÑADIR obtenerDatosAnalisis() ---------- */
-/* La INTERFAZ (BlindInventory) llama obtenerDatosAnalisis(fileId) y hoy no existe,
-   por eso el ANÁLISIS se queda girando. Devuelve lo mismo que parseAnalysisData. */
 function obtenerDatosAnalisis(fileId) {
-  var vacio = {
-    exito: true,
-    kpis: { efectividadUnidades:0, efectividadRef:0, efectividadPos:0,
-            uniValidadas:0, uniTotal:0, refValidadas:0, refTotal:0,
-            posValidadas:0, posTotal:0 },
-    discrepancias: []
-  };
+  var vacio = { exito:true, kpis:{efectividadUnidades:0,efectividadRef:0,efectividadPos:0,uniValidadas:0,uniTotal:0,refValidadas:0,refTotal:0,posValidadas:0,posTotal:0}, discrepancias:[] };
   try {
     var ss = getTargetSS(fileId);
     var sheet = ss.getSheetByName("PLANILLA DE CONTEO FISICO");
     if (!sheet || sheet.getLastRow() < 2) return vacio;
-    var fullData = sheet.getRange(2, 1, sheet.getLastRow() - 1, 29).getValues();
-    return parseAnalysisData(fullData);
+    return parseAnalysisData(sheet.getRange(2, 1, sheet.getLastRow() - 1, 29).getValues());
   } catch (e) { vacio.exito = false; vacio.error = e.message; return vacio; }
 }
 
-/* FIX 8.37: el deep-link del BlindInventory llama registrarAccesoWMS; no-op seguro. */
 function registrarAccesoWMS(fileId, cliente, viaCorreo) {
   try { CacheService.getScriptCache().put("WMS_ACCESO_" + fileId, Date.now().toString(), 21600); } catch (e) {}
   return true;
 }
 
-
-/* FIX 8.37: marcar inventario como ENTREGADO desde el WMS. Coordina fecha fin
-   (PLANILLA fila 2, col B = FECHA FINAL) y el Panel (PANEL DE CONTROL avance=Entregado).
-   Pide confirmacion si el avance < 100%. No afecta nada mas. */
 function finalizarInventarioWMS(fileId, confirmar) {
   try {
-    const ss = getTargetSS(fileId);
-    const sheet = ss.getSheetByName("PLANILLA DE CONTEO FISICO");
-    if (!sheet) return { exito: false, mensaje: "Falta PLANILLA DE CONTEO FISICO" };
-    const lastRow = sheet.getLastRow();
-    let tRef = 0, cRef = 0;
+    var ss = getTargetSS(fileId);
+    var sheet = ss.getSheetByName("PLANILLA DE CONTEO FISICO");
+    if (!sheet) return { exito:false, mensaje:"Falta PLANILLA DE CONTEO FISICO" };
+    var lastRow = sheet.getLastRow(), tRef=0, cRef=0;
     if (lastRow >= 2) {
-      const d = sheet.getRange(2, 1, lastRow - 1, 24).getValues();
-      for (let i = 0; i < d.length; i++) {
-        const sku = String(d[i][6]).trim();
-        const catLog = String(d[i][12]).trim().toUpperCase();
-        const est = String(d[i][19]).trim().toUpperCase();
-        if (!sku || catLog === "DIF_INV") continue;
-        tRef++;
-        if (d[i][21] !== "" || d[i][22] !== "" || d[i][23] !== "" || est === "CORRECTO") cRef++;
+      var d = sheet.getRange(2,1,lastRow-1,24).getValues();
+      for (var i=0;i<d.length;i++){
+        var sku=String(d[i][6]).trim(), cat=String(d[i][12]).trim().toUpperCase(), est=String(d[i][19]).trim().toUpperCase();
+        if(!sku||cat==="DIF_INV")continue; tRef++;
+        if(d[i][21]!==""||d[i][22]!==""||d[i][23]!==""||est==="CORRECTO")cRef++;
       }
     }
-    const avance = tRef === 0 ? 0 : Math.round((cRef / tRef) * 100);
-    if (avance < 100 && !confirmar) {
-      return { exito: false, requiereConfirmacion: true, avance: avance, texto: cRef + " / " + tRef + " Refs" };
-    }
-    const hoy = new Date();
-    const soloFecha = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-    sheet.getRange(2, 2).setValue(soloFecha).setNumberFormat("dd/MM/yyyy");
-    let panelOk = false;
+    var avance = tRef===0?0:Math.round((cRef/tRef)*100);
+    if (avance < 100 && !confirmar) return { exito:false, requiereConfirmacion:true, avance:avance, texto:cRef+" / "+tRef+" Refs" };
+    var hoy=new Date(), soloFecha=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate());
+    sheet.getRange(2,2).setValue(soloFecha).setNumberFormat("dd/MM/yyyy");
+    var panelOk=false;
     try {
-      const pan = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("PANEL DE CONTROL");
-      if (pan && pan.getLastRow() > 1) {
-        const ids = pan.getRange(2, 3, pan.getLastRow() - 1, 1).getValues();
-        for (let i = 0; i < ids.length; i++) {
-          if (String(ids[i][0]).trim() === String(fileId).trim()) {
-            pan.getRange(i + 2, 7).setValue("Entregado");
-            panelOk = true; break;
-          }
-        }
+      var pan = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("PANEL DE CONTROL");
+      if (pan && pan.getLastRow()>1) {
+        var ids = pan.getRange(2,3,pan.getLastRow()-1,1).getValues();
+        for (var k=0;k<ids.length;k++){ if(String(ids[k][0]).trim()===String(fileId).trim()){ pan.getRange(k+2,7).setValue("Entregado"); panelOk=true; break; } }
       }
-    } catch (e) {}
+    } catch(e){}
     notificarCambioBD(fileId);
-    return {
-      exito: true, avance: avance, texto: cRef + " / " + tRef + " Refs",
-      fechaFin: Utilities.formatDate(soloFecha, Session.getScriptTimeZone(), "dd/MM/yyyy"),
-      panelActualizado: panelOk
-    };
-  } catch (e) { return { exito: false, mensaje: e.message }; }
+    return { exito:true, avance:avance, texto:cRef+" / "+tRef+" Refs",
+             fechaFin:Utilities.formatDate(soloFecha, Session.getScriptTimeZone(), "dd/MM/yyyy"), panelActualizado:panelOk };
+  } catch(e){ return { exito:false, mensaje:e.message }; }
 }
 
-/* Correo de finalizacion (formato) para que el operario lo envie desde Gmail. */
 function generarCorreoFinalizacionWMS(fileId) {
   try {
-    let cliente = "", fileName = "";
+    var cliente="", fileName="";
     try {
-      const pan = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("PANEL DE CONTROL");
-      if (pan && pan.getLastRow() > 1) {
-        const data = pan.getRange(2, 1, pan.getLastRow() - 1, 7).getValues();
-        for (let i = 0; i < data.length; i++) {
-          if (String(data[i][2]).trim() === String(fileId).trim()) { cliente = String(data[i][0]).trim(); fileName = String(data[i][1]).trim(); break; }
-        }
+      var pan = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("PANEL DE CONTROL");
+      if (pan && pan.getLastRow()>1) {
+        var data = pan.getRange(2,1,pan.getLastRow()-1,7).getValues();
+        for (var i=0;i<data.length;i++){ if(String(data[i][2]).trim()===String(fileId).trim()){ cliente=String(data[i][0]).trim(); fileName=String(data[i][1]).trim(); break; } }
       }
-    } catch (e) {}
-    try { if (!fileName) fileName = SpreadsheetApp.openById(fileId).getName(); } catch (e) {}
-    let tRef = 0, cRef = 0;
+    } catch(e){}
+    try { if(!fileName) fileName = SpreadsheetApp.openById(fileId).getName(); } catch(e){}
+    var tRef=0,cRef=0;
     try {
-      const sheet = getTargetSS(fileId).getSheetByName("PLANILLA DE CONTEO FISICO");
-      const lr = sheet.getLastRow();
-      if (lr >= 2) {
-        const d = sheet.getRange(2, 1, lr - 1, 24).getValues();
-        for (let i = 0; i < d.length; i++) {
-          const sku = String(d[i][6]).trim(), cat = String(d[i][12]).trim().toUpperCase(), est = String(d[i][19]).trim().toUpperCase();
-          if (!sku || cat === "DIF_INV") continue; tRef++;
-          if (d[i][21] !== "" || d[i][22] !== "" || d[i][23] !== "" || est === "CORRECTO") cRef++;
-        }
-      }
-    } catch (e) {}
-    const avance = tRef === 0 ? 0 : Math.round((cRef / tRef) * 100);
-    const fechaTxt = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm");
-    const asunto = "Finalizacion de Inventario - " + (cliente || "Cliente") + (fileName ? " - " + fileName : "");
-    let cuerpo = "Estimados,\n\n";
-    cuerpo += "Por medio del presente se informa la FINALIZACION del inventario";
-    cuerpo += cliente ? " del cliente " + cliente + "." : ".";
-    cuerpo += "\n\nFecha y hora de finalizacion: " + fechaTxt + "\n";
-    cuerpo += "Avance de conteo: " + avance + "% (" + cRef + " / " + tRef + " referencias)\n";
-    if (avance < 100) cuerpo += "NOTA: La entrega se confirma con avance PARCIAL (" + avance + "%).\n";
+      var sheet = getTargetSS(fileId).getSheetByName("PLANILLA DE CONTEO FISICO"), lr=sheet.getLastRow();
+      if (lr>=2){ var d=sheet.getRange(2,1,lr-1,24).getValues();
+        for(var j=0;j<d.length;j++){ var s=String(d[j][6]).trim(),c=String(d[j][12]).trim().toUpperCase(),e2=String(d[j][19]).trim().toUpperCase();
+          if(!s||c==="DIF_INV")continue; tRef++; if(d[j][21]!==""||d[j][22]!==""||d[j][23]!==""||e2==="CORRECTO")cRef++; } }
+    } catch(e){}
+    var avance = tRef===0?0:Math.round((cRef/tRef)*100);
+    var fechaTxt = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm");
+    var asunto = "Finalizacion de Inventario - " + (cliente||"Cliente") + (fileName?" - "+fileName:"");
+    var cuerpo = "Estimados,\n\nPor medio del presente se informa la FINALIZACION del inventario";
+    cuerpo += cliente ? " del cliente "+cliente+"." : ".";
+    cuerpo += "\n\nFecha y hora de finalizacion: "+fechaTxt+"\n";
+    cuerpo += "Avance de conteo: "+avance+"% ("+cRef+" / "+tRef+" referencias)\n";
+    if (avance<100) cuerpo += "NOTA: La entrega se confirma con avance PARCIAL ("+avance+"%).\n";
     cuerpo += "\nEl detalle de conteos, diferencias y trazabilidad queda registrado en el archivo del inventario.\n";
-    cuerpo += "\nQuedamos atentos a cualquier observacion o requerimiento adicional.\n\nSaludos cordiales.";
-    return { exito: true, asunto: asunto, cuerpo: cuerpo, cliente: cliente, avance: avance };
-  } catch (e) { return { exito: false, mensaje: e.message }; }
+    cuerpo += "\nQuedamos atentos a cualquier observacion.\n\nSaludos cordiales.";
+    return { exito:true, asunto:asunto, cuerpo:cuerpo, cliente:cliente, avance:avance };
+  } catch(e){ return { exito:false, mensaje:e.message }; }
 }
