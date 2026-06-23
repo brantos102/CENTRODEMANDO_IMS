@@ -2833,14 +2833,30 @@ window.camera = GLOBAL_CAMERA || camera;
                const hits = raycaster.intersectObject(objetosClickeables[i], true);
                if(hits.length > 0) { objectHit = objetosClickeables[i]; break; }
            }
-           if (objectHit) { 
-               tooltip.style.display = 'none'; 
-               seleccionarPosicion(objectHit.userData.nombre); 
-               
-               // Salto Automático a Conteo
-               nav('count');
-               loadCountTable();
-               showToast("Ubicación Seleccionada: " + objectHit.userData.nombre);
+           if (objectHit) {
+               tooltip.style.display = 'none';
+               // CLIC SIMPLE: posiciona el avatar en la ubicación + previsualiza (validación).
+               // No salta al conteo: el DOBLE CLIC (handler de abajo) abre el CONTEO FÍSICO.
+               seleccionarPosicion(objectHit.userData.nombre);
+               showToast("Ubicación: " + objectHit.userData.nombre + " · doble clic para contar");
+           }
+       });
+
+       // DOBLE CLIC sobre una ubicación -> abre directamente el CONTEO FÍSICO de esa posición.
+       mapContainer.addEventListener('dblclick', (e) => {
+           const rect = renderer.domElement.getBoundingClientRect();
+           mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+           mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+           raycaster.setFromCamera(mouse, camera); let objectHit = null;
+           for(let i=0; i<objetosClickeables.length; i++) {
+               const hits = raycaster.intersectObject(objetosClickeables[i], true);
+               if(hits.length > 0) { objectHit = objetosClickeables[i]; break; }
+           }
+           if (objectHit) {
+               tooltip.style.display = 'none';
+               seleccionarPosicion(objectHit.userData.nombre);
+               nav('count'); loadCountTable();
+               showToast("Conteo físico: " + objectHit.userData.nombre);
            }
        });
 
