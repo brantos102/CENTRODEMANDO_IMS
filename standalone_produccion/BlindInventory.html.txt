@@ -325,6 +325,15 @@
     body:not(.mobile-mode) #analysisScroll { min-height: 300px; max-height: 60vh; overflow: auto; }
     /* Con los KPIs colapsados, el reporte de discrepancias ocupa casi toda la pantalla. */
     body:not(.mobile-mode) #page-analysis.kpis-collapsed #analysisScroll { max-height: 82vh; min-height: 440px; }
+
+    /* ===== MÓVIL: navegación efectiva en celular ===== */
+    body.mobile-mode #conteo-header-panel { padding: 8px 10px; gap: 8px; }
+    body.mobile-mode #conteo-header-panel > div[style*="flex:3"],
+    body.mobile-mode #conteo-header-panel > div:first-child { flex: 1 1 100% !important; min-width: 100% !important; }
+    body.mobile-mode #invTable thead th, body.mobile-mode #tblAnalysis thead th { position: sticky; top: 0; z-index: 25; background: var(--surface); }
+    body.mobile-mode #analysisScroll { max-height: none; min-height: 0; overflow: visible; }
+    body.mobile-mode #analysisKpis .kpi-card { min-height: 0; }
+    body.mobile-mode #seriesModalClose { position: fixed; }
     #analysisScroll thead th { position: sticky; top: 0; z-index: 25; background: var(--surface); }
 
     tbody tr { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: var(--surface); box-shadow: var(--neu-out-sm); border-radius: 20px; }
@@ -345,6 +354,19 @@
     .badge-neutral { background: var(--surface); color: var(--secondary); }
 
     .modal-overlay { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(15px); display: none; align-items: center; justify-content: center; z-index: 9000; padding: 20px; }
+
+    /* SERIES como SUBVENTANA dentro de CONTEO FÍSICO: se muestra la MISMA pestaña de series
+       como overlay (sin duplicar lógica ni mover el DOM). El backdrop bloquea el fondo. */
+    #seriesBackdrop { z-index: 9400; background: rgba(15,23,42,0.6); backdrop-filter: blur(8px); }
+    #page-series.series-modal {
+        display: flex !important; position: fixed; top: 4vh; left: 50%; transform: translateX(-50%);
+        width: 94%; max-width: 1040px; height: 90vh; z-index: 9500;
+        background: var(--bg); border-radius: 24px; box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+        padding: 20px; overflow: auto; box-sizing: border-box; gap: 14px;
+    }
+    #seriesModalClose { display:none; position: fixed; top: calc(4vh + 12px); right: calc(3% + 12px); z-index: 9600; padding: 10px 16px; }
+    body.mobile-mode #page-series.series-modal { width: 98%; height: 94vh; top: 2vh; padding: 12px; }
+    body.mobile-mode #seriesModalClose { top: 8px; right: 10px; padding: 8px 12px; font-size: 12px; }
     .modal-box { padding: 40px; border-radius: 40px; width: 100%; max-width: 500px; box-sizing: border-box; max-height: 90vh; overflow-y: auto;}
     
     #toast { visibility: hidden; min-width: 250px; background: var(--surface); color: var(--primary); text-align: center; border-radius: 50px; padding: 18px 24px; position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 9500; font-weight: 800; box-shadow: var(--neu-out); border: 2px solid var(--border); font-family: var(--font-ui); letter-spacing: 1px;}
@@ -670,9 +692,9 @@
 
     <div id="page-count" class="page">
       
-      <!-- MEJORA VISUAL: panel de escaneo COMPACTO (antes ocupaba ~40% del alto) para dar
-           protagonismo a la tabla de validación. Se conservan todas las funciones. -->
-      <div class="tech-panel" id="conteo-header-panel" style="display:flex; align-items:flex-end; justify-content:center; gap:12px; padding:10px 18px; margin-bottom:10px; max-width: 1100px; margin-left: auto; margin-right: auto;">
+      <!-- MEJORA VISUAL: barra de escaneo HORIZONTAL a todo el ancho (sin lados vacíos) y
+           compacta. Envuelve en móvil. Se conservan todas las funciones. -->
+      <div class="tech-panel" id="conteo-header-panel" style="display:flex; align-items:flex-end; justify-content:flex-start; gap:12px; padding:10px 16px; margin-bottom:8px; width:100%; box-sizing:border-box; flex-wrap:wrap;">
         <div style="flex:2; position: relative;">
             <label style="font-size:10px; font-weight:800; color:var(--accent); margin-bottom:4px; display:block; text-transform: uppercase; letter-spacing: 1px;"><i class="bi bi-upc-scan me-1"></i> CÓDIGO / EAN</label>
             <div style="display:flex; gap:8px;">
@@ -692,8 +714,8 @@
         </div>
       </div>
 
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding: 0 10px; flex-wrap: wrap; gap: 12px; max-width: 1100px; margin-left: auto; margin-right: auto;">
-        <div style="display:flex; gap:14px; align-items:center; flex-wrap: wrap; flex: 1;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding: 0 4px; flex-wrap: wrap; gap: 10px; width:100%; box-sizing:border-box;">
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap: wrap; flex: 1;">
             <label style="font-size:12px; font-weight:800; display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--secondary);">
                 <input type="checkbox" id="toggleCorrect" onchange="renderTableData()"> Ocultar Correctos
             </label>
@@ -704,6 +726,7 @@
                 <i class="bi bi-search text-secondary me-2"></i>
                 <input type="text" id="tableFilter" placeholder="Filtrar SKU o Descripción..." oninput="renderTableData()" style="border:none; box-shadow:none !important; padding:8px; font-size:13px; background:transparent !important; width:100%;">
             </div>
+            <button class="btn-neutral" onclick="abrirSeriesModal()" title="Registrar números de serie SIN salir del conteo (subventana)" style="border-color:var(--accent); color:var(--accent);"><i class="bi bi-qr-code-scan me-1"></i> SERIES</button>
             <button class="btn-neutral" onclick="forceSync()"><i class="bi bi-arrow-clockwise"></i> Sincronizar</button>
         </div>
         <div style="display:flex; gap:15px; align-items:center;">
@@ -894,6 +917,10 @@
     </div>
 
   </div> <div id="toast">Notificación</div>
+
+  <!-- SERIES como subventana: backdrop + botón de cierre del overlay de series -->
+  <div id="seriesBackdrop" class="modal-overlay" onclick="cerrarSeriesModal()"></div>
+  <button id="seriesModalClose" class="btn-danger" onclick="cerrarSeriesModal()"><i class="bi bi-x-lg me-1"></i> Cerrar series</button>
   
   <div id="modalHallazgoBatch" class="modal-overlay"><div class="modal-box">
     <h3 style="color:var(--primary); font-weight:800; border-bottom: 3px solid var(--warning); padding-bottom: 15px; margin-top:0;"><i class="bi bi-exclamation-circle text-warning"></i> Hallazgo de Serie</h3>
@@ -943,9 +970,6 @@
     // Nuevas variables globales 3D
     let objetosClickeables = [];
     let objetoResaltadoAnterior = null;
-    // Estado para distinguir clic simple vs doble clic en el mapa 3D (a nivel módulo para
-    // que sobreviva a los re-render del mapa durante el sondeo).
-    let _wmsClickTimer = null, _wmsPendingPos = null, _wmsLastUp = 0;
     let GLOBAL_CAMERA, GLOBAL_CONTROLS, GLOBAL_SCENE;
     let GLOBAL_ASSEMBLY_WIDTH = 0, GLOBAL_MAX_Y = 0;
     let current3DMode = 'PROGRESS'; 
@@ -1200,13 +1224,25 @@
     function seleccionarPosicion(pos) {
         CURRENT_POS = pos;
         const pd = document.getElementById('posDisplay');
-        if(pd) { 
-            pd.innerText = "UBICACIÓN: " + pos; 
-            pd.style.display = "inline-block"; 
+        if(pd) {
+            pd.innerText = "UBICACIÓN: " + pos;
+            pd.style.display = "inline-block";
         }
         filterPositions();
         mostrarVistaRapida(pos);
         flyToPosition(pos); // Vuelo Automático
+    }
+
+    // FIX 8.43: selección LIGERA para el clic en el mapa: reubica el avatar + previsualiza +
+    // vuela la cámara SIN re-renderizar toda la escena (evita parpadeo, acumulación de
+    // listeners y congelamiento). Se usa en el clic/doble-clic del mapa 3D.
+    function seleccionarPosicionLigera(pos) {
+        CURRENT_POS = pos;
+        const pd = document.getElementById('posDisplay');
+        if(pd) { pd.innerText = "UBICACIÓN: " + pos; pd.style.display = "inline-block"; }
+        try { mostrarVistaRapida(pos); } catch(e){}
+        try { flyToPosition(pos); } catch(e){}
+        try { actualizarAvatares(); } catch(e){}
     }
 
     // FUNCIÓN DE VUELO AUTOMÁTICO
@@ -1275,6 +1311,28 @@
 
     function cerrarVistaRapida() {
         document.getElementById('quickViewCard').style.display = 'none';
+    }
+
+    // SERIES como SUBVENTANA dentro de CONTEO FÍSICO: muestra la MISMA pestaña de series como
+    // overlay (reutiliza su DOM y funciones; no duplica nada) para escanear series sin salir
+    // del conteo. El backdrop bloquea el fondo; se cierra con el botón o tocando el fondo.
+    function abrirSeriesModal() {
+        var ps = document.getElementById('page-series');
+        var bd = document.getElementById('seriesBackdrop');
+        var cl = document.getElementById('seriesModalClose');
+        if (!ps) return;
+        ps.classList.add('series-modal');
+        if (bd) bd.style.display = 'block';
+        if (cl) cl.style.display = 'inline-flex';
+        setTimeout(function(){ var i = document.getElementById('scanInput'); if (i) { try { i.focus(); } catch(e){} } }, 120);
+    }
+    function cerrarSeriesModal() {
+        var ps = document.getElementById('page-series');
+        var bd = document.getElementById('seriesBackdrop');
+        var cl = document.getElementById('seriesModalClose');
+        if (ps) ps.classList.remove('series-modal');
+        if (bd) bd.style.display = 'none';
+        if (cl) cl.style.display = 'none';
     }
 
     // MEJORA VISUAL: colapsar/expandir los KPIs de ANÁLISIS para que el auditor amplíe el
@@ -2859,38 +2917,36 @@ window.camera = GLOBAL_CAMERA || camera;
            }
        });
 
+       // CLIC SIMPLE: reubica el avatar + previsualiza (validación), SIN re-render (ligero), sin saltar.
        mapContainer.addEventListener('pointerup', (e) => {
            if (isDraggingMap) return;
-           var ahora = Date.now();
-           if (ahora - _wmsLastUp < 60) return;   // ignora multidisparo del mismo clic (listeners acumulados por re-render)
-           _wmsLastUp = ahora;
-
-           // Raycast contra la cámara ACTUAL (módulo), robusto aunque el mapa se haya re-renderizado.
-           var _cam = (typeof GLOBAL_CAMERA !== 'undefined' && GLOBAL_CAMERA) ? GLOBAL_CAMERA : camera;
-           raycaster.setFromCamera(mouse, _cam); let objectHit = null;
+           raycaster.setFromCamera(mouse, camera); let objectHit = null;
            for(let i=0; i<objetosClickeables.length; i++) {
                const hits = raycaster.intersectObject(objetosClickeables[i], true);
                if(hits.length > 0) { objectHit = objetosClickeables[i]; break; }
            }
            if (!objectHit) return;
            tooltip.style.display = 'none';
-           var nombre = objectHit.userData.nombre;
+           seleccionarPosicionLigera(objectHit.userData.nombre);
+           showToast("Ubicación: " + objectHit.userData.nombre + " · doble clic para contar");
+       });
 
-           if (_wmsClickTimer && _wmsPendingPos === nombre) {
-               // DOBLE CLIC sobre la misma ubicación -> abre el CONTEO FÍSICO de esa posición.
-               clearTimeout(_wmsClickTimer); _wmsClickTimer = null; _wmsPendingPos = null;
-               seleccionarPosicion(nombre); nav('count'); loadCountTable();
-               showToast("Conteo físico: " + nombre);
-           } else {
-               // CLIC SIMPLE (diferido ~280ms): reubica el avatar + previsualiza (validación),
-               // sin saltar al conteo. Diferirlo evita re-render entre los dos clics del doble clic.
-               if (_wmsClickTimer) clearTimeout(_wmsClickTimer);
-               _wmsPendingPos = nombre;
-               _wmsClickTimer = setTimeout(function(){
-                   _wmsClickTimer = null; var p = _wmsPendingPos; _wmsPendingPos = null;
-                   if (p) { seleccionarPosicion(p); showToast("Ubicación: " + p + " · doble clic para contar"); }
-               }, 280);
+       // DOBLE CLIC: abre el CONTEO FÍSICO de esa posición. Recalcula el rayo con sus propias
+       // coordenadas (preciso) usando el lienzo/cámara del render vigente.
+       mapContainer.addEventListener('dblclick', (e) => {
+           const rect = renderer.domElement.getBoundingClientRect();
+           mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+           mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+           raycaster.setFromCamera(mouse, camera); let objectHit = null;
+           for(let i=0; i<objetosClickeables.length; i++) {
+               const hits = raycaster.intersectObject(objetosClickeables[i], true);
+               if(hits.length > 0) { objectHit = objetosClickeables[i]; break; }
            }
+           if (!objectHit) return;
+           tooltip.style.display = 'none';
+           seleccionarPosicionLigera(objectHit.userData.nombre);
+           nav('count'); loadCountTable();
+           showToast("Conteo físico: " + objectHit.userData.nombre);
        });
 
        function removerBrilloAnterior() {
