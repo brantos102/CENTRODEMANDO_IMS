@@ -333,7 +333,6 @@
     body.mobile-mode #invTable thead th, body.mobile-mode #tblAnalysis thead th { position: sticky; top: 0; z-index: 25; background: var(--surface); }
     body.mobile-mode #analysisScroll { max-height: none; min-height: 0; overflow: visible; }
     body.mobile-mode #analysisKpis .kpi-card { min-height: 0; }
-    body.mobile-mode #seriesModalClose { position: fixed; }
     #analysisScroll thead th { position: sticky; top: 0; z-index: 25; background: var(--surface); }
 
     tbody tr { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: var(--surface); box-shadow: var(--neu-out-sm); border-radius: 20px; }
@@ -355,18 +354,11 @@
 
     .modal-overlay { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(15px); display: none; align-items: center; justify-content: center; z-index: 9000; padding: 20px; }
 
-    /* SERIES como SUBVENTANA dentro de CONTEO FÍSICO: se muestra la MISMA pestaña de series
-       como overlay (sin duplicar lógica ni mover el DOM). El backdrop bloquea el fondo. */
-    #seriesBackdrop { z-index: 9400; background: rgba(15,23,42,0.6); backdrop-filter: blur(8px); }
-    #page-series.series-modal {
-        display: flex !important; position: fixed; top: 4vh; left: 50%; transform: translateX(-50%);
-        width: 94%; max-width: 1040px; height: 90vh; z-index: 9500;
-        background: var(--bg); border-radius: 24px; box-shadow: 0 24px 70px rgba(0,0,0,0.55);
-        padding: 20px; overflow: auto; box-sizing: border-box; gap: 14px;
-    }
-    #seriesModalClose { display:none; position: fixed; top: calc(4vh + 12px); right: calc(3% + 12px); z-index: 9600; padding: 10px 16px; }
-    body.mobile-mode #page-series.series-modal { width: 98%; height: 94vh; top: 2vh; padding: 12px; }
-    body.mobile-mode #seriesModalClose { top: 8px; right: 10px; padding: 8px 12px; font-size: 12px; }
+    /* SERIES como SUBVENTANA dentro de CONTEO FÍSICO: la pestaña de series se reubica en el
+       modal #modalSeries. En ese modo ocupa todo el ancho del modal (sin centrado de 950px). */
+    #page-series.series-embedded { display: flex !important; height: 100%; max-width: 100%; gap: 12px; }
+    #page-series.series-embedded #series-header-panel,
+    #page-series.series-embedded .card { max-width: 100% !important; margin-left: 0 !important; margin-right: 0 !important; }
     .modal-box { padding: 40px; border-radius: 40px; width: 100%; max-width: 500px; box-sizing: border-box; max-height: 90vh; overflow-y: auto;}
     
     #toast { visibility: hidden; min-width: 250px; background: var(--surface); color: var(--primary); text-align: center; border-radius: 50px; padding: 18px 24px; position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 9500; font-weight: 800; box-shadow: var(--neu-out); border: 2px solid var(--border); font-family: var(--font-ui); letter-spacing: 1px;}
@@ -632,6 +624,12 @@
            <input type="text" id="fltRack" placeholder="Lit" oninput="filterPositions()" style="width:60px; padding:10px 15px;">
            <input type="text" id="fltCol" placeholder="Col" oninput="filterPositions()" style="width:60px; padding:10px 15px;">
            <input type="text" id="fltNiv" placeholder="Niv" oninput="filterPositions()" style="width:60px; padding:10px 15px;">
+           <select id="fltEstado" onchange="filterPositions()" title="Filtrar por estado de validación (también afecta a ‹ Anterior / Siguiente ›)" style="width:140px; padding:10px 12px;">
+               <option value="">Todas</option>
+               <option value="PEND">Pendientes</option>
+               <option value="DESF">Con desfase</option>
+               <option value="COMP">Completas</option>
+           </select>
            <button class="btn-danger" onclick="clearFilters()" title="Limpiar Filtros" style="padding:10px 16px;"><span class="material-icons" style="font-size:20px;">clear</span></button>
         </div>
 
@@ -694,19 +692,19 @@
       
       <!-- MEJORA VISUAL: barra de escaneo HORIZONTAL a todo el ancho (sin lados vacíos) y
            compacta. Envuelve en móvil. Se conservan todas las funciones. -->
-      <div class="tech-panel" id="conteo-header-panel" style="display:flex; align-items:flex-end; justify-content:flex-start; gap:12px; padding:10px 16px; margin-bottom:8px; width:100%; box-sizing:border-box; flex-wrap:wrap;">
-        <div style="flex:2; position: relative;">
+      <div class="tech-panel" id="conteo-header-panel" style="display:flex; flex-direction:row !important; align-items:flex-end; justify-content:flex-start; gap:12px; padding:10px 16px; margin-bottom:8px; width:100%; box-sizing:border-box; flex-wrap:wrap;">
+        <div style="flex:1 1 320px; min-width:240px; position: relative;">
             <label style="font-size:10px; font-weight:800; color:var(--accent); margin-bottom:4px; display:block; text-transform: uppercase; letter-spacing: 1px;"><i class="bi bi-upc-scan me-1"></i> CÓDIGO / EAN</label>
             <div style="display:flex; gap:8px;">
                 <input type="text" id="quickSku" class="data-mono btn-auth-input scan-input-tech" placeholder="ESCANEAR CÓDIGO..." style="font-size:16px; padding:9px 12px; flex:1;" onkeydown="handleQuickScan(event)">
                 <button class="btn-neutral btn-auth-required" onclick="abrirEscanerCamara('quickSku')" style="padding:0 16px;" title="Escanear con Cámara"><i class="bi bi-camera-video text-accent"></i></button>
             </div>
         </div>
-        <div style="flex:0.4; min-width:70px;">
+        <div style="flex:0 0 80px;">
             <label style="font-size:10px; font-weight:800; color:var(--secondary); margin-bottom:4px; display:block; text-transform: uppercase; letter-spacing: 1px;">CANT.</label>
             <input type="number" id="quickQty" value="1" class="btn-auth-input data-mono" style="text-align:center; font-weight:800; font-size:16px; padding:9px;" onkeydown="if(event.key==='Enter'){this.blur(); triggerQuickScan();}">
         </div>
-        <div class="count-buttons-wrapper" style="display:flex; gap:8px; align-items:center;">
+        <div class="count-buttons-wrapper" style="display:flex; gap:8px; align-items:center; flex:0 0 auto;">
             <button class="btn-primary btn-auth-required" onclick="triggerQuickScan()" style="height:40px; padding: 0 20px; font-size: 12px; letter-spacing: 1px;"><i class="bi bi-plus-circle me-2"></i> REGISTRAR</button>
             <label title="RÁFAGA: escaneo continuo con AUTO-GUARDADO. Con esta opción activa, cada código escaneado se registra y se guarda al instante (sin pulsar Guardar), ideal para lectores de pistola. Desactivada, los conteos quedan marcados y se guardan con GUARDAR MASIVO." style="font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer; color:var(--orange); background:rgba(249, 115, 22, 0.1); padding:0 12px; height: 40px; border-radius:10px; border: 2px solid rgba(249, 115, 22, 0.3); margin:0;">
                 <input type="checkbox" id="toggleRafaga" style="width:15px !important; height:15px !important;"> RÁFAGA
@@ -876,15 +874,30 @@
       </div> <!-- /analysisKpis -->
 
       <div class="table-wrapper tech-panel" style="padding:0 !important; overflow:hidden; display:flex; flex-direction:column;">
-         <div style="padding:20px 25px; background:var(--surface); border-bottom:2px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-             <strong style="font-size:16px; color:var(--primary); letter-spacing: 1px;"><i class="bi bi-table text-accent me-3"></i> REPORTE DE DISCREPANCIAS</strong>
-             <span id="filtroActivoBadge" style="display:none; background:var(--accent); color:white; padding:6px 16px; border-radius:50px; font-size:11px; cursor:pointer; font-weight:800; box-shadow:0 0 10px var(--accent-glow);" onclick="filtrarTablaAnalisis('TODOS')" title="Limpiar Filtro">Filtro Activo ✖</span>
+         <div style="padding:14px 18px; background:var(--surface); border-bottom:2px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+             <strong style="font-size:15px; color:var(--primary); letter-spacing: 1px; white-space:nowrap;"><i class="bi bi-table text-accent me-2"></i> REPORTE DE DISCREPANCIAS</strong>
+             <div style="display:flex; align-items:center; gap:10px; flex:1; justify-content:flex-end; flex-wrap:wrap;">
+                 <div style="display:flex; align-items:center; background:var(--bg); border-radius:50px; padding:4px 14px; box-shadow:var(--neu-in); min-width:200px; flex:1; max-width:360px;">
+                     <i class="bi bi-search text-secondary me-2"></i>
+                     <input type="text" id="analysisSearch" placeholder="Buscar posición, SKU o descripción..." oninput="filtrarTablaAnalisis(CURRENT_ANALYSIS_FILTER)" style="border:none; box-shadow:none !important; padding:7px; font-size:13px; background:transparent !important; width:100%;">
+                 </div>
+                 <span id="filtroActivoBadge" style="display:none; background:var(--accent); color:white; padding:6px 16px; border-radius:50px; font-size:11px; cursor:pointer; font-weight:800; box-shadow:0 0 10px var(--accent-glow);" onclick="filtrarTablaAnalisis('TODOS')" title="Limpiar Filtro">Filtro ✖</span>
+             </div>
          </div>
          <div id="loadingAnalysis" style="text-align:center; padding:60px; font-weight:800; color:var(--secondary); display:none; font-size:16px;"><i class="bi bi-arrow-repeat spin fs-1 d-block mb-4 text-accent"></i> Procesando datos...</div>
          <div id="analysisScroll" style="flex:1; overflow:auto; padding: 15px;">
              <table id="tblAnalysis">
                 <thead>
-                   <tr><th>POSICIÓN</th><th>SKU</th><th>DESCRIPCIÓN</th><th>TIPO ERROR</th><th style="text-align:center">TEÓRICA</th><th style="text-align:center">FÍSICA</th><th style="text-align:center">DESFASE</th><th style="text-align:center">ACCIÓN</th></tr>
+                   <tr>
+                     <th onclick="sortAnalysis('pos')" style="cursor:pointer;">POSICIÓN <span id="asort-pos"></span></th>
+                     <th onclick="sortAnalysis('sku')" style="cursor:pointer;">SKU <span id="asort-sku"></span></th>
+                     <th onclick="sortAnalysis('desc')" style="cursor:pointer;">DESCRIPCIÓN <span id="asort-desc"></span></th>
+                     <th onclick="sortAnalysis('estado')" style="cursor:pointer;">TIPO ERROR <span id="asort-estado"></span></th>
+                     <th onclick="sortAnalysis('qTeo')" style="text-align:center; cursor:pointer;">TEÓRICA <span id="asort-qTeo"></span></th>
+                     <th onclick="sortAnalysis('qFis')" style="text-align:center; cursor:pointer;">FÍSICA <span id="asort-qFis"></span></th>
+                     <th onclick="sortAnalysis('dif')" style="text-align:center; cursor:pointer;">DESFASE <span id="asort-dif"></span></th>
+                     <th style="text-align:center">ACCIÓN</th>
+                   </tr>
                 </thead>
                 <tbody id="bodyAnalysis"></tbody>
              </table>
@@ -918,9 +931,17 @@
 
   </div> <div id="toast">Notificación</div>
 
-  <!-- SERIES como subventana: backdrop + botón de cierre del overlay de series -->
-  <div id="seriesBackdrop" class="modal-overlay" onclick="cerrarSeriesModal()"></div>
-  <button id="seriesModalClose" class="btn-danger" onclick="cerrarSeriesModal()"><i class="bi bi-x-lg me-1"></i> Cerrar series</button>
+  <!-- SERIES como SUBVENTANA dentro de Conteo Físico: reubica la MISMA pestaña de series aquí
+       (reutiliza su DOM y funciones; no duplica nada). Usa el patrón de modal probado. -->
+  <div id="modalSeries" class="modal-overlay" style="z-index:9500;">
+    <div class="modal-box" style="max-width:1060px; width:96%; height:90vh; padding:16px 18px; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--border); padding-bottom:12px; margin-bottom:12px;">
+        <strong style="font-size:15px; color:var(--primary); display:flex; align-items:center; gap:10px;"><i class="bi bi-qr-code-scan text-accent fs-4"></i> SERIES — POSICIÓN: <span id="seriesModalPos" style="color:var(--accent);">—</span></strong>
+        <button class="btn-danger" onclick="cerrarSeriesModal()" style="padding:8px 14px;"><i class="bi bi-x-lg me-1"></i> Cerrar</button>
+      </div>
+      <div id="seriesHost" style="flex:1; overflow:auto; min-height:0;"></div>
+    </div>
+  </div>
   
   <div id="modalHallazgoBatch" class="modal-overlay"><div class="modal-box">
     <h3 style="color:var(--primary); font-weight:800; border-bottom: 3px solid var(--warning); padding-bottom: 15px; margin-top:0;"><i class="bi bi-exclamation-circle text-warning"></i> Hallazgo de Serie</h3>
@@ -1313,26 +1334,39 @@
         document.getElementById('quickViewCard').style.display = 'none';
     }
 
-    // SERIES como SUBVENTANA dentro de CONTEO FÍSICO: muestra la MISMA pestaña de series como
-    // overlay (reutiliza su DOM y funciones; no duplica nada) para escanear series sin salir
-    // del conteo. El backdrop bloquea el fondo; se cierra con el botón o tocando el fondo.
+    // SERIES como SUBVENTANA dentro de CONTEO FÍSICO: reubica la MISMA pestaña de series dentro
+    // del modal #modalSeries (reutiliza su DOM y funciones; no duplica nada) y la enlaza a la
+    // POSICIÓN seleccionada, para validar series sin salir del conteo. La pestaña SERIES del menú
+    // sigue intacta (al cerrar, la pestaña vuelve a su lugar original).
+    var _seriesOrigParent = null, _seriesOrigNext = null;
     function abrirSeriesModal() {
-        var ps = document.getElementById('page-series');
-        var bd = document.getElementById('seriesBackdrop');
-        var cl = document.getElementById('seriesModalClose');
-        if (!ps) return;
-        ps.classList.add('series-modal');
-        if (bd) bd.style.display = 'block';
-        if (cl) cl.style.display = 'inline-flex';
+        var modal = document.getElementById('modalSeries');
+        var host  = document.getElementById('seriesHost');
+        var ps    = document.getElementById('page-series');
+        if (!modal || !host || !ps) return;
+        if (!_seriesOrigParent) { _seriesOrigParent = ps.parentNode; _seriesOrigNext = ps.nextSibling; }
+        host.appendChild(ps);                 // mover la pestaña de series al modal
+        ps.style.display = 'flex';
+        ps.classList.add('series-embedded');
+        // Contexto: posición seleccionada en el conteo
+        var lbl = document.getElementById('seriesModalPos'); if (lbl) lbl.innerText = CURRENT_POS || '—';
+        var t = document.getElementById('targetPos'); if (t && CURRENT_POS && CURRENT_POS !== 'LOCAL') t.value = CURRENT_POS;
+        var o = document.getElementById('displayOrigin'); if (o && CURRENT_POS && CURRENT_POS !== 'LOCAL') o.value = CURRENT_POS;
+        modal.style.display = 'flex';
         setTimeout(function(){ var i = document.getElementById('scanInput'); if (i) { try { i.focus(); } catch(e){} } }, 120);
     }
     function cerrarSeriesModal() {
-        var ps = document.getElementById('page-series');
-        var bd = document.getElementById('seriesBackdrop');
-        var cl = document.getElementById('seriesModalClose');
-        if (ps) ps.classList.remove('series-modal');
-        if (bd) bd.style.display = 'none';
-        if (cl) cl.style.display = 'none';
+        var modal = document.getElementById('modalSeries');
+        var ps    = document.getElementById('page-series');
+        if (ps) {
+            ps.style.display = '';
+            ps.classList.remove('series-embedded');
+            if (_seriesOrigParent) {                 // devolver la pestaña a su lugar original
+                if (_seriesOrigNext && _seriesOrigNext.parentNode === _seriesOrigParent) _seriesOrigParent.insertBefore(ps, _seriesOrigNext);
+                else _seriesOrigParent.appendChild(ps);
+            }
+        }
+        if (modal) modal.style.display = 'none';
     }
 
     // MEJORA VISUAL: colapsar/expandir los KPIs de ANÁLISIS para que el auditor amplíe el
@@ -2098,22 +2132,32 @@ function cargarAutocompletadoSKU() {
     }
 
     function saltarPosicion(dir) {
-        if (!ALL_POS || ALL_POS.length === 0 || !CURRENT_POS) return;
-        
-        let sortedPos = ALL_POS.map(p => p.nombre).sort((a,b) => a.localeCompare(b));
+        if (!CURRENT_POS) return;
+        // Navega dentro del subconjunto FILTRADO (nave/lit/col/niv/estado). Si el filtro está
+        // vacío, equivale a todas las posiciones. Así Siguiente/Anterior recorre solo lo filtrado
+        // (p. ej. solo pendientes o solo con desfase).
+        let pool = filterPositionsData();
+        if (!pool || pool.length === 0) pool = ALL_POS || [];
+        let sortedPos = pool.map(p => p.nombre).sort((a,b) => a.localeCompare(b));
+        if (sortedPos.length === 0) { showToast("No hay posiciones que cumplan el filtro"); return; }
+
         let currentIndex = sortedPos.indexOf(CURRENT_POS);
-        
-        if (currentIndex !== -1) {
-            let newIndex = currentIndex + dir;
-            if (newIndex >= 0 && newIndex < sortedPos.length) {
-                let nextPos = sortedPos[newIndex];
-                seleccionarPosicion(nextPos);
-                nav('count'); 
-                loadCountTable(); 
-                showToast("Cambiando a ubicación " + nextPos);
-            } else {
-                showToast(dir > 0 ? "Última posición alcanzada" : "Primera posición alcanzada");
-            }
+        if (currentIndex === -1) {
+            // La posición actual no está en el filtro: saltar a la primera/última del filtro.
+            let edge = (dir > 0) ? sortedPos[0] : sortedPos[sortedPos.length - 1];
+            seleccionarPosicionLigera(edge); nav('count'); loadCountTable();
+            showToast("Filtro · " + edge + " (1/" + sortedPos.length + ")");
+            return;
+        }
+        let newIndex = currentIndex + dir;
+        if (newIndex >= 0 && newIndex < sortedPos.length) {
+            let nextPos = sortedPos[newIndex];
+            seleccionarPosicionLigera(nextPos);
+            nav('count');
+            loadCountTable();
+            showToast("Ubicación " + nextPos + " (" + (newIndex + 1) + "/" + sortedPos.length + ")");
+        } else {
+            showToast(dir > 0 ? "Última posición del filtro" : "Primera posición del filtro");
         }
     }
 
@@ -2165,12 +2209,18 @@ function cargarAutocompletadoSKU() {
         let cNum = cRaw !== "" ? parseInt(cRaw, 10) : null;
         let nvRaw = document.getElementById('fltNiv')?.value.trim() || "";
         let nvNum = nvRaw !== "" ? parseInt(nvRaw, 10) : null;
-        
+        let est = document.getElementById('fltEstado')?.value || "";
+
         return ALL_POS.filter(p => {
             let parts = parsePos(p.nombre);
             let matchC = (cNum === null) || (parts.col === cNum) || String(parts.col).includes(cRaw) || p.nombre.includes(`-${cRaw}-`) || p.nombre.includes(`-${String(cRaw).padStart(2, '0')}-`);
             let matchNv = (nvNum === null) || (parts.nivel === nvNum) || String(parts.nivel).includes(nvRaw) || p.nombre.endsWith(`-${nvRaw}`);
-            return parts.nave.includes(n) && parts.literal.includes(r) && matchC && matchNv;
+            // Estado: PEND = pendiente validación, DESF = con desfase, COMP = completa
+            let matchEst = true;
+            if (est === 'PEND') matchEst = (p.categoria === 'EN PROCESO') || (typeof p.avance === 'number' && p.avance < 100);
+            else if (est === 'DESF') matchEst = ['FALTANTES','SOBRANTES','MIXTO (Falt/Sob)'].indexOf(p.categoria) !== -1;
+            else if (est === 'COMP') matchEst = (p.categoria === 'COMPLETADAS') || (p.avance === 100);
+            return parts.nave.includes(n) && parts.literal.includes(r) && matchC && matchNv && matchEst;
         });
     }
 
@@ -2179,6 +2229,7 @@ function cargarAutocompletadoSKU() {
     function clearFilters() {
         document.getElementById('fltNave').value = ""; document.getElementById('fltRack').value = "";
         document.getElementById('fltCol').value = ""; document.getElementById('fltNiv').value = "";
+        var fe = document.getElementById('fltEstado'); if (fe) fe.value = "";
         filterPositions();
     }
 
@@ -3332,6 +3383,17 @@ window.camera = GLOBAL_CAMERA || camera;
     }
 
     let CURRENT_ANALYSIS_FILTER = 'TODOS';
+    let ANALYSIS_SORT = { key: null, asc: true };
+    // Ordena la tabla de discrepancias por columna (clic en encabezado). Alterna asc/desc.
+    function sortAnalysis(key) {
+        if (ANALYSIS_SORT.key === key) ANALYSIS_SORT.asc = !ANALYSIS_SORT.asc;
+        else { ANALYSIS_SORT.key = key; ANALYSIS_SORT.asc = true; }
+        ['pos','sku','desc','estado','qTeo','qFis','dif'].forEach(function(k){
+            var el = document.getElementById('asort-' + k);
+            if (el) el.innerHTML = (ANALYSIS_SORT.key === k) ? (ANALYSIS_SORT.asc ? '▲' : '▼') : '';
+        });
+        if (window.GLOBAL_KPI_DATA) filtrarTablaAnalisis(CURRENT_ANALYSIS_FILTER);
+    }
 
     function renderizarGraficos() {
         if(!window.GLOBAL_KPI_DATA) return;
@@ -3457,12 +3519,27 @@ window.camera = GLOBAL_CAMERA || camera;
         else { badge.style.display = 'inline-block'; badge.innerText = `Filtro: ${filtro} ✖`; }
 
         let tbody = document.getElementById('bodyAnalysis'); tbody.innerHTML = "";
-        let data = window.GLOBAL_KPI_DATA.discrepancias;
-        
+        let data = (window.GLOBAL_KPI_DATA.discrepancias || []).slice();  // copia para no mutar el original al ordenar
+
         // Aplicamos el filtro si no es 'TODOS'
         if(filtro === 'FALTANTES') data = data.filter(d => d.estado === 'FALTANTE');
         else if(filtro === 'SOBRANTES') data = data.filter(d => d.estado === 'SOBRANTE');
         else if(filtro !== 'TODOS') data = data.filter(d => d.sku === filtro); // Filtro por SKU
+
+        // Búsqueda por texto (posición / SKU / descripción / estado)
+        var _q = (document.getElementById('analysisSearch') && document.getElementById('analysisSearch').value || "").trim().toLowerCase();
+        if (_q) data = data.filter(d => (String(d.pos)+' '+String(d.sku)+' '+String(d.desc)+' '+String(d.estado)).toLowerCase().indexOf(_q) !== -1);
+
+        // Orden por columna (encabezado dinámico)
+        if (ANALYSIS_SORT.key) {
+            var _k = ANALYSIS_SORT.key, _asc = ANALYSIS_SORT.asc;
+            data.sort(function(a,b){
+                var va = a[_k], vb = b[_k];
+                if (_k === 'qTeo' || _k === 'qFis' || _k === 'dif') { va = parseFloat(va)||0; vb = parseFloat(vb)||0; return _asc ? va-vb : vb-va; }
+                va = String(va||'').toLowerCase(); vb = String(vb||'').toLowerCase();
+                return _asc ? va.localeCompare(vb) : vb.localeCompare(va);
+            });
+        }
 
         if(data.length === 0 && filtro === 'TODOS') {
             tbody.innerHTML = "<tr><td colspan='8' style='text-align:center; padding:40px; color:var(--success); font-weight:800; font-size: 14px;'><i class='bi bi-shield-check d-block fs-1 mb-2'></i>Inventario Perfecto. Sin Desfases.</td></tr>";
