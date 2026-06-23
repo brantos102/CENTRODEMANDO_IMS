@@ -686,7 +686,7 @@
         </div>
         <div class="count-buttons-wrapper" style="display:flex; gap:8px; align-items:center;">
             <button class="btn-primary btn-auth-required" onclick="triggerQuickScan()" style="height:40px; padding: 0 20px; font-size: 12px; letter-spacing: 1px;"><i class="bi bi-plus-circle me-2"></i> REGISTRAR</button>
-            <label title="RÁFAGA: modo de escaneo continuo. Al activarlo, tras cada registro el cursor regresa solo al escáner para encadenar lecturas sin pausar (ideal para lectores de pistola)." style="font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer; color:var(--orange); background:rgba(249, 115, 22, 0.1); padding:0 12px; height: 40px; border-radius:10px; border: 2px solid rgba(249, 115, 22, 0.3); margin:0;">
+            <label title="RÁFAGA: escaneo continuo con AUTO-GUARDADO. Con esta opción activa, cada código escaneado se registra y se guarda al instante (sin pulsar Guardar), ideal para lectores de pistola. Desactivada, los conteos quedan marcados y se guardan con GUARDAR MASIVO." style="font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer; color:var(--orange); background:rgba(249, 115, 22, 0.1); padding:0 12px; height: 40px; border-radius:10px; border: 2px solid rgba(249, 115, 22, 0.3); margin:0;">
                 <input type="checkbox" id="toggleRafaga" style="width:15px !important; height:15px !important;"> RÁFAGA
             </label>
         </div>
