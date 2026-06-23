@@ -493,7 +493,8 @@
 
         <button id="btnCambiarBase" onclick="cambiarInventario()" class="btn-neutral" style="display:none; padding:8px 16px; margin-left:5px;" title="Cambiar Base"><span class="material-icons" style="font-size:16px;">swap_horiz</span> BASE</button>
         <button id="btnLogout" onclick="cerrarSesion()" class="btn-danger" style="display:none; padding:8px 16px; margin-left:5px;" title="Cerrar Sesión"><span class="material-icons" style="font-size:16px;">logout</span> SALIR</button>
-        <button id="btnEntregar" onclick="entregarInventarioWMS()" class="btn-success" style="display:none; padding:8px 16px; margin-left:5px;" title="Marcar inventario como Entregado"><span class="material-icons" style="font-size:16px;">task_alt</span> ENTREGADO</button>
+        <button id="btnAbrirLibro" onclick="abrirLibroBase()" class="btn-neutral" style="display:none; padding:8px 16px; margin-left:5px;" title="Abrir el libro base (Google Sheets) del inventario actual"><span class="material-icons" style="font-size:16px;">description</span> LIBRO</button>
+        <button id="btnEntregar" onclick="entregarInventarioWMS()" class="btn-success" style="display:none; padding:8px 16px; margin-left:5px;" title="Finalizar y entregar el inventario"><span class="material-icons" style="font-size:16px;">task_alt</span> ENTREGAR INVENTARIO</button>
     </div>
   </header>
 
@@ -1505,6 +1506,7 @@
             document.getElementById('btnEyeDepot').style.display = USER_ROLE === 'ADMIN' ? 'inline-block' : 'none';
         }
         var _bE = document.getElementById('btnEntregar'); if (_bE) _bE.style.display = isGuest ? 'none' : 'inline-flex';
+        var _bL = document.getElementById('btnAbrirLibro'); if (_bL) _bL.style.display = (USER_ROLE === 'ADMIN') ? 'inline-flex' : 'none';
     }
 
     function checkAuth() {
@@ -1680,6 +1682,13 @@ function cargarAutocompletadoSKU() {
         }).validarCredenciales(elUser.value, pass);
     }
 
+    // FIX 8.37: abrir el libro base (Sheets) del inventario actual — solo ADMIN/lider.
+    function abrirLibroBase() {
+        if (USER_ROLE !== 'ADMIN') return Swal.fire("Solo administradores", "Esta accion es solo para Admin / Lider de Conteo.", "info");
+        if (!CURRENT_FILE_ID || CURRENT_FILE_ID === 'LOCAL') return Swal.fire("Sin archivo", "No hay inventario activo.", "warning");
+        window.open('https://docs.google.com/spreadsheets/d/' + CURRENT_FILE_ID + '/edit', '_blank');
+    }
+
     function entregarInventarioWMS() {
         if (USER_ROLE === 'GUEST') { return checkAuth(); }
         if (!CURRENT_FILE_ID || CURRENT_FILE_ID === 'LOCAL') { return Swal.fire("Sin inventario","Primero selecciona un inventario.","warning"); }
@@ -1696,7 +1705,9 @@ function cargarAutocompletadoSKU() {
                 if (res && res.exito) {
                     forceSync();
                     Swal.fire({ title:'Inventario Entregado',
-                        html:'Fecha fin: <b>'+res.fechaFin+'</b><br>Avance: <b>'+res.avance+'%</b>'+(res.panelActualizado?'<br><span style="color:#16a34a">Panel actualizado</span>':''),
+                        html:'Fecha fin: <b>'+res.fechaFin+'</b><br>Avance: <b>'+res.avance+'%</b>'
+                            +(res.panelActualizado?'<br><span style="color:#16a34a">Panel de Control actualizado</span>':'')
+                            +(res.cronograma?'<br><span style="color:#16a34a">Cronograma: Estado=Entregado + fecha registrada</span>':'<br><span style="color:#d97706">Sin evento asociado en el cronograma. Por trazabilidad, agregalo en el Centro de Mando.</span>'),
                         icon:'success', showCancelButton:true, confirmButtonText:'Generar correo de finalizacion', cancelButtonText:'Cerrar', confirmButtonColor:'#2563eb'
                     }).then(r => { if (r.isConfirmed) generarCorreoFinalWMS(); });
                 } else { Swal.fire("Error", (res && res.mensaje) || "No se pudo registrar la entrega.", "error"); }
