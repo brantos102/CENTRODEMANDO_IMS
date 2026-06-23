@@ -274,10 +274,11 @@ function pollRealTime(posicionActual, emailUsuario, reqType, clientLastUpdate, f
   if (emailUsuario && emailUsuario !== "INVITADO") {
     let usersObj = {};
     try { const cached = cache.get(`WMS_USERS_${fileId}`); if (cached) usersObj = JSON.parse(cached); } catch(e) {}
-    usersObj[emailUsuario] = Date.now();
+    usersObj[emailUsuario] = { t: Date.now(), pos: String(posicionActual || "") };
     const now = Date.now();
     for (let e in usersObj) {
-      if (now - usersObj[e] < 35000) activeUsers.push(allUsers[e] ? allUsers[e].nombre : e.split('@')[0]);
+      let info = usersObj[e]; if (typeof info === 'number') info = { t: info, pos: "" };
+      if (now - info.t < 35000) activeUsers.push({ email: e, nombre: (allUsers[e] ? allUsers[e].nombre : e.split('@')[0]), pos: info.pos });
       else delete usersObj[e];
     }
     cache.put(`WMS_USERS_${fileId}`, JSON.stringify(usersObj), 60);
@@ -869,7 +870,7 @@ function obtenerCatalogoSKUs(fileId) {
 
 /* ===== FIX 8.37: conexion con Centro de Mando + boton Entregado (todo NUEVO) ===== */
 
-function obtenerSesionWMSActual() {
+function obtenerSesionWMSActual(fileId) {
   var email = "";
   try { email = Session.getActiveUser().getEmail() || ""; } catch (e) {}
   if (!email) { try { email = Session.getEffectiveUser().getEmail() || ""; } catch (e) {} }
@@ -877,9 +878,12 @@ function obtenerSesionWMSActual() {
   var emailN = String(email).trim().toLowerCase();
   var db = getUsuariosConHoja();
   var u = db[emailN] || db[email] || null;
+  var nombreArchivo = "";
+  if (fileId) { try { nombreArchivo = DriveApp.getFileById(String(fileId).trim()).getName(); } catch (e) {} }
   return { autenticado: true, email: emailN,
            nombre: (u && u.nombre) ? u.nombre : emailN.split("@")[0],
-           rol: (u && u.rol) ? String(u.rol).toUpperCase() : "AUDITOR", registrado: !!u };
+           rol: (u && u.rol) ? String(u.rol).toUpperCase() : "AUDITOR", registrado: !!u,
+           nombreArchivo: nombreArchivo };
 }
 
 function obtenerDatosAnalisis(fileId) {

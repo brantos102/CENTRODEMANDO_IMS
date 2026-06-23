@@ -917,6 +917,7 @@
     let GLOBAL_ASSEMBLY_WIDTH = 0, GLOBAL_MAX_Y = 0;
     let current3DMode = 'PROGRESS'; 
     let WORKER_AVATARS = [];
+    let ACTIVE_USERS_DATA = [];
     let ALERT_WAYPOINTS = [];
     let GLOBAL_FLOOR = null;
     let shouldFlyOnNextRender = false;
@@ -1210,8 +1211,9 @@
         google.script.run.withSuccessHandler(res => {
             if (stopPolling) return;
             if (res.activeUsers) {
+                ACTIVE_USERS_DATA = res.activeUsers;
                 document.getElementById('activeUsersCount').innerText = res.activeUsers.length;
-                document.getElementById('activeUsersCount').title = res.activeUsers.join("\n");
+                document.getElementById('activeUsersCount').title = res.activeUsers.map(function(u){ return (typeof u === 'string') ? u : (u.nombre || u.email || ''); }).join("\n");
             }
             if (!res.unchanged && res.data && res.data.exito !== false) {
                 LOCAL_LAST_UPDATE = res.serverLastUpdate;
@@ -1280,7 +1282,8 @@
     window.onload = function() {
       applyViewMode(); // Aplica la vista móvil o PC inicial
 
-      document.getElementById('modalLogin').style.display = 'flex'; 
+      // FIX 8.37: no mostrar el login si viene con deep-link (evita el parpadeo)
+      if (!(DEEPLINK_FILE_ID && DEEPLINK_FILE_ID.length > 10)) document.getElementById('modalLogin').style.display = 'flex'; 
 
       const mSel = document.getElementById('adjMotivo'); const jSel = document.getElementById('adjJustificacion');
       MOTIVOS_LIST.forEach(m => mSel.add(new Option(m,m))); JUSTIF_LIST.forEach(j => jSel.add(new Option(j,j)));
@@ -1325,15 +1328,15 @@
           try { google.script.run.registrarAccesoWMS(DEEPLINK_FILE_ID, DEEPLINK_CLIENTE, true); } catch(e) {}
           google.script.run.withSuccessHandler(function(s){
             if (s && s.autenticado && s.registrado && (s.rol === 'ADMIN' || s.rol === 'OPERADOR')) {
-              USER_EMAIL = s.email; USER_ROLE = s.rol; iniciarSesionExitosa(s.nombre, invName);
+              USER_EMAIL = s.email; USER_ROLE = s.rol; iniciarSesionExitosa(s.nombre, s.nombreArchivo || invName);
             } else if (s && s.autenticado) {
-              USER_EMAIL = s.email; USER_ROLE = 'GUEST'; iniciarSesionExitosa(s.nombre + " (lectura)", invName);
+              USER_EMAIL = s.email; USER_ROLE = 'GUEST'; iniciarSesionExitosa(s.nombre + " (lectura)", s.nombreArchivo || invName);
             } else {
               USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST"; iniciarSesionExitosa("Auditor", invName);
             }
           }).withFailureHandler(function(){
             USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST"; iniciarSesionExitosa("Auditor", invName);
-          }).obtenerSesionWMSActual();
+          }).obtenerSesionWMSActual(DEEPLINK_FILE_ID);
           return;
         }
 
@@ -1450,6 +1453,7 @@
             document.querySelectorAll('.input-auth-required').forEach(el => el.disabled = false);
             document.getElementById('btnEyeDepot').style.display = USER_ROLE === 'ADMIN' ? 'inline-block' : 'none';
         }
+        var _bE = document.getElementById('btnEntregar'); if (_bE) _bE.style.display = isGuest ? 'none' : 'inline-flex';
     }
 
     function checkAuth() {
@@ -2469,7 +2473,7 @@ window.camera = GLOBAL_CAMERA || camera;
                        x: px, 
                        y: py, 
                        z: zOff + dim.d/2 + 0.6, 
-                       isCurrent: (slotItems[0].nombre === CURRENT_POS)
+                       nombre: slotItems[0].nombre, isCurrent: (slotItems[0].nombre === CURRENT_POS)
                    }); 
                }
 
@@ -2599,47 +2603,48 @@ window.camera = GLOBAL_CAMERA || camera;
            });
        });
 
-       let titleNames = document.getElementById('activeUsersCount').title || "";
-       let activeUsersNames = titleNames.split('\n').filter(n => n.trim() !== "");
-       
-       let miNombre = document.getElementById('userDisplay').innerText.split(' |')[0] || "Auditor";
-       if (!activeUsersNames.includes(miNombre)) activeUsersNames.unshift(miNombre);
-
-       let currentLocs = workLocations.filter(w => w.isCurrent);
+       // FIX 8.37: UN avatar por USUARIO (dedupe), en SU posición; varios en la misma
+       // posición se muestran lado a lado. Envuelto en try/catch: nunca rompe el render.
+       try {
+       let posCoords = {};
+       workLocations.forEach(function(w){ if (w.nombre) posCoords[String(w.nombre).toUpperCase()] = w; });
        let otherLocs = workLocations.filter(w => !w.isCurrent);
+       let miEmail = String(USER_EMAIL || "").toLowerCase();
+       let miNombre = document.getElementById('userDisplay').innerText.split(' |')[0] || "Auditor";
 
-       activeUsersNames.forEach((uName, idx) => {
-           let baseLoc;
-           
-           if (uName === miNombre && currentLocs.length > 0) {
-               baseLoc = currentLocs[0];
-           } else {
-               baseLoc = otherLocs.length > 0 ? otherLocs[idx % otherLocs.length] : {x: (Math.random() - 0.5) * 5, y: 0, z: 2};
-           }
-           
-           let avatar = createWorkerAvatar(uName);
-           let finalY = baseLoc.y || 0;
-           
-           if (finalY > 0) {
-               let ladderHeight = finalY + 1.2;
-               let ladder = createLadder(ladderHeight);
-               ladder.position.set(baseLoc.x, 0, baseLoc.z - 0.25);
-               ladder.rotation.x = -0.15; 
-               scene.add(ladder);
-               
-               avatar.position.set(baseLoc.x, finalY, baseLoc.z - 0.15);
-           } else {
-               let offsetX = (Math.random() - 0.5) * 1.5; 
-               let offsetZ = (Math.random() * 0.5);
-               avatar.position.set(baseLoc.x + offsetX, finalY, baseLoc.z + offsetZ);
-           }
-           
-           avatar.rotation.y = Math.PI; 
-           avatar.userData.baseY = finalY;
-           
-           scene.add(avatar);
-           WORKER_AVATARS.push(avatar);
+       let usuarios = [], vistos = {};
+       (ACTIVE_USERS_DATA || []).forEach(function(u){
+           let info = (typeof u === 'string') ? { nombre: u, email: u, pos: "" } : u;
+           let key = String(info.email || info.nombre || "").toLowerCase();
+           if (key && !vistos[key]) { vistos[key] = true; usuarios.push(info); }
        });
+       if (!usuarios.some(function(u){ return String(u.email||"").toLowerCase() === miEmail; })) {
+           usuarios.unshift({ nombre: miNombre, email: USER_EMAIL, pos: CURRENT_POS });
+       }
+
+       let usadosPorPos = {};
+       usuarios.forEach(function(u, idx){
+           let esYo = (String(u.email||"").toLowerCase() === miEmail);
+           let posName = String(((esYo && CURRENT_POS) ? CURRENT_POS : (u.pos || ""))).toUpperCase();
+           let baseLoc = posCoords[posName];
+           if (!baseLoc) baseLoc = otherLocs.length > 0 ? otherLocs[idx % otherLocs.length] : {x:(Math.random()-0.5)*5, y:0, z:2};
+           let claveOff = posName || ("_" + idx);
+           let n = usadosPorPos[claveOff] || 0; usadosPorPos[claveOff] = n + 1;
+           let offX = n * 0.7;
+           let avatar = createWorkerAvatar(u.nombre);
+           let finalY = baseLoc.y || 0;
+           if (finalY > 0) {
+               let ladder = createLadder(finalY + 1.2);
+               ladder.position.set(baseLoc.x + offX, 0, baseLoc.z - 0.25); ladder.rotation.x = -0.15; scene.add(ladder);
+               avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z - 0.15);
+               avatar.userData.ladder = ladder;
+           } else {
+               avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z + 0.15);
+           }
+           avatar.rotation.y = Math.PI; avatar.userData.baseY = finalY;
+           scene.add(avatar); WORKER_AVATARS.push(avatar);
+       });
+       } catch(eAv) { console.log("avatares:", eAv && eAv.message); }
 
        if (floorItems.length > 0) {
            floorItems.sort((a,b) => a.p.nombre.localeCompare(b.p.nombre));
