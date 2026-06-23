@@ -323,6 +323,8 @@
 
     /* ANÁLISIS — la tabla de discrepancias tenía el mismo problema: altura usable + scroll + thead fijo. */
     body:not(.mobile-mode) #analysisScroll { min-height: 300px; max-height: 60vh; overflow: auto; }
+    /* Con los KPIs colapsados, el reporte de discrepancias ocupa casi toda la pantalla. */
+    body:not(.mobile-mode) #page-analysis.kpis-collapsed #analysisScroll { max-height: 82vh; min-height: 440px; }
     #analysisScroll thead th { position: sticky; top: 0; z-index: 25; background: var(--surface); }
 
     tbody tr { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: var(--surface); box-shadow: var(--neu-out-sm); border-radius: 20px; }
@@ -668,33 +670,34 @@
 
     <div id="page-count" class="page">
       
-      <div class="tech-panel" id="conteo-header-panel" style="display:flex; align-items:flex-end; justify-content:center; gap:20px; padding:15px 25px; margin-bottom:15px; max-width: 950px; margin-left: auto; margin-right: auto;">
+      <!-- MEJORA VISUAL: panel de escaneo COMPACTO (antes ocupaba ~40% del alto) para dar
+           protagonismo a la tabla de validación. Se conservan todas las funciones. -->
+      <div class="tech-panel" id="conteo-header-panel" style="display:flex; align-items:flex-end; justify-content:center; gap:12px; padding:10px 18px; margin-bottom:10px; max-width: 1100px; margin-left: auto; margin-right: auto;">
         <div style="flex:2; position: relative;">
-            <label style="font-size:11px; font-weight:800; color:var(--accent); margin-bottom:8px; display:block; text-transform: uppercase; letter-spacing: 1px;"><i class="bi bi-upc-scan me-1"></i> CÓDIGO / EAN</label>
-            <div style="display:flex; gap:10px;">
-                <input type="text" id="quickSku" class="data-mono btn-auth-input scan-input-tech" placeholder="ESCANEAR CÓDIGO..." style="font-size:20px; padding:12px; flex:1;" onkeydown="handleQuickScan(event)">
-                <button class="btn-neutral btn-auth-required" onclick="abrirEscanerCamara('quickSku')" style="padding:0 20px;" title="Escanear con Cámara"><i class="bi bi-camera-video fs-5 text-accent"></i></button>
+            <label style="font-size:10px; font-weight:800; color:var(--accent); margin-bottom:4px; display:block; text-transform: uppercase; letter-spacing: 1px;"><i class="bi bi-upc-scan me-1"></i> CÓDIGO / EAN</label>
+            <div style="display:flex; gap:8px;">
+                <input type="text" id="quickSku" class="data-mono btn-auth-input scan-input-tech" placeholder="ESCANEAR CÓDIGO..." style="font-size:16px; padding:9px 12px; flex:1;" onkeydown="handleQuickScan(event)">
+                <button class="btn-neutral btn-auth-required" onclick="abrirEscanerCamara('quickSku')" style="padding:0 16px;" title="Escanear con Cámara"><i class="bi bi-camera-video text-accent"></i></button>
             </div>
         </div>
-        <div style="flex:0.5; min-width:80px;">
-            <label style="font-size:11px; font-weight:800; color:var(--secondary); margin-bottom:8px; display:block; text-transform: uppercase; letter-spacing: 1px;">CANT.</label>
-            <input type="number" id="quickQty" value="1" class="btn-auth-input data-mono" style="text-align:center; font-weight:800; font-size:20px; padding:12px;" onkeydown="if(event.key==='Enter'){this.blur(); triggerQuickScan();}">
+        <div style="flex:0.4; min-width:70px;">
+            <label style="font-size:10px; font-weight:800; color:var(--secondary); margin-bottom:4px; display:block; text-transform: uppercase; letter-spacing: 1px;">CANT.</label>
+            <input type="number" id="quickQty" value="1" class="btn-auth-input data-mono" style="text-align:center; font-weight:800; font-size:16px; padding:9px;" onkeydown="if(event.key==='Enter'){this.blur(); triggerQuickScan();}">
         </div>
-        <div class="count-buttons-wrapper" style="display:flex; gap:10px; align-items:center; padding-bottom: 2px;">
-            <button class="btn-primary btn-auth-required" onclick="triggerQuickScan()" style="height:48px; padding: 0 25px; font-size: 13px; letter-spacing: 1px;"><i class="bi bi-plus-circle me-2 fs-5"></i> REGISTRAR</button>
-            
-            <label style="font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; color:var(--orange); background:rgba(249, 115, 22, 0.1); padding:0 15px; height: 48px; border-radius:12px; border: 2px solid rgba(249, 115, 22, 0.3); margin:0;">
-                <input type="checkbox" id="toggleRafaga" style="width:16px !important; height:16px !important;"> RÁFAGA
+        <div class="count-buttons-wrapper" style="display:flex; gap:8px; align-items:center;">
+            <button class="btn-primary btn-auth-required" onclick="triggerQuickScan()" style="height:40px; padding: 0 20px; font-size: 12px; letter-spacing: 1px;"><i class="bi bi-plus-circle me-2"></i> REGISTRAR</button>
+            <label title="RÁFAGA: modo de escaneo continuo. Al activarlo, tras cada registro el cursor regresa solo al escáner para encadenar lecturas sin pausar (ideal para lectores de pistola)." style="font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer; color:var(--orange); background:rgba(249, 115, 22, 0.1); padding:0 12px; height: 40px; border-radius:10px; border: 2px solid rgba(249, 115, 22, 0.3); margin:0;">
+                <input type="checkbox" id="toggleRafaga" style="width:15px !important; height:15px !important;"> RÁFAGA
             </label>
         </div>
       </div>
 
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; padding: 0 10px; flex-wrap: wrap; gap: 15px; max-width: 950px; margin-left: auto; margin-right: auto;">
-        <div style="display:flex; gap:20px; align-items:center; flex-wrap: wrap; flex: 1;">
-            <label style="font-size:13px; font-weight:800; display:flex; align-items:center; gap:10px; cursor:pointer; color:var(--secondary);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding: 0 10px; flex-wrap: wrap; gap: 12px; max-width: 1100px; margin-left: auto; margin-right: auto;">
+        <div style="display:flex; gap:14px; align-items:center; flex-wrap: wrap; flex: 1;">
+            <label style="font-size:12px; font-weight:800; display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--secondary);">
                 <input type="checkbox" id="toggleCorrect" onchange="renderTableData()"> Ocultar Correctos
             </label>
-            <label style="font-size:13px; font-weight:800; display:flex; align-items:center; gap:10px; cursor:pointer; color:var(--accent); background:rgba(14,165,233,0.1); padding:12px 20px; border-radius:16px; border: 2px solid rgba(14,165,233,0.3);">
+            <label style="font-size:12px; font-weight:800; display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--accent); background:rgba(14,165,233,0.1); padding:7px 14px; border-radius:12px; border: 2px solid rgba(14,165,233,0.3);">
                 <input type="checkbox" id="toggleInfo" onchange="applyInfoVisibility()"> Mostrar Info Extra
             </label>
             <div style="display:flex; align-items:center; background:var(--surface); border-radius:50px; padding:4px 15px; box-shadow:var(--neu-in); flex: 1; min-width: 200px;">
@@ -785,12 +788,14 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
          <h3 style="margin:0; font-size:22px; font-weight:800; color:var(--primary); display:flex; align-items:center; gap:12px;"><i class="bi bi-pie-chart-fill text-accent" style="font-size: 28px;"></i> DASHBOARD GERENCIAL</h3>
          <div style="display:flex; gap:10px;">
+             <button class="btn-neutral" id="btnToggleKpis" style="padding: 12px 18px; font-size:13px;" onclick="toggleAnalysisKpis()" title="Mostrar/ocultar los KPIs para ampliar el reporte de discrepancias"><span class="material-icons" style="font-size:20px;">unfold_less</span> KPIs</button>
              <button class="btn-primary" style="padding: 12px 24px; font-size:13px; background: #10b981 !important; box-shadow: 0 4px 12px rgba(16,185,129,0.2);" onclick="exportarReportePDF()"><i class="bi bi-file-earmark-pdf-fill me-2"></i> EXPORTAR A PDF</button>
              <button class="btn-neutral" style="padding: 12px 24px; font-size:13px;" onclick="forceSync()"><span class="material-icons" style="font-size:20px;">refresh</span> ACTUALIZAR MÉTRICAS</button>
          </div>
       </div>
 
-      <div class="tech-panel" style="margin-bottom:25px; padding:0; overflow:hidden; border-left: 8px solid var(--accent) !important;">
+      <div id="analysisKpis">
+      <div class="tech-panel" style="margin-bottom:14px; padding:0; overflow:hidden; border-left: 8px solid var(--accent) !important;">
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
               <div style="padding:20px; border-right:1px solid var(--border); text-align:center;">
                   <div style="font-size:10px; font-weight:800; color:var(--secondary); text-transform:uppercase; letter-spacing:1px; margin-bottom:5px;">Referencias Totales</div>
@@ -817,34 +822,35 @@
           </div>
       </div>
 
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:25px; margin-bottom:25px;">
-         
-         <div class="tech-panel kpi-card" style="border-top: 6px solid var(--accent) !important; display:flex; flex-direction:row; align-items:center; gap: 25px; flex-wrap: wrap; justify-content: center;">
-            <div style="flex:1; min-width: 150px; text-align: center;">
-                <div class="kpi-title" style="margin-bottom: 12px; font-weight:800; font-size:13px;">Efectividad (SKUs)</div>
-                <div class="kpi-value" id="kpi-ref" style="font-size:52px; color:var(--primary);">0%</div>
-                <div style="font-size:12px; font-weight:800; color:var(--secondary); margin-top:12px;" id="sub-ref">0 Revisadas | 0 Pendientes</div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-bottom:14px;">
+
+         <div class="tech-panel kpi-card" style="border-top: 6px solid var(--accent) !important; display:flex; flex-direction:row; align-items:center; gap: 18px; flex-wrap: wrap; justify-content: center;">
+            <div style="flex:1; min-width: 130px; text-align: center;">
+                <div class="kpi-title" style="margin-bottom: 8px; font-weight:800; font-size:12px;">Efectividad (SKUs)</div>
+                <div class="kpi-value" id="kpi-ref" style="font-size:42px; color:var(--primary);">0%</div>
+                <div style="font-size:11px; font-weight:800; color:var(--secondary); margin-top:8px;" id="sub-ref">0 Revisadas | 0 Pendientes</div>
             </div>
-            <div style="width: 150px; height: 150px; position:relative;">
+            <div style="width: 120px; height: 120px; position:relative;">
                 <canvas id="chartEfectividad"></canvas>
             </div>
          </div>
 
          <div class="tech-panel kpi-card" style="border-top: 6px solid var(--danger) !important;">
-            <div class="kpi-title" style="margin-bottom: 15px; text-align: center; font-weight:800; font-size:13px;">Distribución de Errores (Clickeable)</div>
-            <div style="flex:1; width:100%; position:relative; min-height: 140px;">
+            <div class="kpi-title" style="margin-bottom: 10px; text-align: center; font-weight:800; font-size:12px;">Distribución de Errores (Clickeable)</div>
+            <div style="flex:1; width:100%; position:relative; min-height: 115px;">
                 <canvas id="chartErrores"></canvas>
             </div>
          </div>
 
          <div class="tech-panel kpi-card" style="border-top: 6px solid var(--warning) !important;">
-            <div class="kpi-title" style="margin-bottom: 15px; text-align: center; font-weight:800; font-size:13px;">Top 5 SKUs Críticos (Clickeable)</div>
-            <div style="flex:1; width:100%; position:relative; min-height: 140px;">
+            <div class="kpi-title" style="margin-bottom: 10px; text-align: center; font-weight:800; font-size:12px;">Top 5 SKUs Críticos (Clickeable)</div>
+            <div style="flex:1; width:100%; position:relative; min-height: 115px;">
                 <canvas id="chartTopErrores"></canvas>
             </div>
          </div>
 
       </div>
+      </div> <!-- /analysisKpis -->
 
       <div class="table-wrapper tech-panel" style="padding:0 !important; overflow:hidden; display:flex; flex-direction:column;">
          <div style="padding:20px 25px; background:var(--surface); border-bottom:2px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
@@ -937,6 +943,9 @@
     // Nuevas variables globales 3D
     let objetosClickeables = [];
     let objetoResaltadoAnterior = null;
+    // Estado para distinguir clic simple vs doble clic en el mapa 3D (a nivel módulo para
+    // que sobreviva a los re-render del mapa durante el sondeo).
+    let _wmsClickTimer = null, _wmsPendingPos = null, _wmsLastUp = 0;
     let GLOBAL_CAMERA, GLOBAL_CONTROLS, GLOBAL_SCENE;
     let GLOBAL_ASSEMBLY_WIDTH = 0, GLOBAL_MAX_Y = 0;
     let current3DMode = 'PROGRESS'; 
@@ -1266,6 +1275,19 @@
 
     function cerrarVistaRapida() {
         document.getElementById('quickViewCard').style.display = 'none';
+    }
+
+    // MEJORA VISUAL: colapsar/expandir los KPIs de ANÁLISIS para que el auditor amplíe el
+    // REPORTE DE DISCREPANCIAS y navegue eficazmente. No anula nada: solo oculta/muestra.
+    function toggleAnalysisKpis() {
+        var k = document.getElementById('analysisKpis');
+        var pg = document.getElementById('page-analysis');
+        var btn = document.getElementById('btnToggleKpis');
+        if (!k) return;
+        var oculto = (k.style.display === 'none');
+        k.style.display = oculto ? '' : 'none';
+        if (pg) pg.classList.toggle('kpis-collapsed', !oculto);
+        if (btn) { var ic = btn.querySelector('.material-icons'); if (ic) ic.innerText = oculto ? 'unfold_less' : 'unfold_more'; }
     }
 
     function iniciarPolling() {
@@ -2368,25 +2390,32 @@ function cargarAutocompletadoSKU() {
         const userColor = colorPalette[Math.abs(hash) % colorPalette.length];
 
         const matSkin = new THREE.MeshStandardMaterial({color: 0xffccaa, roughness: 0.6});
-        const matShirt = new THREE.MeshStandardMaterial({color: userColor, roughness: 0.8});
-        const matPants = new THREE.MeshStandardMaterial({color: 0x1e293b, roughness: 0.9});
-        // MEJORA VISUAL: casco de seguridad (operario) + chaleco reflectivo de alta visibilidad.
-        const matHat = new THREE.MeshStandardMaterial({color: 0xf59e0b, roughness: 0.35, metalness: 0.1});
-        const matVest = new THREE.MeshStandardMaterial({color: 0xeab308, roughness: 0.5, emissive: 0x3a2e00, emissiveIntensity: 0.25});
+        // MEJORA VISUAL: colores corporativos — uniforme AZUL MARINO + casco AZUL + franjas reflectivas.
+        const matUnif = new THREE.MeshStandardMaterial({color: 0x1e3a8a, roughness: 0.8});   // azul marino (uniforme)
+        const matPants = new THREE.MeshStandardMaterial({color: 0x172554, roughness: 0.9});  // navy más oscuro (pantalón)
+        const matHat = new THREE.MeshStandardMaterial({color: 0x2563eb, roughness: 0.35, metalness: 0.15}); // casco azul
+        const matReflect = new THREE.MeshStandardMaterial({color: 0xfde047, emissive: 0x6b5e00, emissiveIntensity: 0.55, roughness: 0.3}); // franja reflectiva
+        const matUserBand = new THREE.MeshStandardMaterial({color: userColor, roughness: 0.5}); // banda de color por operario (identificación)
 
         const legGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8);
         const legL = new THREE.Mesh(legGeo, matPants); legL.position.set(-0.15, 0.4, 0); group.add(legL);
         const legR = new THREE.Mesh(legGeo, matPants); legR.position.set(0.15, 0.4, 0); group.add(legR);
+        const legBandGeo = new THREE.CylinderGeometry(0.105, 0.105, 0.08, 8);
+        [-0.15, 0.15].forEach(function(x){ var b = new THREE.Mesh(legBandGeo, matReflect); b.position.set(x, 0.22, 0); group.add(b); });
 
-        const torsoGeo = new THREE.BoxGeometry(0.4, 0.7, 0.25);
-        const torso = new THREE.Mesh(torsoGeo, matShirt); torso.position.set(0, 1.15, 0); group.add(torso);
-        const vestGeo = new THREE.BoxGeometry(0.44, 0.5, 0.29);
-        const vest = new THREE.Mesh(vestGeo, matVest); vest.position.set(0, 1.12, 0); group.add(vest);
+        const torsoGeo = new THREE.BoxGeometry(0.42, 0.7, 0.26);
+        const torso = new THREE.Mesh(torsoGeo, matUnif); torso.position.set(0, 1.15, 0); group.add(torso);
+        // franjas reflectivas del chaleco: 2 horizontales + 2 verticales
+        const bandH = new THREE.BoxGeometry(0.45, 0.07, 0.28);
+        var bandTop = new THREE.Mesh(bandH, matReflect); bandTop.position.set(0, 1.31, 0); group.add(bandTop);
+        var bandBot = new THREE.Mesh(bandH, matReflect); bandBot.position.set(0, 1.02, 0); group.add(bandBot);
+        const bandV = new THREE.BoxGeometry(0.07, 0.46, 0.28);
+        [-0.1, 0.1].forEach(function(x){ var v = new THREE.Mesh(bandV, matReflect); v.position.set(x, 1.17, 0.005); group.add(v); });
 
         const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
         const head = new THREE.Mesh(headGeo, matSkin); head.position.set(0, 1.65, 0); group.add(head);
 
-        // CASCO: domo + ala perimetral + visera frontal + cresta central
+        // CASCO AZUL: domo + ala + visera + cresta + banda de color por operario
         const hatGeo = new THREE.SphereGeometry(0.175, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
         const hat = new THREE.Mesh(hatGeo, matHat); hat.position.set(0, 1.665, 0); group.add(hat);
         const brimGeo = new THREE.CylinderGeometry(0.215, 0.215, 0.025, 18);
@@ -2394,11 +2423,16 @@ function cargarAutocompletadoSKU() {
         const billGeo = new THREE.BoxGeometry(0.30, 0.022, 0.16);
         const bill = new THREE.Mesh(billGeo, matHat); bill.position.set(0, 1.66, 0.135); group.add(bill);
         const crestGeo = new THREE.BoxGeometry(0.045, 0.05, 0.30);
-        const crest = new THREE.Mesh(crestGeo, matHat); crest.position.set(0, 1.745, 0); group.add(crest);
+        const crest = new THREE.Mesh(crestGeo, matReflect); crest.position.set(0, 1.745, 0); group.add(crest);
+        const userRingGeo = new THREE.CylinderGeometry(0.183, 0.183, 0.045, 18);
+        const userRing = new THREE.Mesh(userRingGeo, matUserBand); userRing.position.set(0, 1.70, 0); group.add(userRing);
 
         const armGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.6, 8);
-        const armL = new THREE.Mesh(armGeo, matShirt); armL.position.set(-0.25, 1.15, 0); armL.rotation.z = Math.PI / 8; group.add(armL);
-        const armR = new THREE.Mesh(armGeo, matShirt); armR.position.set(0.25, 1.15, 0); armR.rotation.z = -Math.PI / 8; group.add(armR);
+        const armL = new THREE.Mesh(armGeo, matUnif); armL.position.set(-0.25, 1.15, 0); armL.rotation.z = Math.PI / 8; group.add(armL);
+        const armR = new THREE.Mesh(armGeo, matUnif); armR.position.set(0.25, 1.15, 0); armR.rotation.z = -Math.PI / 8; group.add(armR);
+        const armBandGeo = new THREE.CylinderGeometry(0.065, 0.065, 0.08, 8);
+        var abL = new THREE.Mesh(armBandGeo, matReflect); abL.position.set(-0.29, 0.93, 0); abL.rotation.z = Math.PI/8; group.add(abL);
+        var abR = new THREE.Mesh(armBandGeo, matReflect); abR.position.set(0.29, 0.93, 0); abR.rotation.z = -Math.PI/8; group.add(abR);
 
         const avatarShadow = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), new THREE.MeshBasicMaterial({color:0x000000, transparent:true, opacity:0.3, depthWrite:false}));
         avatarShadow.rotation.x = -Math.PI/2; avatarShadow.position.y = 0.02; group.add(avatarShadow);
@@ -2826,37 +2860,36 @@ window.camera = GLOBAL_CAMERA || camera;
        });
 
        mapContainer.addEventListener('pointerup', (e) => {
-           if (isDraggingMap) return; 
-           
-           raycaster.setFromCamera(mouse, camera); let objectHit = null;
-           for(let i=0; i<objetosClickeables.length; i++) {
-               const hits = raycaster.intersectObject(objetosClickeables[i], true);
-               if(hits.length > 0) { objectHit = objetosClickeables[i]; break; }
-           }
-           if (objectHit) {
-               tooltip.style.display = 'none';
-               // CLIC SIMPLE: posiciona el avatar en la ubicación + previsualiza (validación).
-               // No salta al conteo: el DOBLE CLIC (handler de abajo) abre el CONTEO FÍSICO.
-               seleccionarPosicion(objectHit.userData.nombre);
-               showToast("Ubicación: " + objectHit.userData.nombre + " · doble clic para contar");
-           }
-       });
+           if (isDraggingMap) return;
+           var ahora = Date.now();
+           if (ahora - _wmsLastUp < 60) return;   // ignora multidisparo del mismo clic (listeners acumulados por re-render)
+           _wmsLastUp = ahora;
 
-       // DOBLE CLIC sobre una ubicación -> abre directamente el CONTEO FÍSICO de esa posición.
-       mapContainer.addEventListener('dblclick', (e) => {
-           const rect = renderer.domElement.getBoundingClientRect();
-           mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-           mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-           raycaster.setFromCamera(mouse, camera); let objectHit = null;
+           // Raycast contra la cámara ACTUAL (módulo), robusto aunque el mapa se haya re-renderizado.
+           var _cam = (typeof GLOBAL_CAMERA !== 'undefined' && GLOBAL_CAMERA) ? GLOBAL_CAMERA : camera;
+           raycaster.setFromCamera(mouse, _cam); let objectHit = null;
            for(let i=0; i<objetosClickeables.length; i++) {
                const hits = raycaster.intersectObject(objetosClickeables[i], true);
                if(hits.length > 0) { objectHit = objetosClickeables[i]; break; }
            }
-           if (objectHit) {
-               tooltip.style.display = 'none';
-               seleccionarPosicion(objectHit.userData.nombre);
-               nav('count'); loadCountTable();
-               showToast("Conteo físico: " + objectHit.userData.nombre);
+           if (!objectHit) return;
+           tooltip.style.display = 'none';
+           var nombre = objectHit.userData.nombre;
+
+           if (_wmsClickTimer && _wmsPendingPos === nombre) {
+               // DOBLE CLIC sobre la misma ubicación -> abre el CONTEO FÍSICO de esa posición.
+               clearTimeout(_wmsClickTimer); _wmsClickTimer = null; _wmsPendingPos = null;
+               seleccionarPosicion(nombre); nav('count'); loadCountTable();
+               showToast("Conteo físico: " + nombre);
+           } else {
+               // CLIC SIMPLE (diferido ~280ms): reubica el avatar + previsualiza (validación),
+               // sin saltar al conteo. Diferirlo evita re-render entre los dos clics del doble clic.
+               if (_wmsClickTimer) clearTimeout(_wmsClickTimer);
+               _wmsPendingPos = nombre;
+               _wmsClickTimer = setTimeout(function(){
+                   _wmsClickTimer = null; var p = _wmsPendingPos; _wmsPendingPos = null;
+                   if (p) { seleccionarPosicion(p); showToast("Ubicación: " + p + " · doble clic para contar"); }
+               }, 280);
            }
        });
 
