@@ -918,7 +918,7 @@ function finalizarInventarioWMS(fileId, confirmar) {
     var avance = tRef===0?0:Math.round((cRef/tRef)*100);
     if (avance < 100 && !confirmar) return { exito:false, requiereConfirmacion:true, avance:avance, texto:cRef+" / "+tRef+" Refs" };
     var hoy=new Date(), soloFecha=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate());
-    sheet.getRange(2,2).setValue(soloFecha).setNumberFormat("dd/MM/yyyy");
+    sheet.getRange(2,2).setValue(soloFecha);  // sin setNumberFormat: la col puede tener validacion
     var panelOk=false;
     try {
       var pan = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("PANEL DE CONTROL");

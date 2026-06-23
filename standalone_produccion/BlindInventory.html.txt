@@ -918,6 +918,53 @@
     let current3DMode = 'PROGRESS'; 
     let WORKER_AVATARS = [];
     let ACTIVE_USERS_DATA = [];
+    let POS_COORDS_3D = {};
+    let LAST_AVATARS_SIG = "";
+    // FIX 8.37: dibuja UN avatar por usuario (dedupe), en SU posicion (POS_COORDS_3D),
+    // varios en la misma posicion lado a lado. Reutilizable: se llama al renderizar y en
+    // cada sondeo (tiempo real). Blindada: createWorkerAvatar siempre recibe STRING.
+    function actualizarAvatares() {
+      try {
+        if (typeof scene === 'undefined' || !scene) return;
+        if (WORKER_AVATARS && WORKER_AVATARS.length) {
+          WORKER_AVATARS.forEach(function(a){ try { scene.remove(a); if (a.userData && a.userData.ladder) scene.remove(a.userData.ladder); } catch(e){} });
+        }
+        WORKER_AVATARS = [];
+        var miEmail = String(USER_EMAIL || "").toLowerCase();
+        var miNombre = ((document.getElementById('userDisplay').innerText) || "Auditor").split(' |')[0] || "Auditor";
+        var usuarios = [], vistos = {};
+        (ACTIVE_USERS_DATA || []).forEach(function(u){
+          var info = (typeof u === 'string') ? { nombre: u, email: u, pos: "" } : (u || {});
+          var key = String(info.email || info.nombre || "").toLowerCase();
+          if (key && !vistos[key]) { vistos[key] = true; usuarios.push(info); }
+        });
+        if (!usuarios.some(function(u){ return String(u.email||"").toLowerCase() === miEmail; })) {
+          usuarios.unshift({ nombre: miNombre, email: USER_EMAIL, pos: CURRENT_POS });
+        }
+        var usadosPorPos = {};
+        usuarios.forEach(function(u, idx){
+          var esYo = (String(u.email||"").toLowerCase() === miEmail);
+          var posName = String(((esYo && CURRENT_POS) ? CURRENT_POS : (u.pos || ""))).toUpperCase();
+          var baseLoc = POS_COORDS_3D[posName] || { x: 0, y: 0, z: 2.5 };
+          var clave = posName || ("_" + idx);
+          var n = usadosPorPos[clave] || 0; usadosPorPos[clave] = n + 1;
+          var offX = n * 0.7;
+          var nombreTxt = String(u.nombre || u.email || "Operario");
+          var avatar = createWorkerAvatar(nombreTxt);
+          var finalY = baseLoc.y || 0;
+          if (finalY > 0) {
+            var ladder = createLadder(finalY + 1.2);
+            ladder.position.set(baseLoc.x + offX, 0, baseLoc.z - 0.25); ladder.rotation.x = -0.15; scene.add(ladder);
+            avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z - 0.15);
+            avatar.userData.ladder = ladder;
+          } else {
+            avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z + 0.15);
+          }
+          avatar.rotation.y = Math.PI; avatar.userData.baseY = finalY;
+          scene.add(avatar); WORKER_AVATARS.push(avatar);
+        });
+      } catch(e) { console.log("actualizarAvatares:", e && e.message); }
+    }
     let ALERT_WAYPOINTS = [];
     let GLOBAL_FLOOR = null;
     let shouldFlyOnNextRender = false;
@@ -1214,6 +1261,10 @@
                 ACTIVE_USERS_DATA = res.activeUsers;
                 document.getElementById('activeUsersCount').innerText = res.activeUsers.length;
                 document.getElementById('activeUsersCount').title = res.activeUsers.map(function(u){ return (typeof u === 'string') ? u : (u.nombre || u.email || ''); }).join("\n");
+                try {
+                  var _sig = (res.activeUsers||[]).map(function(u){ return (typeof u==='string')?u:((u.email||'')+'@'+(u.pos||'')); }).join('|') + '#' + CURRENT_POS;
+                  if (_sig !== LAST_AVATARS_SIG) { LAST_AVATARS_SIG = _sig; if (document.getElementById('page-home').classList.contains('active')) actualizarAvatares(); }
+                } catch(e){}
             }
             if (!res.unchanged && res.data && res.data.exito !== false) {
                 LOCAL_LAST_UPDATE = res.serverLastUpdate;
@@ -2336,7 +2387,7 @@ function cargarAutocompletadoSKU() {
        });
 
        objetosClickeables = []; objetoResaltadoAnterior = null;
-       WORKER_AVATARS = []; ALERT_WAYPOINTS = [];
+       WORKER_AVATARS = []; ALERT_WAYPOINTS = []; POS_COORDS_3D = {};
 
        const scene = new THREE.Scene();
        const isDark = document.body.classList.contains('dark-mode');
@@ -2478,6 +2529,7 @@ window.camera = GLOBAL_CAMERA || camera;
                }
 
                const grupoPosicion = new THREE.Group(); grupoPosicion.position.set(px, py, zOff); scene.add(grupoPosicion);
+               try { POS_COORDS_3D[String(slotItems[0].nombre).toUpperCase()] = { x: px, y: py, z: zOff + dim.d/2 + 0.6 }; } catch(e){}
                let baseOffset = py === 0 ? 0 : 0.07; 
 
                if (slotItems.some(i => parsePos(i.nombre).isGavetaArea)) {
@@ -2603,48 +2655,8 @@ window.camera = GLOBAL_CAMERA || camera;
            });
        });
 
-       // FIX 8.37: UN avatar por USUARIO (dedupe), en SU posición; varios en la misma
-       // posición se muestran lado a lado. Envuelto en try/catch: nunca rompe el render.
-       try {
-       let posCoords = {};
-       workLocations.forEach(function(w){ if (w.nombre) posCoords[String(w.nombre).toUpperCase()] = w; });
-       let otherLocs = workLocations.filter(w => !w.isCurrent);
-       let miEmail = String(USER_EMAIL || "").toLowerCase();
-       let miNombre = document.getElementById('userDisplay').innerText.split(' |')[0] || "Auditor";
-
-       let usuarios = [], vistos = {};
-       (ACTIVE_USERS_DATA || []).forEach(function(u){
-           let info = (typeof u === 'string') ? { nombre: u, email: u, pos: "" } : u;
-           let key = String(info.email || info.nombre || "").toLowerCase();
-           if (key && !vistos[key]) { vistos[key] = true; usuarios.push(info); }
-       });
-       if (!usuarios.some(function(u){ return String(u.email||"").toLowerCase() === miEmail; })) {
-           usuarios.unshift({ nombre: miNombre, email: USER_EMAIL, pos: CURRENT_POS });
-       }
-
-       let usadosPorPos = {};
-       usuarios.forEach(function(u, idx){
-           let esYo = (String(u.email||"").toLowerCase() === miEmail);
-           let posName = String(((esYo && CURRENT_POS) ? CURRENT_POS : (u.pos || ""))).toUpperCase();
-           let baseLoc = posCoords[posName];
-           if (!baseLoc) baseLoc = otherLocs.length > 0 ? otherLocs[idx % otherLocs.length] : {x:(Math.random()-0.5)*5, y:0, z:2};
-           let claveOff = posName || ("_" + idx);
-           let n = usadosPorPos[claveOff] || 0; usadosPorPos[claveOff] = n + 1;
-           let offX = n * 0.7;
-           let avatar = createWorkerAvatar(u.nombre);
-           let finalY = baseLoc.y || 0;
-           if (finalY > 0) {
-               let ladder = createLadder(finalY + 1.2);
-               ladder.position.set(baseLoc.x + offX, 0, baseLoc.z - 0.25); ladder.rotation.x = -0.15; scene.add(ladder);
-               avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z - 0.15);
-               avatar.userData.ladder = ladder;
-           } else {
-               avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z + 0.15);
-           }
-           avatar.rotation.y = Math.PI; avatar.userData.baseY = finalY;
-           scene.add(avatar); WORKER_AVATARS.push(avatar);
-       });
-       } catch(eAv) { console.log("avatares:", eAv && eAv.message); }
+       // FIX 8.37: avatares (uno por usuario, en su posicion) -> actualizarAvatares()
+       actualizarAvatares();
 
        if (floorItems.length > 0) {
            floorItems.sort((a,b) => a.p.nombre.localeCompare(b.p.nombre));
