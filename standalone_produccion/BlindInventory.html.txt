@@ -301,6 +301,31 @@
     }
     /* FIN DE CÓDIGO PARA CONGELAR SKU */
 
+    /* ===== FIX 8.38: CONTEO FÍSICO — encabezados fijos + scroll interno =====
+       Antes el contenedor con scroll no era el del thead sticky: al bajar desaparecían
+       los encabezados y sólo se veían ~4 filas. Ahora #countScroll es el ÚNICO contenedor
+       con scroll y el thead se fija a él; la paginación queda siempre visible.
+       Scoped a escritorio para NO alterar el scroll horizontal en móvil. */
+    body:not(.mobile-mode) #page-count { height: 100%; min-height: 0; }
+    body:not(.mobile-mode) #page-count .table-wrapper {
+        flex: 1 1 auto !important; min-height: 0 !important;
+        display: flex !important; flex-direction: column !important;
+        overflow: hidden !important; padding: 0 !important;
+    }
+    body:not(.mobile-mode) #countScroll {
+        flex: 1 1 auto; min-height: 0; overflow: auto; width: 100%;
+        padding: 5px; -webkit-overflow-scrolling: touch;
+    }
+    body:not(.mobile-mode) #countScroll thead th {
+        position: sticky; top: 0; z-index: 30; background: var(--surface);
+    }
+    body:not(.mobile-mode) #page-count .pagination-panel { flex: 0 0 auto; padding-top: 10px !important; }
+
+    /* FIX 8.38: ANÁLISIS — la tabla de discrepancias tenía el mismo problema (pocas filas,
+       encabezados que se iban). Le damos altura usable + scroll propio + thead fijo. */
+    body:not(.mobile-mode) #analysisScroll { min-height: 300px; max-height: 60vh; overflow: auto; }
+    #analysisScroll thead th { position: sticky; top: 0; z-index: 25; background: var(--surface); }
+
     tbody tr { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: var(--surface); box-shadow: var(--neu-out-sm); border-radius: 20px; }
     tbody tr td:first-child { border-top-left-radius: 20px; border-bottom-left-radius: 20px; border-left: 6px solid transparent;}
     tbody tr td:last-child { border-top-right-radius: 20px; border-bottom-right-radius: 20px; }
@@ -688,7 +713,7 @@
 
       <div class="table-wrapper" style="display: block; width: 100%;">
         <div id="loadingCount" style="display:none; text-align:center; padding:60px; font-weight:800; color:var(--secondary); font-size: 16px;"><i class="bi bi-arrow-repeat spin fs-1 d-block mb-4 text-accent"></i> Sincronizando Cuadrícula...</div>
-        <div style="width: 100%; overflow-x: auto; padding: 5px;">
+        <div id="countScroll" style="width: 100%;">
             <table id="invTable">
               <thead>
                 <tr>
@@ -829,7 +854,7 @@
              <span id="filtroActivoBadge" style="display:none; background:var(--accent); color:white; padding:6px 16px; border-radius:50px; font-size:11px; cursor:pointer; font-weight:800; box-shadow:0 0 10px var(--accent-glow);" onclick="filtrarTablaAnalisis('TODOS')" title="Limpiar Filtro">Filtro Activo ✖</span>
          </div>
          <div id="loadingAnalysis" style="text-align:center; padding:60px; font-weight:800; color:var(--secondary); display:none; font-size:16px;"><i class="bi bi-arrow-repeat spin fs-1 d-block mb-4 text-accent"></i> Procesando datos...</div>
-         <div style="flex:1; overflow:auto; padding: 15px;">
+         <div id="analysisScroll" style="flex:1; overflow:auto; padding: 15px;">
              <table id="tblAnalysis">
                 <thead>
                    <tr><th>POSICIÓN</th><th>SKU</th><th>DESCRIPCIÓN</th><th>TIPO ERROR</th><th style="text-align:center">TEÓRICA</th><th style="text-align:center">FÍSICA</th><th style="text-align:center">DESFASE</th><th style="text-align:center">ACCIÓN</th></tr>
@@ -926,13 +951,19 @@
     // cada sondeo (tiempo real). Blindada: createWorkerAvatar siempre recibe STRING.
     function actualizarAvatares() {
       try {
-        if (typeof scene === 'undefined' || !scene) return;
+        // FIX 8.38: usar GLOBAL_SCENE (variable real de nivel superior), no el bare `scene`
+        // (que dependia del puente window.scene y su timing). Si aun no se renderizo, salir.
+        var sc = (typeof GLOBAL_SCENE !== 'undefined' && GLOBAL_SCENE) ? GLOBAL_SCENE
+               : ((typeof scene !== 'undefined' && scene) ? scene : null);
+        if (!sc) return;
+        if (typeof createWorkerAvatar !== 'function') return;
         if (WORKER_AVATARS && WORKER_AVATARS.length) {
-          WORKER_AVATARS.forEach(function(a){ try { scene.remove(a); if (a.userData && a.userData.ladder) scene.remove(a.userData.ladder); } catch(e){} });
+          WORKER_AVATARS.forEach(function(a){ try { sc.remove(a); if (a.userData && a.userData.ladder) sc.remove(a.userData.ladder); } catch(e){} });
         }
         WORKER_AVATARS = [];
         var miEmail = String(USER_EMAIL || "").toLowerCase();
-        var miNombre = ((document.getElementById('userDisplay').innerText) || "Auditor").split(' |')[0] || "Auditor";
+        var dispEl = document.getElementById('userDisplay');
+        var miNombre = ((dispEl && dispEl.innerText) || "Auditor").split(' |')[0] || "Auditor";
         var usuarios = [], vistos = {};
         (ACTIVE_USERS_DATA || []).forEach(function(u){
           var info = (typeof u === 'string') ? { nombre: u, email: u, pos: "" } : (u || {});
@@ -952,17 +983,18 @@
           var offX = n * 0.7;
           var nombreTxt = String(u.nombre || u.email || "Operario");
           var avatar = createWorkerAvatar(nombreTxt);
+          if (!avatar) return;
           var finalY = baseLoc.y || 0;
-          if (finalY > 0) {
+          if (finalY > 0 && typeof createLadder === 'function') {
             var ladder = createLadder(finalY + 1.2);
-            ladder.position.set(baseLoc.x + offX, 0, baseLoc.z - 0.25); ladder.rotation.x = -0.15; scene.add(ladder);
+            ladder.position.set(baseLoc.x + offX, 0, baseLoc.z - 0.25); ladder.rotation.x = -0.15; sc.add(ladder);
             avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z - 0.15);
             avatar.userData.ladder = ladder;
           } else {
             avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z + 0.15);
           }
           avatar.rotation.y = Math.PI; avatar.userData.baseY = finalY;
-          scene.add(avatar); WORKER_AVATARS.push(avatar);
+          sc.add(avatar); WORKER_AVATARS.push(avatar);
         });
       } catch(e) { console.log("actualizarAvatares:", e && e.message); }
     }
@@ -1506,7 +1538,7 @@
             document.getElementById('btnEyeDepot').style.display = USER_ROLE === 'ADMIN' ? 'inline-block' : 'none';
         }
         var _bE = document.getElementById('btnEntregar'); if (_bE) _bE.style.display = isGuest ? 'none' : 'inline-flex';
-        var _bL = document.getElementById('btnAbrirLibro'); if (_bL) _bL.style.display = (USER_ROLE === 'ADMIN') ? 'inline-flex' : 'none';
+        var _bL = document.getElementById('btnAbrirLibro'); if (_bL) _bL.style.display = (USER_ROLE === 'ADMIN' || USER_ROLE === 'OPERADOR') ? 'inline-flex' : 'none';
     }
 
     function checkAuth() {
@@ -1682,11 +1714,21 @@ function cargarAutocompletadoSKU() {
         }).validarCredenciales(elUser.value, pass);
     }
 
-    // FIX 8.37: abrir el libro base (Sheets) del inventario actual — solo ADMIN/lider.
+    // FIX 8.38: abrir el libro base (Sheets) del inventario actual — Admin / Líderes.
+    // El window.open directo dentro del iframe sandbox de Apps Script a veces queda
+    // "cargando sin datos"; usamos un anchor con click (gesto del usuario) + respaldos.
     function abrirLibroBase() {
-        if (USER_ROLE !== 'ADMIN') return Swal.fire("Solo administradores", "Esta accion es solo para Admin / Lider de Conteo.", "info");
+        if (USER_ROLE !== 'ADMIN' && USER_ROLE !== 'OPERADOR') return Swal.fire("Acceso restringido", "El libro base es sólo para Admin / Líderes de conteo.", "info");
         if (!CURRENT_FILE_ID || CURRENT_FILE_ID === 'LOCAL') return Swal.fire("Sin archivo", "No hay inventario activo.", "warning");
-        window.open('https://docs.google.com/spreadsheets/d/' + CURRENT_FILE_ID + '/edit', '_blank');
+        var url = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(CURRENT_FILE_ID) + '/edit';
+        try {
+            var a = document.createElement('a');
+            a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        } catch (e) {
+            var w = window.open(url, '_blank');
+            if (!w) Swal.fire({ icon:'info', title:'Abrir libro base', html:'Tu navegador bloqueó la ventana emergente. Ábrelo aquí:<br><br><a href="'+url+'" target="_blank" rel="noopener" style="color:#2563eb;font-weight:800;">Abrir libro base (Sheets)</a>' });
+        }
     }
 
     function entregarInventarioWMS() {
@@ -2284,6 +2326,36 @@ function cargarAutocompletadoSKU() {
         ctx.fillText(text, 128, 32); const texture = new THREE.CanvasTexture(canvas); texture.minFilter = THREE.LinearFilter; return texture;
     }
 
+    // FIX 8.38: helper de rectangulo redondeado (canvas) — compatible con todos los navegadores.
+    function _roundRectPath(ctx, x, y, w, h, r) {
+        if (r > w/2) r = w/2; if (r > h/2) r = h/2;
+        ctx.beginPath();
+        ctx.moveTo(x+r, y);
+        ctx.arcTo(x+w, y, x+w, y+h, r);
+        ctx.arcTo(x+w, y+h, x, y+h, r);
+        ctx.arcTo(x, y+h, x, y, r);
+        ctx.arcTo(x, y, x+w, y, r);
+        ctx.closePath();
+    }
+
+    // FIX 8.38: rotulo de ubicacion con NIVEL DE AVANCE (nombre + barra % color-codificada).
+    function createPosAvanceTexture(nombre, avance) {
+        var pct = Math.max(0, Math.min(100, Math.round(Number(avance) || 0)));
+        var canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 96;
+        var ctx = canvas.getContext('2d');
+        var col = pct >= 100 ? '#10b981' : (pct >= 50 ? '#38bdf8' : (pct > 0 ? '#f59e0b' : '#94a3b8'));
+        ctx.fillStyle = 'rgba(15,23,42,0.92)'; _roundRectPath(ctx, 3, 3, 250, 90, 16); ctx.fill();
+        ctx.strokeStyle = col; ctx.lineWidth = 5; _roundRectPath(ctx, 3, 3, 250, 90, 16); ctx.stroke();
+        ctx.font = 'bold 30px sans-serif'; ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(nombre || '').substring(0, 14), 128, 30);
+        var barX = 20, barY = 56, barW = 216, barH = 24;
+        ctx.fillStyle = 'rgba(255,255,255,0.18)'; _roundRectPath(ctx, barX, barY, barW, barH, 12); ctx.fill();
+        ctx.fillStyle = col; _roundRectPath(ctx, barX, barY, Math.max(barH, barW * pct / 100), barH, 12); ctx.fill();
+        ctx.font = 'bold 17px sans-serif'; ctx.fillStyle = '#0f172a';
+        ctx.fillText(pct + '%', 128, barY + barH/2 + 1);
+        var texture = new THREE.CanvasTexture(canvas); texture.minFilter = THREE.LinearFilter; return texture;
+    }
+
     function createNameLabel(text) {
         const canvas = document.createElement('canvas');
         canvas.width = 256; canvas.height = 64;
@@ -2325,23 +2397,35 @@ function cargarAutocompletadoSKU() {
         const userColor = colorPalette[Math.abs(hash) % colorPalette.length];
 
         const matSkin = new THREE.MeshStandardMaterial({color: 0xffccaa, roughness: 0.6});
-        const matShirt = new THREE.MeshStandardMaterial({color: userColor, roughness: 0.8}); 
-        const matPants = new THREE.MeshStandardMaterial({color: 0x1e293b, roughness: 0.9}); 
-        const matHat = new THREE.MeshStandardMaterial({color: 0xfacc15, roughness: 0.3}); 
-        
+        const matShirt = new THREE.MeshStandardMaterial({color: userColor, roughness: 0.8});
+        const matPants = new THREE.MeshStandardMaterial({color: 0x1e293b, roughness: 0.9});
+        // FIX 8.38: casco de seguridad (operario). Naranja alta visibilidad + chaleco reflectivo.
+        const matHat = new THREE.MeshStandardMaterial({color: 0xf59e0b, roughness: 0.35, metalness: 0.1});
+        const matVest = new THREE.MeshStandardMaterial({color: 0xeab308, roughness: 0.5, emissive: 0x3a2e00, emissiveIntensity: 0.25});
+
         const legGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8);
         const legL = new THREE.Mesh(legGeo, matPants); legL.position.set(-0.15, 0.4, 0); group.add(legL);
         const legR = new THREE.Mesh(legGeo, matPants); legR.position.set(0.15, 0.4, 0); group.add(legR);
-        
+
         const torsoGeo = new THREE.BoxGeometry(0.4, 0.7, 0.25);
         const torso = new THREE.Mesh(torsoGeo, matShirt); torso.position.set(0, 1.15, 0); group.add(torso);
-        
+        // chaleco reflectivo de seguridad sobre el torso
+        const vestGeo = new THREE.BoxGeometry(0.44, 0.5, 0.29);
+        const vest = new THREE.Mesh(vestGeo, matVest); vest.position.set(0, 1.12, 0); group.add(vest);
+
         const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
         const head = new THREE.Mesh(headGeo, matSkin); head.position.set(0, 1.65, 0); group.add(head);
-        
-        const hatGeo = new THREE.SphereGeometry(0.16, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-        const hat = new THREE.Mesh(hatGeo, matHat); hat.position.set(0, 1.68, 0); group.add(hat);
-        
+
+        // --- CASCO: domo + ala perimetral + visera frontal + cresta central ---
+        const hatGeo = new THREE.SphereGeometry(0.175, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+        const hat = new THREE.Mesh(hatGeo, matHat); hat.position.set(0, 1.665, 0); group.add(hat);
+        const brimGeo = new THREE.CylinderGeometry(0.215, 0.215, 0.025, 18);
+        const brim = new THREE.Mesh(brimGeo, matHat); brim.position.set(0, 1.66, 0); group.add(brim);
+        const billGeo = new THREE.BoxGeometry(0.30, 0.022, 0.16);
+        const bill = new THREE.Mesh(billGeo, matHat); bill.position.set(0, 1.66, 0.135); group.add(bill);
+        const crestGeo = new THREE.BoxGeometry(0.045, 0.05, 0.30);
+        const crest = new THREE.Mesh(crestGeo, matHat); crest.position.set(0, 1.745, 0); group.add(crest);
+
         const armGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.6, 8);
         const armL = new THREE.Mesh(armGeo, matShirt); armL.position.set(-0.25, 1.15, 0); armL.rotation.z = Math.PI / 8; group.add(armL);
         const armR = new THREE.Mesh(armGeo, matShirt); armR.position.set(0.25, 1.15, 0); armR.rotation.z = -Math.PI / 8; group.add(armR);
@@ -2634,6 +2718,16 @@ window.camera = GLOBAL_CAMERA || camera;
                        }
                    });
 
+                   // FIX 8.38: rotulo de avance para gavetas activas (EN PROCESO / posicion actual)
+                   if (slotItems[0].categoria === 'EN PROCESO' || slotItems[0].nombre === CURRENT_POS) {
+                       var _gAv = 0; slotItems.forEach(function(it){ _gAv += Number(it.avance) || 0; });
+                       _gAv = slotItems.length ? Math.round(_gAv / slotItems.length) : 0;
+                       var gTex = createPosAvanceTexture(slotItems[0].nombre, _gAv);
+                       var gSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map: gTex, depthTest: false }));
+                       gSpr.scale.set(1.5, 0.56, 1); gSpr.position.set(0, baseOffset + dim.h + 0.35, dim.d/2 + 0.1);
+                       grupoPosicion.add(gSpr);
+                   }
+
                } else {
                    const pw = rack.isMZ ? dim.w * 0.85 : (dim.w / 2) * 0.85; 
                    const pd = dim.d * 0.85; const ph = 0.15; 
@@ -2650,9 +2744,10 @@ window.camera = GLOBAL_CAMERA || camera;
                    caja.userData = { nombre: item.nombre, categoria: item.categoria, avance: item.avance, color: item.color, esGaveta: false };
                    grupoPosicion.add(caja); objetosClickeables.push(caja);
                    
-                   let beamLabelStr = item.nombre;
-                   const lblTex = createLocationSignTexture(beamLabelStr); const lblSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: lblTex }));
-                   lblSprite.scale.set(1.2, 0.3, 1); lblSprite.position.set(0, baseOffset + ph + bh + 0.2, pd/2 + 0.08); 
+                   // FIX 8.38: rotulo con nombre + nivel de avance de la posicion
+                   const lblTex = createPosAvanceTexture(item.nombre, item.avance);
+                   const lblSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: lblTex, depthTest: false }));
+                   lblSprite.scale.set(1.5, 0.56, 1); lblSprite.position.set(0, baseOffset + ph + bh + 0.38, pd/2 + 0.08);
                    grupoPosicion.add(lblSprite);
                    
                    if(['FALTANTES', 'SOBRANTES', 'MIXTO (Falt/Sob)'].includes(item.categoria)) {
