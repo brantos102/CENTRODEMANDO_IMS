@@ -533,7 +533,7 @@
 
         <button id="btnCambiarBase" onclick="cambiarInventario()" class="btn-neutral" style="display:none; padding:8px 16px; margin-left:5px;" title="Cambiar Base"><span class="material-icons" style="font-size:16px;">swap_horiz</span> BASE</button>
         <button id="btnLogout" onclick="cerrarSesion()" class="btn-danger" style="display:none; padding:8px 16px; margin-left:5px;" title="Cerrar Sesión"><span class="material-icons" style="font-size:16px;">logout</span> SALIR</button>
-        <button id="btnEntregar" onclick="entregarInventarioWMS()" class="btn-success" style="display:none; padding:8px 16px; margin-left:5px;" title="Marcar inventario como Entregado"><span class="material-icons" style="font-size:16px;">task_alt</span> ENTREGADO</button>
+        <button id="btnEntregar" onclick="entregarInventarioWMS()" class="btn-success" style="display:none; padding:8px 16px; margin-left:5px;" title="Finalizar y ENTREGAR el inventario (registra fecha y estado en Panel y Cronograma 2026)"><span class="material-icons" style="font-size:16px;">task_alt</span> ENTREGAR</button>
     </div>
   </header>
 
@@ -1834,7 +1834,9 @@ function cargarAutocompletadoSKU() {
                 if (res && res.exito) {
                     forceSync();
                     Swal.fire({ title:'Inventario Entregado',
-                        html:'Fecha fin: <b>'+res.fechaFin+'</b><br>Avance: <b>'+res.avance+'%</b>'+(res.panelActualizado?'<br><span style="color:#16a34a">Panel actualizado</span>':''),
+                        html:'Fecha fin: <b>'+res.fechaFin+'</b><br>Avance: <b>'+res.avance+'%</b>'
+                            +(res.panelActualizado?'<br><span style="color:#16a34a">✓ Panel de Control: Entregado</span>':'<br><span style="color:#d97706">⚠ No se ubicó el archivo en el Panel de Control</span>')
+                            +(res.cronograma?'<br><span style="color:#16a34a">✓ Cronograma 2026: Estado=Entregado + fecha registrada</span>':'<br><span style="color:#d97706">⚠ Sin evento asociado en el Cronograma. Por trazabilidad, agrégalo en el Centro de Mando.</span>'),
                         icon:'success', showCancelButton:true, confirmButtonText:'Generar correo de finalizacion', cancelButtonText:'Cerrar', confirmButtonColor:'#2563eb'
                     }).then(r => { if (r.isConfirmed) generarCorreoFinalWMS(); });
                 } else { Swal.fire("Error", (res && res.mensaje) || "No se pudo registrar la entrega.", "error"); }
