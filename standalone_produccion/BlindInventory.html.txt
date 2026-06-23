@@ -41,7 +41,9 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- FIX 8.39: THREE desde jsdelivr (misma fuente/versión que su OrbitControls). Antes venía
+       de cdnjs; si la red corporativa bloquea cdnjs, THREE no cargaba y la app se congelaba. -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -1010,8 +1012,11 @@
 
     // Vuelo Automático
     let isFlying = false;
-    let flyTarget = new THREE.Vector3();
-    let flyCamTarget = new THREE.Vector3();
+    // FIX 8.39: NO instanciar THREE en nivel superior. Si el CDN de THREE no carga (red/
+    // firewall corporativo bloquea cdnjs), esto lanzaba ReferenceError y abortaba TODO el
+    // script ANTES de asignar window.onload -> la app quedaba congelada, sin login ni datos.
+    let flyTarget = (typeof THREE !== 'undefined') ? new THREE.Vector3() : null;
+    let flyCamTarget = (typeof THREE !== 'undefined') ? new THREE.Vector3() : null;
 
     let isMuted = false;
     
@@ -1363,7 +1368,8 @@
       if(elNeto) elNeto.innerText = texto;
     }
 
-    window.onload = function() {
+    function _iniciarAppWMS() {
+      if (window.__WMS_INIT_DONE) return; window.__WMS_INIT_DONE = true;
       applyViewMode(); // Aplica la vista móvil o PC inicial
 
       // FIX 8.37: no mostrar el login si viene con deep-link (evita el parpadeo)
@@ -1428,7 +1434,13 @@
       }).withFailureHandler(err => {
           document.getElementById('startLoading').innerHTML = `<span style="color:var(--danger)">Error de permisos. Autoriza el script en Google y vuelve a cargar.</span>`;
       }).obtenerConfiguracionApp();
-    };
+    }
+    // FIX 8.39: arranque robusto. NO dependemos sólo de window.load (espera a TODOS los
+    // recursos/CDN; si uno se cuelga, la app nunca arrancaba). Disparamos en DOMContentLoaded
+    // y como respaldo en load; el flag evita doble ejecución.
+    window.addEventListener('load', _iniciarAppWMS);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _iniciarAppWMS);
+    else _iniciarAppWMS();
 
     function togglePass() {
         const val = document.getElementById('userSelector').value;
@@ -2302,9 +2314,10 @@ function cargarAutocompletadoSKU() {
         return new THREE.Sprite(mat);
     }
 
-    const geoCrateBase = new THREE.BoxGeometry(1, 1, 1);
-    const geoPalletBase = new THREE.BoxGeometry(1, 1, 1);
-    const geoLabelBase = new THREE.BoxGeometry(1, 1, 1);
+    // FIX 8.39: idem — geometrías base sólo si THREE está disponible (evita abortar el script).
+    const geoCrateBase = (typeof THREE !== 'undefined') ? new THREE.BoxGeometry(1, 1, 1) : null;
+    const geoPalletBase = (typeof THREE !== 'undefined') ? new THREE.BoxGeometry(1, 1, 1) : null;
+    const geoLabelBase = (typeof THREE !== 'undefined') ? new THREE.BoxGeometry(1, 1, 1) : null;
 
     function createRealisticPallet(w, h, d, mat) {
         const palletMesh = new THREE.Mesh(geoPalletBase, mat);
@@ -2446,7 +2459,15 @@ function cargarAutocompletadoSKU() {
        const mapContainer = document.getElementById('threeCanvasContainer');
        const tableContainer = document.getElementById('posTableContainer');
        const tooltip = document.getElementById('3d-tooltip');
-       
+
+       // FIX 8.39: si la librería 3D (THREE) no cargó (red/CDN), degradar con elegancia:
+       // mostrar aviso y NO lanzar, para que login, CONTEO FÍSICO y ANÁLISIS sigan operativos.
+       if (typeof THREE === 'undefined') {
+           if (mapContainer) mapContainer.innerHTML = "<div style='color:var(--secondary); text-align:center; padding-top:16%; font-weight:700;'><i class='bi bi-wifi-off fs-1 d-block mb-3 text-warning'></i> Motor 3D no disponible.<br><small style='font-weight:500;'>No se pudo cargar la librería 3D (revisa la conexión/permisos de red).<br>El conteo y el análisis siguen funcionando.</small></div>";
+           if (tableContainer) tableContainer.innerHTML = "<div style='color:var(--secondary); text-align:center; padding:30px; font-weight:700;'>Visor 3D no disponible.<br><small style='font-weight:500;'>Usa la pestaña <b>CONTEO FÍSICO</b> para escanear y registrar.</small></div>";
+           return;
+       }
+
        if(!l || l.length === 0) { 
            mapContainer.innerHTML = "<div style='color:var(--secondary); text-align:center; padding-top:20%; font-weight:700;'><i class='bi bi-database-exclamation fs-1 d-block mb-3 text-warning'></i> No hay datos para generar el visor 3D.<br><small style='font-weight:500;'>Verifique la conexión a la base o los filtros aplicados.</small></div>";
            tableContainer.innerHTML = "<div style='color:var(--secondary); text-align:center; padding:40px; font-weight:700;'>Lista vacía.</div>"; return; 
