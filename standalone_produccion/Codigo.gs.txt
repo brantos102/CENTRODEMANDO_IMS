@@ -901,41 +901,6 @@ function registrarAccesoWMS(fileId, cliente, viaCorreo) {
   return true;
 }
 
-function _actualizarCronogramaEntrega(fileId, soloFecha) {
-  var res = { encontrado: false };
-  try {
-    var ss = SpreadsheetApp.openById(MASTER_DB_ID);
-    var cron = ss.getSheetByName("CRONOGRAMA - 2026");
-    if (!cron) { var all = ss.getSheets(); for (var a=0;a<all.length;a++){ if (all[a].getName().toUpperCase().indexOf("CRONOGRAMA")===0){ cron=all[a]; break; } } }
-    if (!cron) return res;
-    var lastR = cron.getLastRow();
-    if (lastR < 2) return res;
-    var rng = cron.getRange(1, 17, lastR, 1); // col Q = ARCHIVO DE TRABAJO
-    var rich = rng.getRichTextValues();
-    var vals = rng.getValues();
-    var fid = String(fileId).trim();
-    for (var i = 0; i < rich.length; i++) {
-      var url = "";
-      try {
-        var rt = rich[i][0];
-        if (rt) {
-          url = rt.getLinkUrl() || "";
-          if (!url) { var runs = rt.getRuns(); for (var k=0;k<runs.length;k++){ var lu=runs[k].getLinkUrl(); if(lu){ url=lu; break; } } }
-        }
-      } catch(e) {}
-      if (!url) url = String(vals[i][0] || "");
-      if (url && fid && url.indexOf(fid) !== -1) {
-        var fila = i + 1;
-        cron.getRange(fila, 13).setValue("Entregado"); // M = Estado
-        cron.getRange(fila, 14).setValue(soloFecha);   // N = Fecha de entrega
-        res.encontrado = true; res.fila = fila;
-        break;
-      }
-    }
-  } catch(e) { res.error = e.message; }
-  return res;
-}
-
 function finalizarInventarioWMS(fileId, confirmar) {
   try {
     var ss = getTargetSS(fileId);
@@ -962,11 +927,9 @@ function finalizarInventarioWMS(fileId, confirmar) {
         for (var k=0;k<ids.length;k++){ if(String(ids[k][0]).trim()===String(fileId).trim()){ pan.getRange(k+2,7).setValue("Entregado"); panelOk=true; break; } }
       }
     } catch(e){}
-    var cronRes = _actualizarCronogramaEntrega(fileId, soloFecha);
     notificarCambioBD(fileId);
     return { exito:true, avance:avance, texto:cRef+" / "+tRef+" Refs",
-             fechaFin:Utilities.formatDate(soloFecha, Session.getScriptTimeZone(), "dd/MM/yyyy"),
-             panelActualizado:panelOk, cronograma: cronRes.encontrado, cronError: cronRes.error || "" };
+             fechaFin:Utilities.formatDate(soloFecha, Session.getScriptTimeZone(), "dd/MM/yyyy"), panelActualizado:panelOk };
   } catch(e){ return { exito:false, mensaje:e.message }; }
 }
 

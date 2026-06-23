@@ -41,9 +41,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <!-- FIX 8.39: THREE desde jsdelivr (misma fuente/versión que su OrbitControls). Antes venía
-       de cdnjs; si la red corporativa bloquea cdnjs, THREE no cargaba y la app se congelaba. -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -303,7 +301,7 @@
     }
     /* FIN DE CÓDIGO PARA CONGELAR SKU */
 
-    /* ===== FIX 8.38: CONTEO FÍSICO — encabezados fijos + scroll interno =====
+    /* ===== MEJORA VISUAL: CONTEO FÍSICO — encabezados fijos + scroll interno =====
        Antes el contenedor con scroll no era el del thead sticky: al bajar desaparecían
        los encabezados y sólo se veían ~4 filas. Ahora #countScroll es el ÚNICO contenedor
        con scroll y el thead se fija a él; la paginación queda siempre visible.
@@ -323,8 +321,7 @@
     }
     body:not(.mobile-mode) #page-count .pagination-panel { flex: 0 0 auto; padding-top: 10px !important; }
 
-    /* FIX 8.38: ANÁLISIS — la tabla de discrepancias tenía el mismo problema (pocas filas,
-       encabezados que se iban). Le damos altura usable + scroll propio + thead fijo. */
+    /* ANÁLISIS — la tabla de discrepancias tenía el mismo problema: altura usable + scroll + thead fijo. */
     body:not(.mobile-mode) #analysisScroll { min-height: 300px; max-height: 60vh; overflow: auto; }
     #analysisScroll thead th { position: sticky; top: 0; z-index: 25; background: var(--surface); }
 
@@ -520,8 +517,7 @@
 
         <button id="btnCambiarBase" onclick="cambiarInventario()" class="btn-neutral" style="display:none; padding:8px 16px; margin-left:5px;" title="Cambiar Base"><span class="material-icons" style="font-size:16px;">swap_horiz</span> BASE</button>
         <button id="btnLogout" onclick="cerrarSesion()" class="btn-danger" style="display:none; padding:8px 16px; margin-left:5px;" title="Cerrar Sesión"><span class="material-icons" style="font-size:16px;">logout</span> SALIR</button>
-        <button id="btnAbrirLibro" onclick="abrirLibroBase()" class="btn-neutral" style="display:none; padding:8px 16px; margin-left:5px;" title="Abrir el libro base (Google Sheets) del inventario actual"><span class="material-icons" style="font-size:16px;">description</span> LIBRO</button>
-        <button id="btnEntregar" onclick="entregarInventarioWMS()" class="btn-success" style="display:none; padding:8px 16px; margin-left:5px;" title="Finalizar y entregar el inventario"><span class="material-icons" style="font-size:16px;">task_alt</span> ENTREGAR INVENTARIO</button>
+        <button id="btnEntregar" onclick="entregarInventarioWMS()" class="btn-success" style="display:none; padding:8px 16px; margin-left:5px;" title="Marcar inventario como Entregado"><span class="material-icons" style="font-size:16px;">task_alt</span> ENTREGADO</button>
     </div>
   </header>
 
@@ -953,19 +949,13 @@
     // cada sondeo (tiempo real). Blindada: createWorkerAvatar siempre recibe STRING.
     function actualizarAvatares() {
       try {
-        // FIX 8.38: usar GLOBAL_SCENE (variable real de nivel superior), no el bare `scene`
-        // (que dependia del puente window.scene y su timing). Si aun no se renderizo, salir.
-        var sc = (typeof GLOBAL_SCENE !== 'undefined' && GLOBAL_SCENE) ? GLOBAL_SCENE
-               : ((typeof scene !== 'undefined' && scene) ? scene : null);
-        if (!sc) return;
-        if (typeof createWorkerAvatar !== 'function') return;
+        if (typeof scene === 'undefined' || !scene) return;
         if (WORKER_AVATARS && WORKER_AVATARS.length) {
-          WORKER_AVATARS.forEach(function(a){ try { sc.remove(a); if (a.userData && a.userData.ladder) sc.remove(a.userData.ladder); } catch(e){} });
+          WORKER_AVATARS.forEach(function(a){ try { scene.remove(a); if (a.userData && a.userData.ladder) scene.remove(a.userData.ladder); } catch(e){} });
         }
         WORKER_AVATARS = [];
         var miEmail = String(USER_EMAIL || "").toLowerCase();
-        var dispEl = document.getElementById('userDisplay');
-        var miNombre = ((dispEl && dispEl.innerText) || "Auditor").split(' |')[0] || "Auditor";
+        var miNombre = ((document.getElementById('userDisplay').innerText) || "Auditor").split(' |')[0] || "Auditor";
         var usuarios = [], vistos = {};
         (ACTIVE_USERS_DATA || []).forEach(function(u){
           var info = (typeof u === 'string') ? { nombre: u, email: u, pos: "" } : (u || {});
@@ -985,18 +975,17 @@
           var offX = n * 0.7;
           var nombreTxt = String(u.nombre || u.email || "Operario");
           var avatar = createWorkerAvatar(nombreTxt);
-          if (!avatar) return;
           var finalY = baseLoc.y || 0;
-          if (finalY > 0 && typeof createLadder === 'function') {
+          if (finalY > 0) {
             var ladder = createLadder(finalY + 1.2);
-            ladder.position.set(baseLoc.x + offX, 0, baseLoc.z - 0.25); ladder.rotation.x = -0.15; sc.add(ladder);
+            ladder.position.set(baseLoc.x + offX, 0, baseLoc.z - 0.25); ladder.rotation.x = -0.15; scene.add(ladder);
             avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z - 0.15);
             avatar.userData.ladder = ladder;
           } else {
             avatar.position.set(baseLoc.x + offX, finalY, baseLoc.z + 0.15);
           }
           avatar.rotation.y = Math.PI; avatar.userData.baseY = finalY;
-          sc.add(avatar); WORKER_AVATARS.push(avatar);
+          scene.add(avatar); WORKER_AVATARS.push(avatar);
         });
       } catch(e) { console.log("actualizarAvatares:", e && e.message); }
     }
@@ -1012,11 +1001,8 @@
 
     // Vuelo Automático
     let isFlying = false;
-    // FIX 8.39: NO instanciar THREE en nivel superior. Si el CDN de THREE no carga (red/
-    // firewall corporativo bloquea cdnjs), esto lanzaba ReferenceError y abortaba TODO el
-    // script ANTES de asignar window.onload -> la app quedaba congelada, sin login ni datos.
-    let flyTarget = (typeof THREE !== 'undefined') ? new THREE.Vector3() : null;
-    let flyCamTarget = (typeof THREE !== 'undefined') ? new THREE.Vector3() : null;
+    let flyTarget = new THREE.Vector3();
+    let flyCamTarget = new THREE.Vector3();
 
     let isMuted = false;
     
@@ -1368,8 +1354,7 @@
       if(elNeto) elNeto.innerText = texto;
     }
 
-    function _iniciarAppWMS() {
-      if (window.__WMS_INIT_DONE) return; window.__WMS_INIT_DONE = true;
+    window.onload = function() {
       applyViewMode(); // Aplica la vista móvil o PC inicial
 
       // FIX 8.37: no mostrar el login si viene con deep-link (evita el parpadeo)
@@ -1434,13 +1419,7 @@
       }).withFailureHandler(err => {
           document.getElementById('startLoading').innerHTML = `<span style="color:var(--danger)">Error de permisos. Autoriza el script en Google y vuelve a cargar.</span>`;
       }).obtenerConfiguracionApp();
-    }
-    // FIX 8.39: arranque robusto. NO dependemos sólo de window.load (espera a TODOS los
-    // recursos/CDN; si uno se cuelga, la app nunca arrancaba). Disparamos en DOMContentLoaded
-    // y como respaldo en load; el flag evita doble ejecución.
-    window.addEventListener('load', _iniciarAppWMS);
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _iniciarAppWMS);
-    else _iniciarAppWMS();
+    };
 
     function togglePass() {
         const val = document.getElementById('userSelector').value;
@@ -1550,7 +1529,6 @@
             document.getElementById('btnEyeDepot').style.display = USER_ROLE === 'ADMIN' ? 'inline-block' : 'none';
         }
         var _bE = document.getElementById('btnEntregar'); if (_bE) _bE.style.display = isGuest ? 'none' : 'inline-flex';
-        var _bL = document.getElementById('btnAbrirLibro'); if (_bL) _bL.style.display = (USER_ROLE === 'ADMIN' || USER_ROLE === 'OPERADOR') ? 'inline-flex' : 'none';
     }
 
     function checkAuth() {
@@ -1726,23 +1704,6 @@ function cargarAutocompletadoSKU() {
         }).validarCredenciales(elUser.value, pass);
     }
 
-    // FIX 8.38: abrir el libro base (Sheets) del inventario actual — Admin / Líderes.
-    // El window.open directo dentro del iframe sandbox de Apps Script a veces queda
-    // "cargando sin datos"; usamos un anchor con click (gesto del usuario) + respaldos.
-    function abrirLibroBase() {
-        if (USER_ROLE !== 'ADMIN' && USER_ROLE !== 'OPERADOR') return Swal.fire("Acceso restringido", "El libro base es sólo para Admin / Líderes de conteo.", "info");
-        if (!CURRENT_FILE_ID || CURRENT_FILE_ID === 'LOCAL') return Swal.fire("Sin archivo", "No hay inventario activo.", "warning");
-        var url = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(CURRENT_FILE_ID) + '/edit';
-        try {
-            var a = document.createElement('a');
-            a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        } catch (e) {
-            var w = window.open(url, '_blank');
-            if (!w) Swal.fire({ icon:'info', title:'Abrir libro base', html:'Tu navegador bloqueó la ventana emergente. Ábrelo aquí:<br><br><a href="'+url+'" target="_blank" rel="noopener" style="color:#2563eb;font-weight:800;">Abrir libro base (Sheets)</a>' });
-        }
-    }
-
     function entregarInventarioWMS() {
         if (USER_ROLE === 'GUEST') { return checkAuth(); }
         if (!CURRENT_FILE_ID || CURRENT_FILE_ID === 'LOCAL') { return Swal.fire("Sin inventario","Primero selecciona un inventario.","warning"); }
@@ -1759,9 +1720,7 @@ function cargarAutocompletadoSKU() {
                 if (res && res.exito) {
                     forceSync();
                     Swal.fire({ title:'Inventario Entregado',
-                        html:'Fecha fin: <b>'+res.fechaFin+'</b><br>Avance: <b>'+res.avance+'%</b>'
-                            +(res.panelActualizado?'<br><span style="color:#16a34a">Panel de Control actualizado</span>':'')
-                            +(res.cronograma?'<br><span style="color:#16a34a">Cronograma: Estado=Entregado + fecha registrada</span>':'<br><span style="color:#d97706">Sin evento asociado en el cronograma. Por trazabilidad, agregalo en el Centro de Mando.</span>'),
+                        html:'Fecha fin: <b>'+res.fechaFin+'</b><br>Avance: <b>'+res.avance+'%</b>'+(res.panelActualizado?'<br><span style="color:#16a34a">Panel actualizado</span>':''),
                         icon:'success', showCancelButton:true, confirmButtonText:'Generar correo de finalizacion', cancelButtonText:'Cerrar', confirmButtonColor:'#2563eb'
                     }).then(r => { if (r.isConfirmed) generarCorreoFinalWMS(); });
                 } else { Swal.fire("Error", (res && res.mensaje) || "No se pudo registrar la entrega.", "error"); }
@@ -2314,10 +2273,9 @@ function cargarAutocompletadoSKU() {
         return new THREE.Sprite(mat);
     }
 
-    // FIX 8.39: idem — geometrías base sólo si THREE está disponible (evita abortar el script).
-    const geoCrateBase = (typeof THREE !== 'undefined') ? new THREE.BoxGeometry(1, 1, 1) : null;
-    const geoPalletBase = (typeof THREE !== 'undefined') ? new THREE.BoxGeometry(1, 1, 1) : null;
-    const geoLabelBase = (typeof THREE !== 'undefined') ? new THREE.BoxGeometry(1, 1, 1) : null;
+    const geoCrateBase = new THREE.BoxGeometry(1, 1, 1);
+    const geoPalletBase = new THREE.BoxGeometry(1, 1, 1);
+    const geoLabelBase = new THREE.BoxGeometry(1, 1, 1);
 
     function createRealisticPallet(w, h, d, mat) {
         const palletMesh = new THREE.Mesh(geoPalletBase, mat);
@@ -2339,7 +2297,7 @@ function cargarAutocompletadoSKU() {
         ctx.fillText(text, 128, 32); const texture = new THREE.CanvasTexture(canvas); texture.minFilter = THREE.LinearFilter; return texture;
     }
 
-    // FIX 8.38: helper de rectangulo redondeado (canvas) — compatible con todos los navegadores.
+    // MEJORA VISUAL: helper de rectángulo redondeado (canvas), compatible con todo navegador.
     function _roundRectPath(ctx, x, y, w, h, r) {
         if (r > w/2) r = w/2; if (r > h/2) r = h/2;
         ctx.beginPath();
@@ -2351,7 +2309,7 @@ function cargarAutocompletadoSKU() {
         ctx.closePath();
     }
 
-    // FIX 8.38: rotulo de ubicacion con NIVEL DE AVANCE (nombre + barra % color-codificada).
+    // MEJORA VISUAL: rótulo de ubicación con NIVEL DE AVANCE (nombre + barra % color-codificada).
     function createPosAvanceTexture(nombre, avance) {
         var pct = Math.max(0, Math.min(100, Math.round(Number(avance) || 0)));
         var canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 96;
@@ -2412,7 +2370,7 @@ function cargarAutocompletadoSKU() {
         const matSkin = new THREE.MeshStandardMaterial({color: 0xffccaa, roughness: 0.6});
         const matShirt = new THREE.MeshStandardMaterial({color: userColor, roughness: 0.8});
         const matPants = new THREE.MeshStandardMaterial({color: 0x1e293b, roughness: 0.9});
-        // FIX 8.38: casco de seguridad (operario). Naranja alta visibilidad + chaleco reflectivo.
+        // MEJORA VISUAL: casco de seguridad (operario) + chaleco reflectivo de alta visibilidad.
         const matHat = new THREE.MeshStandardMaterial({color: 0xf59e0b, roughness: 0.35, metalness: 0.1});
         const matVest = new THREE.MeshStandardMaterial({color: 0xeab308, roughness: 0.5, emissive: 0x3a2e00, emissiveIntensity: 0.25});
 
@@ -2422,14 +2380,13 @@ function cargarAutocompletadoSKU() {
 
         const torsoGeo = new THREE.BoxGeometry(0.4, 0.7, 0.25);
         const torso = new THREE.Mesh(torsoGeo, matShirt); torso.position.set(0, 1.15, 0); group.add(torso);
-        // chaleco reflectivo de seguridad sobre el torso
         const vestGeo = new THREE.BoxGeometry(0.44, 0.5, 0.29);
         const vest = new THREE.Mesh(vestGeo, matVest); vest.position.set(0, 1.12, 0); group.add(vest);
 
         const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
         const head = new THREE.Mesh(headGeo, matSkin); head.position.set(0, 1.65, 0); group.add(head);
 
-        // --- CASCO: domo + ala perimetral + visera frontal + cresta central ---
+        // CASCO: domo + ala perimetral + visera frontal + cresta central
         const hatGeo = new THREE.SphereGeometry(0.175, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
         const hat = new THREE.Mesh(hatGeo, matHat); hat.position.set(0, 1.665, 0); group.add(hat);
         const brimGeo = new THREE.CylinderGeometry(0.215, 0.215, 0.025, 18);
@@ -2459,15 +2416,7 @@ function cargarAutocompletadoSKU() {
        const mapContainer = document.getElementById('threeCanvasContainer');
        const tableContainer = document.getElementById('posTableContainer');
        const tooltip = document.getElementById('3d-tooltip');
-
-       // FIX 8.39: si la librería 3D (THREE) no cargó (red/CDN), degradar con elegancia:
-       // mostrar aviso y NO lanzar, para que login, CONTEO FÍSICO y ANÁLISIS sigan operativos.
-       if (typeof THREE === 'undefined') {
-           if (mapContainer) mapContainer.innerHTML = "<div style='color:var(--secondary); text-align:center; padding-top:16%; font-weight:700;'><i class='bi bi-wifi-off fs-1 d-block mb-3 text-warning'></i> Motor 3D no disponible.<br><small style='font-weight:500;'>No se pudo cargar la librería 3D (revisa la conexión/permisos de red).<br>El conteo y el análisis siguen funcionando.</small></div>";
-           if (tableContainer) tableContainer.innerHTML = "<div style='color:var(--secondary); text-align:center; padding:30px; font-weight:700;'>Visor 3D no disponible.<br><small style='font-weight:500;'>Usa la pestaña <b>CONTEO FÍSICO</b> para escanear y registrar.</small></div>";
-           return;
-       }
-
+       
        if(!l || l.length === 0) { 
            mapContainer.innerHTML = "<div style='color:var(--secondary); text-align:center; padding-top:20%; font-weight:700;'><i class='bi bi-database-exclamation fs-1 d-block mb-3 text-warning'></i> No hay datos para generar el visor 3D.<br><small style='font-weight:500;'>Verifique la conexión a la base o los filtros aplicados.</small></div>";
            tableContainer.innerHTML = "<div style='color:var(--secondary); text-align:center; padding:40px; font-weight:700;'>Lista vacía.</div>"; return; 
@@ -2739,7 +2688,7 @@ window.camera = GLOBAL_CAMERA || camera;
                        }
                    });
 
-                   // FIX 8.38: rotulo de avance para gavetas activas (EN PROCESO / posicion actual)
+                   // MEJORA VISUAL: rótulo de avance para gavetas activas (EN PROCESO / posición actual)
                    if (slotItems[0].categoria === 'EN PROCESO' || slotItems[0].nombre === CURRENT_POS) {
                        var _gAv = 0; slotItems.forEach(function(it){ _gAv += Number(it.avance) || 0; });
                        _gAv = slotItems.length ? Math.round(_gAv / slotItems.length) : 0;
@@ -2750,7 +2699,7 @@ window.camera = GLOBAL_CAMERA || camera;
                    }
 
                } else {
-                   const pw = rack.isMZ ? dim.w * 0.85 : (dim.w / 2) * 0.85; 
+                   const pw = rack.isMZ ? dim.w * 0.85 : (dim.w / 2) * 0.85;
                    const pd = dim.d * 0.85; const ph = 0.15; 
                    
                    const pallet = createRealisticPallet(pw, ph, pd, matPallet);
@@ -2765,7 +2714,7 @@ window.camera = GLOBAL_CAMERA || camera;
                    caja.userData = { nombre: item.nombre, categoria: item.categoria, avance: item.avance, color: item.color, esGaveta: false };
                    grupoPosicion.add(caja); objetosClickeables.push(caja);
                    
-                   // FIX 8.38: rotulo con nombre + nivel de avance de la posicion
+                   // MEJORA VISUAL: rótulo con nombre + nivel de avance de la posición
                    const lblTex = createPosAvanceTexture(item.nombre, item.avance);
                    const lblSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: lblTex, depthTest: false }));
                    lblSprite.scale.set(1.5, 0.56, 1); lblSprite.position.set(0, baseOffset + ph + bh + 0.38, pd/2 + 0.08);
