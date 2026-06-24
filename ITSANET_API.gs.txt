@@ -96,3 +96,66 @@ function probarConexionItsanet() {
     return { error: e.message };
   }
 }
+
+/**
+ * (4) EXTRACCIÓN para crear inventario: trae el stock, lo FILTRA por cliente y (opcional) por una
+ * lista de códigos/referencias, y lo MAPEA a las columnas de la PLANILLA DE CONTEO FÍSICO.
+ *   - codClienteFiltro: p.ej. "FINI" (vacío = todos).
+ *   - listaCodigos: arreglo o texto (separado por coma/salto) de COD. PRODUCTO a incluir (vacío = todos).
+ * Devuelve { ok, total, filas: [...] } donde cada fila trae las claves que usa el importador.
+ * NOTA: la consolidación final (sumar cantidades por SKU+posición, reglas de series) se hace en
+ * el paso de importación del Centro de Mando, igual que con el CSV (reutilizando esa lógica).
+ */
+function extraerStockItsanet(codClienteFiltro, listaCodigos) {
+  var r = consultarStockItsanet();
+  if (r.code !== 200) return { ok: false, code: r.code, error: 'getstock HTTP ' + r.code, filas: [] };
+  var j; try { j = JSON.parse(r.body); } catch (e) { return { ok:false, error:'JSON inválido', filas:[] }; }
+  var arr = Array.isArray(j) ? j : (j.Result || j.result || j.data || []);
+
+  var cliF = String(codClienteFiltro || '').trim().toUpperCase();
+  var setCods = null;
+  if (listaCodigos) {
+    var raw = Array.isArray(listaCodigos) ? listaCodigos.join(',') : String(listaCodigos);
+    var lista = raw.split(/[\s,;\n\r\t]+/).map(function(s){ return String(s).trim().toUpperCase(); }).filter(function(s){ return s.length > 0; });
+    if (lista.length) { setCods = {}; lista.forEach(function(c){ setCods[c] = true; }); }
+  }
+
+  function val(o, k) { return (o[k] === null || o[k] === undefined) ? '' : String(o[k]).trim(); }
+
+  var filas = [];
+  for (var i = 0; i < arr.length; i++) {
+    var o = arr[i] || {};
+    var cod = val(o, 'COD. PRODUCTO');
+    if (!cod) continue;
+    if (cliF && val(o, 'COD. CLIENTE').toUpperCase() !== cliF) continue;
+    if (setCods && !setCods[cod.toUpperCase()]) continue;
+
+    // Posición: NAVE-CALLE-COLUMNA-NIVEL (ajustar el formato si difiere del usado por el WMS)
+    var pos = [val(o,'NAVE'), val(o,'CALLE'), val(o,'COLUMNA'), val(o,'NIVEL')].filter(function(x){ return x !== ''; }).join('-');
+
+    filas.push({
+      sku:        cod,
+      desc:       val(o, 'DESCRIPCION'),
+      unidad:     val(o, 'UNIDAD'),
+      cantidad:   parseFloat(val(o, 'CANTIDAD')) || 0,
+      posicion:   pos,
+      serie:      val(o, 'NRO. SERIE'),
+      lote:       val(o, 'NRO. LOTE'),
+      nDespacho:  val(o, 'NRO. DESPACHO'),
+      nPartida:   val(o, 'NRO. PARTIDA'),
+      catLog:     val(o, 'CAT. LOG.'),
+      estMerc:    val(o, 'EST. MERC.'),
+      cliente:    val(o, 'COD. CLIENTE'),
+      familia:    val(o, 'FAMILIA')
+    });
+  }
+  return { ok: true, total: filas.length, filas: filas };
+}
+
+// (5) Prueba de extracción (revisa el Registro de ejecución). Ajusta cliente/códigos según necesites.
+function probarExtraccionItsanet() {
+  var res = extraerStockItsanet('FINI', '');   // p.ej. extraerStockItsanet('FINI', '9990, 1234')
+  Logger.log('Filas extraídas: ' + res.total);
+  if (res.filas && res.filas.length) Logger.log('Fila[0] mapeada: ' + JSON.stringify(res.filas[0]));
+  return res;
+}

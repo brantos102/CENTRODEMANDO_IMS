@@ -2953,10 +2953,11 @@ window.camera = GLOBAL_CAMERA || camera;
        });
        
        mapContainer.addEventListener('pointermove', (e) => {
+          try {
            if(Math.abs(e.clientX - mouseDownPos.x) > 5 || Math.abs(e.clientY - mouseDownPos.y) > 5) {
                isDraggingMap = true;
            }
-           
+
            // Hover logic
            const rect = renderer.domElement.getBoundingClientRect();
            mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1; mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -2986,6 +2987,7 @@ window.camera = GLOBAL_CAMERA || camera;
            } else {
                tooltip.style.display = 'none'; removerBrilloAnterior(); mapContainer.style.cursor = 'default';
            }
+          } catch (eHov) { /* FIX 8.50: el hover nunca debe romper la escena */ try { console.log('WMS hover', eHov && eHov.message); } catch(_){} }
        });
 
        // CLIC SIMPLE: reubica el avatar + previsualiza (validación), SIN re-render (ligero), sin saltar.
