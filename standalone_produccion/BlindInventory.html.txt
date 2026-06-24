@@ -2728,6 +2728,7 @@ window.camera = GLOBAL_CAMERA || camera;
            }
 
            Object.values(rack.items).forEach(slotItems => {
+             try {
                let firstPart = parsePos(slotItems[0].nombre);
                let bayIndex = rack.isMZ ? firstPart.col : Math.ceil(firstPart.col / 2);
                let indiceX = posFisicaBay[bayIndex];
@@ -2885,6 +2886,11 @@ window.camera = GLOBAL_CAMERA || camera;
                        ALERT_WAYPOINTS.push(wp);
                    }
                }
+             } catch (eSlot) {
+               // FIX 8.49: si una posición (gaveta/estantería) falla al dibujarse, NO abortar
+               // todo el render (eso dejaba el rack vacío y sin avatar). Se salta esa posición.
+               try { console.log('WMS render posición', (slotItems && slotItems[0] && slotItems[0].nombre) || '?', '->', eSlot && eSlot.message); } catch(_){}
+             }
            });
        });
 
