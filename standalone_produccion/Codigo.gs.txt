@@ -901,55 +901,30 @@ function registrarAccesoWMS(fileId, cliente, viaCorreo) {
   return true;
 }
 
-// FIX 8.46: registra la ENTREGA en CRONOGRAMA - 2026. La columna "ARCHIVO DE TRABAJO" (col Q)
-// usa SMART-CHIPS de archivo, y para esos getLinkUrl() devuelve null -> por eso antes no
-// encontraba la fila. Ahora hace match por: (1) URL del hipervínculo con el fileId, (2) TEXTO
-// VISIBLE del chip == nombre del archivo (getDisplayValues), (3) fileId crudo en la celda.
-// Aislado en try/catch: nunca rompe la entrega aunque el cronograma falle o no exista.
-function _actualizarCronogramaEntrega(fileId, soloFecha) {
-  var res = { encontrado: false };
+// FIX 8.47: registra la ENTREGA en CRONOGRAMA - 2026 de forma RÁPIDA y aislada.
+// La col Q "ARCHIVO DE TRABAJO" usa SMART-CHIPS (getLinkUrl da null), por eso se compara el
+// TEXTO VISIBLE (getDisplayValues -> 1 sola lectura, rápido; SIN getRichTextValues que era lento
+// y colgaba la entrega) contra el NOMBRE del archivo. Devuelve {encontrado, fila, archivo, error}.
+function _actualizarCronogramaEntrega(fileId, soloFecha, nombreArchivo) {
+  var res = { encontrado: false, archivo: String(nombreArchivo || "") };
   try {
     var fid = String(fileId).trim();
-    var fnameN = "";
-    try { fnameN = String(DriveApp.getFileById(fid).getName() || "").trim().toUpperCase(); } catch (e) {}
-
+    var nA = String(nombreArchivo || "").trim().toUpperCase();
     var ss = SpreadsheetApp.openById(MASTER_DB_ID);
     var cron = ss.getSheetByName("CRONOGRAMA - 2026");
     if (!cron) { var all = ss.getSheets(); for (var a=0;a<all.length;a++){ if (all[a].getName().toUpperCase().indexOf("CRONOGRAMA")===0){ cron=all[a]; break; } } }
     if (!cron) return res;
     var lastR = cron.getLastRow();
     if (lastR < 2) return res;
-
-    var rng  = cron.getRange(1, 17, lastR, 1); // col Q = ARCHIVO DE TRABAJO
-    var rich = rng.getRichTextValues();
-    var disp = rng.getDisplayValues();         // texto VISIBLE (incluye el del smart-chip)
-    var vals = rng.getValues();
-    res.archivo = fnameN;
-
-    for (var i = 1; i < lastR; i++) {          // i=1 -> salta la fila de encabezado
-      var matched = false;
-
-      // (1) hipervínculo cuyo URL contiene el fileId
-      try {
-        var rt = rich[i][0], url = "";
-        if (rt) {
-          url = rt.getLinkUrl() || "";
-          if (!url) { var runs = rt.getRuns(); for (var k=0;k<runs.length;k++){ var lu=runs[k].getLinkUrl(); if(lu){ url=lu; break; } } }
-        }
-        if (url && fid && url.indexOf(fid) !== -1) matched = true;
-      } catch (e) {}
-
-      // (2) texto visible (smart-chip o texto plano) coincide con el nombre del archivo
-      if (!matched && fnameN) {
-        var txt = String(disp[i][0] || vals[i][0] || "").trim().toUpperCase();
-        if (txt && txt.length >= 5 && (txt === fnameN || fnameN.indexOf(txt) !== -1 || txt.indexOf(fnameN) !== -1)) matched = true;
-      }
-
-      // (3) fileId crudo dentro del valor de la celda
-      if (!matched && fid && String(vals[i][0] || "").indexOf(fid) !== -1) matched = true;
-
-      if (matched) {
-        var fila = i + 1;
+    var disp = cron.getRange(2, 17, lastR - 1, 1).getDisplayValues(); // col Q, texto visible (rápido)
+    for (var i = 0; i < disp.length; i++) {
+      var txt = String(disp[i][0] || "").trim().toUpperCase();
+      if (!txt || txt.length < 4) continue;
+      var match = false;
+      if (nA && (txt === nA || nA.indexOf(txt) !== -1 || txt.indexOf(nA) !== -1)) match = true;
+      else if (fid && txt.indexOf(fid) !== -1) match = true;
+      if (match) {
+        var fila = i + 2;
         cron.getRange(fila, 13).setValue("Entregado"); // M = Estado
         cron.getRange(fila, 14).setValue(soloFecha);   // N = Fecha de entrega
         res.encontrado = true; res.fila = fila;
@@ -960,7 +935,8 @@ function _actualizarCronogramaEntrega(fileId, soloFecha) {
   return res;
 }
 
-function finalizarInventarioWMS(fileId, confirmar) {
+// FIX 8.47: fechaEntrega opcional ("yyyy-MM-dd") para poder EDITAR la fecha de entrega.
+function finalizarInventarioWMS(fileId, confirmar, fechaEntrega) {
   try {
     var ss = getTargetSS(fileId);
     var sheet = ss.getSheetByName("PLANILLA DE CONTEO FISICO");
@@ -976,21 +952,25 @@ function finalizarInventarioWMS(fileId, confirmar) {
     }
     var avance = tRef===0?0:Math.round((cRef/tRef)*100);
     if (avance < 100 && !confirmar) return { exito:false, requiereConfirmacion:true, avance:avance, texto:cRef+" / "+tRef+" Refs" };
-    var hoy=new Date(), soloFecha=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate());
+    // Fecha de entrega: editable. Si llega "yyyy-MM-dd" válida se usa; si no, hoy.
+    var soloFecha = null;
+    if (fechaEntrega) { var p = String(fechaEntrega).split("-"); if (p.length===3){ var dd=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); if(!isNaN(dd.getTime())) soloFecha=dd; } }
+    if (!soloFecha) { var hoy=new Date(); soloFecha=new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()); }
     sheet.getRange(2,2).setValue(soloFecha);  // sin setNumberFormat: la col puede tener validacion
-    var panelOk=false;
+    var panelOk=false, nombreArchivo="";
     try {
       var pan = SpreadsheetApp.openById(MASTER_DB_ID).getSheetByName("PANEL DE CONTROL");
       if (pan && pan.getLastRow()>1) {
-        var ids = pan.getRange(2,3,pan.getLastRow()-1,1).getValues();
-        for (var k=0;k<ids.length;k++){ if(String(ids[k][0]).trim()===String(fileId).trim()){ pan.getRange(k+2,7).setValue("Entregado"); panelOk=true; break; } }
+        var pr = pan.getRange(2,1,pan.getLastRow()-1,3).getDisplayValues(); // A=cliente,B=nombre,C=fileId
+        for (var k=0;k<pr.length;k++){ if(String(pr[k][2]).trim()===String(fileId).trim()){ nombreArchivo=String(pr[k][1]).trim(); pan.getRange(k+2,7).setValue("Entregado"); panelOk=true; break; } }
       }
     } catch(e){}
-    var cronRes = _actualizarCronogramaEntrega(fileId, soloFecha);
+    if (!nombreArchivo) { try { nombreArchivo = DriveApp.getFileById(String(fileId).trim()).getName(); } catch(e){} }
+    var cronRes = _actualizarCronogramaEntrega(fileId, soloFecha, nombreArchivo);
     notificarCambioBD(fileId);
     return { exito:true, avance:avance, texto:cRef+" / "+tRef+" Refs",
              fechaFin:Utilities.formatDate(soloFecha, Session.getScriptTimeZone(), "dd/MM/yyyy"),
-             panelActualizado:panelOk, cronograma: cronRes.encontrado, cronError: cronRes.error || "", cronArchivo: cronRes.archivo || "" };
+             panelActualizado:panelOk, cronograma:cronRes.encontrado, cronArchivo:cronRes.archivo||nombreArchivo||"", cronError:cronRes.error||"" };
   } catch(e){ return { exito:false, mensaje:e.message }; }
 }
 

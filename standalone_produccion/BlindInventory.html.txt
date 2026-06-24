@@ -1821,28 +1821,40 @@ function cargarAutocompletadoSKU() {
     function entregarInventarioWMS() {
         if (USER_ROLE === 'GUEST') { return checkAuth(); }
         if (!CURRENT_FILE_ID || CURRENT_FILE_ID === 'LOCAL') { return Swal.fire("Sin inventario","Primero selecciona un inventario.","warning"); }
-        const ejecutar = (confirmar) => {
-            Swal.fire({ title: confirmar ? 'Confirmando entrega...' : 'Verificando avance...', didOpen: () => Swal.showLoading() });
-            google.script.run.withSuccessHandler(res => {
-                if (res && res.requiereConfirmacion) {
-                    Swal.fire({ title:'Avance incompleto ('+res.avance+'%)',
-                        html:'El inventario esta en <b>'+res.texto+'</b> ('+res.avance+'%).<br>Confirmas igualmente la <b>ENTREGA</b>?',
-                        icon:'warning', showCancelButton:true, confirmButtonText:'Si, entregar', cancelButtonText:'Cancelar', confirmButtonColor:'#16a34a'
-                    }).then(r => { if (r.isConfirmed) ejecutar(true); });
-                    return;
-                }
-                if (res && res.exito) {
-                    forceSync();
-                    Swal.fire({ title:'Inventario Entregado',
-                        html:'Fecha fin: <b>'+res.fechaFin+'</b><br>Avance: <b>'+res.avance+'%</b>'
-                            +(res.panelActualizado?'<br><span style="color:#16a34a">✓ Panel de Control: Entregado</span>':'<br><span style="color:#d97706">⚠ No se ubicó el archivo en el Panel de Control</span>')
-                            +(res.cronograma?'<br><span style="color:#16a34a">✓ Cronograma 2026: Estado=Entregado + fecha registrada</span>':'<br><span style="color:#d97706">⚠ Sin evento asociado en el Cronograma'+(res.cronArchivo?' para «'+res.cronArchivo+'»':'')+'. Verifica que el «ARCHIVO DE TRABAJO» de la fila coincida con el nombre del archivo, o agrégalo en el Centro de Mando.</span>'),
-                        icon:'success', showCancelButton:true, confirmButtonText:'Generar correo de finalizacion', cancelButtonText:'Cerrar', confirmButtonColor:'#2563eb'
-                    }).then(r => { if (r.isConfirmed) generarCorreoFinalWMS(); });
-                } else { Swal.fire("Error", (res && res.mensaje) || "No se pudo registrar la entrega.", "error"); }
-            }).withFailureHandler(e => Swal.fire("Error de Red", e.message, "error")).finalizarInventarioWMS(CURRENT_FILE_ID, confirmar);
-        };
-        ejecutar(false);
+        // Paso 1: FECHA DE ENTREGA editable (por defecto hoy) — por cuestiones operativas.
+        var _h = new Date();
+        var hoyStr = _h.getFullYear() + '-' + String(_h.getMonth()+1).padStart(2,'0') + '-' + String(_h.getDate()).padStart(2,'0');
+        Swal.fire({
+            title: 'Entregar inventario',
+            html: 'Confirma la <b>fecha de entrega</b> (puedes editarla):',
+            input: 'date', inputValue: hoyStr,
+            showCancelButton: true, confirmButtonText: 'Continuar', cancelButtonText: 'Cancelar', confirmButtonColor: '#16a34a'
+        }).then(function(rf){
+            if (!rf.isConfirmed) return;
+            var fecha = rf.value || hoyStr;
+            const ejecutar = (confirmar) => {
+                Swal.fire({ title: confirmar ? 'Confirmando entrega...' : 'Verificando avance...', didOpen: () => Swal.showLoading() });
+                google.script.run.withSuccessHandler(res => {
+                    if (res && res.requiereConfirmacion) {
+                        Swal.fire({ title:'Avance incompleto ('+res.avance+'%)',
+                            html:'El inventario esta en <b>'+res.texto+'</b> ('+res.avance+'%).<br>Confirmas igualmente la <b>ENTREGA</b>?',
+                            icon:'warning', showCancelButton:true, confirmButtonText:'Si, entregar', cancelButtonText:'Cancelar', confirmButtonColor:'#16a34a'
+                        }).then(rr => { if (rr.isConfirmed) ejecutar(true); });
+                        return;
+                    }
+                    if (res && res.exito) {
+                        forceSync();
+                        Swal.fire({ title:'Inventario Entregado',
+                            html:'Fecha de entrega: <b>'+res.fechaFin+'</b><br>Avance: <b>'+res.avance+'%</b>'
+                                +(res.panelActualizado?'<br><span style="color:#16a34a">✓ Panel de Control: Entregado</span>':'<br><span style="color:#d97706">⚠ No se ubicó en el Panel de Control</span>')
+                                +(res.cronograma?'<br><span style="color:#16a34a">✓ Cronograma 2026: Estado=Entregado + fecha registrada</span>':'<br><span style="color:#d97706">⚠ Sin evento en el Cronograma'+(res.cronArchivo?' para «'+res.cronArchivo+'»':'')+'. Revisa el ARCHIVO DE TRABAJO de la fila o créalo en el Centro de Mando.</span>'),
+                            icon:'success', showCancelButton:true, confirmButtonText:'Generar correo de finalizacion', cancelButtonText:'Cerrar', confirmButtonColor:'#2563eb'
+                        }).then(rr => { if (rr.isConfirmed) generarCorreoFinalWMS(); });
+                    } else { Swal.fire("Error", (res && res.mensaje) || "No se pudo registrar la entrega.", "error"); }
+                }).withFailureHandler(e => Swal.fire("Error de Red", e.message, "error")).finalizarInventarioWMS(CURRENT_FILE_ID, confirmar, fecha);
+            };
+            ejecutar(false);
+        });
     }
 
     function generarCorreoFinalWMS() {
