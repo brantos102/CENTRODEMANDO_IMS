@@ -1,47 +1,81 @@
 /**
- * ITSANET_API.gs — PRUEBA DE CONEXIÓN con la API de ITSANET (patrón del microservicio compartido).
- * Objetivo de esta fase: conectar y OBTENER DATOS (stock) de forma efectiva. Credencial FINI,
- * end-point g_apidepot. (El cliente Hycite se atenderá más adelante.)
- *
- * Pegar como archivo .gs NUEVO en el proyecto "Centro de Mando" (ya tiene script.external_request).
- * No modifica nada del flujo actual.
- *
- * SEGURIDAD: la CLAVE no va en el código. Se lee de ScriptProperties. Ejecuta UNA vez
- * setupClaveItsanet() con tu clave real (en TU proyecto), o cárgala manualmente en
- * Configuración del proyecto -> Propiedades del script -> ITSANET_PASS.
+ * ITSANET_API.gs — CONEXIÓN MULTI-CLIENTE con la API de ITSANET (Quito).
+ * Objetivo: Conectar y OBTENER DATOS (stock) de forma efectiva y escalable.
+ * * MEJORAS INTEGRADAS:
+ * 1. Base URL actualizada a Quito (q_apidepot).
+ * 2. Módulo multi-cliente: Lee credenciales dinámicamente de la pestaña CREDENCIALES_API.
+ * 3. Blindaje JSON: Protege la app contra el "Unexpected end of JSON input" cuando Quito devuelve vacío.
+ * 4. Funciones de prueba intactas para validación en el editor.
  */
 
-var ITSANET_USERID = "FINI";
-var ITSANET_BASE   = "https://ec.itsanet.com/g_apidepot";
+var ITSANET_BASE = "https://ec.itsanet.com/q_apidepot"; // Endpoint QUITO
 
-// (1) Ejecuta UNA vez con tu clave real (reemplaza el placeholder). No subas la clave al repo.
-function setupClaveItsanet() {
-  PropertiesService.getScriptProperties().setProperty('ITSANET_PASS', 'PEGAR_AQUI_LA_CLAVE_FINI');
-  Logger.log('Listo. Pon la clave real en ITSANET_PASS antes de ejecutar las pruebas.');
+/**
+ * (0) EJECUTA ESTA FUNCIÓN UNA SOLA VEZ DESDE EL EDITOR
+ * Creará la pestaña para gestionar las credenciales de tus 100 clientes.
+ */
+function crearHojaCredencialesAPI() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("CREDENCIALES_API");
+  
+  if (!sh) {
+    sh = ss.insertSheet("CREDENCIALES_API");
+    sh.getRange(1, 1, 1, 3).setValues([["CLIENTE (Igual al Panel)", "USUARIO_API", "PASSWORD_API"]]);
+    sh.getRange(1, 1, 1, 3).setFontWeight("bold").setBackground("#1a73e8").setFontColor("#ffffff");
+    
+    // Ejemplos iniciales
+    sh.appendRow(["FINI", "FINI", "TU_CLAVE_FINI_AQUI"]);
+    sh.appendRow(["BELIA", "ITSABELIA", "ITSABELIA%/.2026"]);
+    
+    sh.setColumnWidth(1, 200); sh.setColumnWidth(2, 150); sh.setColumnWidth(3, 200);
+    SpreadsheetApp.getUi().alert("✅ ÉXITO: Pestaña 'CREDENCIALES_API' creada.\nAgrega ahí los usuarios y claves de tus 100 clientes.");
+  } else {
+    sh.showSheet();
+    SpreadsheetApp.getUi().alert("ℹ️ La pestaña 'CREDENCIALES_API' ya existe. Llénala con tus clientes.");
+  }
+}
+
+/**
+ * Busca internamente las credenciales del cliente solicitado
+ */
+function _obtenerCredencialesAPI(cliente) {
+  var cliStr = String(cliente).trim().toUpperCase();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName("CREDENCIALES_API");
+  
+  if (!sh) throw new Error("Falta la pestaña CREDENCIALES_API. Ejecuta 'crearHojaCredencialesAPI' en el editor.");
+  
+  var data = sh.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim().toUpperCase() === cliStr) {
+      return { user: String(data[i][1]).trim(), pass: String(data[i][2]).trim() };
+    }
+  }
+  throw new Error("No hay credenciales configuradas para el cliente '" + cliStr + "' en CREDENCIALES_API.");
 }
 
 /**
  * Centraliza el control y caché del token.
- * REGLA: un solo token por día. Si ya existe el de hoy, se reutiliza; si no, se genera uno nuevo.
+ * REGLA: un solo token por día POR CLIENTE.
  */
-function obtenerORenovarTokenWMS() {
+function obtenerORenovarTokenWMS(cliente) {
+  var creds = _obtenerCredencialesAPI(cliente);
   var sp = PropertiesService.getScriptProperties();
   var hoy = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd");
-  var tokenGuardado = sp.getProperty('ITSANET_TOKEN');
-  var fechaGuardada = sp.getProperty('FECHA_TOKEN');
+  
+  var tokenKey = 'ITSANET_TOKEN_' + cliente;
+  var dateKey = 'FECHA_TOKEN_' + cliente;
+  
+  var tokenGuardado = sp.getProperty(tokenKey);
+  var fechaGuardada = sp.getProperty(dateKey);
 
   if (tokenGuardado && fechaGuardada === hoy) {
-    return tokenGuardado; // ya hay token válido de hoy -> no se crea otro
-  }
-
-  var pass = sp.getProperty('ITSANET_PASS');
-  if (!pass || pass.indexOf('PEGAR_AQUI') === 0) {
-    throw new Error('Falta ITSANET_PASS. Ejecuta setupClaveItsanet() con la clave real o cárgala en Propiedades del script.');
+    return tokenGuardado; 
   }
 
   var resToken = UrlFetchApp.fetch(ITSANET_BASE + "/gettoken", {
     "method": "get",
-    "headers": { "userid": ITSANET_USERID, "password": pass },
+    "headers": { "userid": creds.user, "password": creds.pass },
     "muteHttpExceptions": true
   });
   var code = resToken.getResponseCode();
@@ -50,17 +84,17 @@ function obtenerORenovarTokenWMS() {
   var nuevoToken = json.token || json.Token || json.Result || json.result;
 
   if (nuevoToken) {
-    sp.setProperty('ITSANET_TOKEN', String(nuevoToken).trim());
-    sp.setProperty('FECHA_TOKEN', hoy);
+    sp.setProperty(tokenKey, String(nuevoToken).trim());
+    sp.setProperty(dateKey, hoy);
     return String(nuevoToken).trim();
   } else {
-    throw new Error("No se pudo renovar el token diario con Itsanet. HTTP " + code + " -> " + body.substring(0, 300));
+    throw new Error("Error token " + cliente + ". HTTP " + code + " -> " + body.substring(0, 100));
   }
 }
 
-// (2) Consulta el STOCK con el token del día. Devuelve {code, body}.
-function consultarStockItsanet() {
-  var token = obtenerORenovarTokenWMS();
+// (2) Consulta el STOCK con el token del cliente.
+function consultarStockItsanet(cliente) {
+  var token = obtenerORenovarTokenWMS(cliente);
   var res = UrlFetchApp.fetch(ITSANET_BASE + "/getstock", {
     "method": "get",
     "headers": { "token": String(token).trim() },
@@ -71,24 +105,30 @@ function consultarStockItsanet() {
 
 // (3) === EJECUTA ESTA para probar. Revisa: Ver -> Registro de ejecución ===
 function probarConexionItsanet() {
+  var clientePrueba = "BELIA"; // <-- Cambia a "FINI" o "BELIA" para probar
   try {
-    var tok = obtenerORenovarTokenWMS();
-    Logger.log("OK TOKEN del día: " + String(tok).substring(0, 16) + "...");
-    var r = consultarStockItsanet();
+    var tok = obtenerORenovarTokenWMS(clientePrueba);
+    Logger.log("OK TOKEN ("+clientePrueba+"): " + String(tok).substring(0, 16) + "...");
+    var r = consultarStockItsanet(clientePrueba);
     Logger.log("getstock -> HTTP " + r.code);
+    
+    // Blindaje de prueba
     var arr = null;
-    try {
-      var j = JSON.parse(r.body);
-      arr = Array.isArray(j) ? j
-          : (j && Array.isArray(j.Result)) ? j.Result
-          : (j && Array.isArray(j.result)) ? j.result
-          : (j && Array.isArray(j.data)) ? j.data : null;
-    } catch (e) {}
+    if (r.body && String(r.body).trim() !== "") {
+      try {
+        var j = JSON.parse(r.body);
+        arr = Array.isArray(j) ? j
+            : (j && Array.isArray(j.Result)) ? j.Result
+            : (j && Array.isArray(j.result)) ? j.result
+            : (j && Array.isArray(j.data)) ? j.data : null;
+      } catch (e) { Logger.log("Aviso: La API no devolvió JSON válido."); }
+    }
+    
     if (arr) {
       Logger.log("OK Filas de stock: " + arr.length);
-      Logger.log("Ejemplo[0]: " + JSON.stringify(arr[0]));
+      if(arr.length > 0) Logger.log("Ejemplo[0]: " + JSON.stringify(arr[0]));
     } else {
-      Logger.log("Respuesta (primeros 1500): " + String(r.body).substring(0, 1500));
+      Logger.log("Cuerpo de respuesta vacío o sin formato arreglo.");
     }
     return r;
   } catch (e) {
@@ -98,21 +138,19 @@ function probarConexionItsanet() {
 }
 
 /**
- * (4) EXTRACCIÓN para crear inventario: trae el stock, lo FILTRA por cliente y (opcional) por una
- * lista de códigos/referencias, y lo MAPEA a las columnas de la PLANILLA DE CONTEO FÍSICO.
- *   - codClienteFiltro: p.ej. "FINI" (vacío = todos).
- *   - listaCodigos: arreglo o texto (separado por coma/salto) de COD. PRODUCTO a incluir (vacío = todos).
- * Devuelve { ok, total, filas: [...] } donde cada fila trae las claves que usa el importador.
- * NOTA: la consolidación final (sumar cantidades por SKU+posición, reglas de series) se hace en
- * el paso de importación del Centro de Mando, igual que con el CSV (reutilizando esa lógica).
+ * (4) EXTRACCIÓN para crear inventario
  */
 function extraerStockItsanet(codClienteFiltro, listaCodigos) {
-  var r = consultarStockItsanet();
+  var cliF = String(codClienteFiltro || '').trim().toUpperCase();
+  var r = consultarStockItsanet(cliF);
   if (r.code !== 200) return { ok: false, code: r.code, error: 'getstock HTTP ' + r.code, filas: [] };
-  var j; try { j = JSON.parse(r.body); } catch (e) { return { ok:false, error:'JSON inválido', filas:[] }; }
+  
+  var j = []; 
+  if (r.body && String(r.body).trim() !== "") {
+    try { j = JSON.parse(r.body); } catch (e) { return { ok:false, error:'JSON inválido', filas:[] }; }
+  }
   var arr = Array.isArray(j) ? j : (j.Result || j.result || j.data || []);
 
-  var cliF = String(codClienteFiltro || '').trim().toUpperCase();
   var setCods = null;
   if (listaCodigos) {
     var raw = Array.isArray(listaCodigos) ? listaCodigos.join(',') : String(listaCodigos);
@@ -130,7 +168,6 @@ function extraerStockItsanet(codClienteFiltro, listaCodigos) {
     if (cliF && val(o, 'COD. CLIENTE').toUpperCase() !== cliF) continue;
     if (setCods && !setCods[cod.toUpperCase()]) continue;
 
-    // Posición: NAVE-CALLE-COLUMNA-NIVEL (ajustar el formato si difiere del usado por el WMS)
     var pos = [val(o,'NAVE'), val(o,'CALLE'), val(o,'COLUMNA'), val(o,'NIVEL')].filter(function(x){ return x !== ''; }).join('-');
 
     filas.push({
@@ -152,9 +189,9 @@ function extraerStockItsanet(codClienteFiltro, listaCodigos) {
   return { ok: true, total: filas.length, filas: filas };
 }
 
-// (5) Prueba de extracción (revisa el Registro de ejecución). Ajusta cliente/códigos según necesites.
+// (5) Prueba de extracción (revisa el Registro de ejecución)
 function probarExtraccionItsanet() {
-  var res = extraerStockItsanet('FINI', '');   // p.ej. extraerStockItsanet('FINI', '9990, 1234')
+  var res = extraerStockItsanet('BELIA', ''); // <-- Prueba BELIA
   Logger.log('Filas extraídas: ' + res.total);
   if (res.filas && res.filas.length) Logger.log('Fila[0] mapeada: ' + JSON.stringify(res.filas[0]));
   return res;
@@ -162,15 +199,8 @@ function probarExtraccionItsanet() {
 
 /* ===========================================================================
    PUENTE CON LA CREACIÓN DE INVENTARIO
-   El stock se convierte a filas de 17 columnas en el formato EXACTO de
-   "PLANILLA DE CONTEO FISICO" (rM) confirmado por el operador, se CONSOLIDA
-   (suma cantidades) y se devuelve { datosLimpios, reporte } listo para que el
-   wizard llame a inyectarDatosDeAPI(datosLimpios, reporte).
    =========================================================================== */
 
-// Formato rM (PLANILLA), 17 columnas. Índices CONFIRMADOS por el operador:
-// [4]=Cliente [6]=SKU [7]=Descripción [8]=Serie [9]=Lote [10]=Despacho [11]=Partida
-// [12]=Categoría [13]=Estado [14]=Posición [15]=Unidad [16]=Cantidad ; el resto vacío.
 function _filaRmDesdeStock(o) {
   function v(k){ return (o[k]===null||o[k]===undefined) ? "" : String(o[k]).trim(); }
   var f = []; for (var n=0;n<17;n++) f.push("");
@@ -197,7 +227,6 @@ function _setCodigos(listaCodigos) {
   var set = {}; lista.forEach(function(c){ set[c]=true; }); return set;
 }
 
-// Filtro de cliente flexible (HYCITE == HYCITE2/HYCITE3), MISMO criterio que validarCSVAvanzado.
 function _clienteCoincideItsanet(cliFila, cliSel) {
   var cli = String(cliFila||"").trim().toUpperCase();
   var sel = String(cliSel||"").trim().toUpperCase();
@@ -209,13 +238,21 @@ function _clienteCoincideItsanet(cliFila, cliSel) {
   return !!(rC && rC===rS);
 }
 
-// ORQUESTADOR para el wizard: extrae de la API, filtra (cliente flexible + lista de SKUs),
-// CONSOLIDA (suma cantidades por SKU+posición+serie+lote+despacho+partida) y arma el reporte.
-// Devuelve { datosLimpios (filas rM), reporte } para inyectarDatosDeAPI().
+// ORQUESTADOR para el wizard
 function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVariantes) {
-  var r = consultarStockItsanet();
-  if (r.code !== 200) throw new Error('getstock HTTP ' + r.code + ' -> ' + String(r.body).substring(0,200));
-  var j = JSON.parse(r.body);
+  var r = consultarStockItsanet(clienteSeleccionado);
+  if (r.code !== 200) throw new Error('El servidor reporta HTTP ' + r.code);
+  
+  // FIX CRÍTICO: Manejar respuesta vacía de q_apidepot
+  var j = [];
+  if (r.body && String(r.body).trim() !== "") {
+    try { 
+      j = JSON.parse(r.body); 
+    } catch (e) { 
+      throw new Error('La respuesta del servidor no es válida para ' + clienteSeleccionado + '. (¿Bodega inactiva?)'); 
+    }
+  }
+
   var arr = Array.isArray(j) ? j : (j.Result || j.result || j.data || []);
   var setCods = _setCodigos(listaCodigos);
 
@@ -246,7 +283,6 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
       if (seriesVistas[serie]){ if (rep.seriesDuplicadasEnCSV.length<50) rep.seriesDuplicadasEnCSV.push({sku:sku, serie:serie}); }
       else seriesVistas[serie]=true;
     }
-    // Consolidación: misma clave -> suma cantidades (igual criterio que el cross-check del CSV)
     var key = f[6]+'|'+f[14]+'|'+f[8]+'|'+f[9]+'|'+f[10]+'|'+f[11];
     if (grupos[key]){ grupos[key][16] = (parseFloat(grupos[key][16])||0) + cant; rep.filasIdenticasDuplicadas++; }
     else { f[16]=cant; grupos[key]=f; orden.push(key); rep.incluidas++; skusUnicos[sku]=true; }
@@ -255,8 +291,8 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
   var datosLimpios = orden.map(function(k){ return grupos[k]; });
   rep.skusUnicosCount = Object.keys(skusUnicos).length;
   rep.clientesDetalle = Object.keys(clientes).map(function(k){ return {cliente:k, filas:clientes[k]}; }).sort(function(a,b){ return b.filas-a.filas; });
-  if (!datosLimpios.length) throw new Error('No hay filas para el cliente "'+clienteSeleccionado+'" / códigos indicados.');
+  
+  if (!datosLimpios.length) throw new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de Quito.');
+  
   return { datosLimpios: datosLimpios, reporte: rep };
 }
-
-
