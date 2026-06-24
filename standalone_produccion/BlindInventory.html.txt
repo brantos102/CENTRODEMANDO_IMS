@@ -2970,8 +2970,9 @@ window.camera = GLOBAL_CAMERA || camera;
            if (objectHit) {
                if (objetoResaltadoAnterior !== objectHit) {
                    removerBrilloAnterior(); objetoResaltadoAnterior = objectHit;
-                   const meshToLight = objectHit.userData.esGaveta ? objectHit.children[1] : objectHit;
-                   if(meshToLight && meshToLight.material) { meshToLight.material.emissive = new THREE.Color(0xffffff); meshToLight.material.emissiveIntensity = 0.35; }
+                   var meshToLight = objectHit;
+                   if (objectHit.userData.esGaveta) { meshToLight = null; for (var _ci=0;_ci<objectHit.children.length;_ci++){ var _cm=objectHit.children[_ci]; if(_cm && _cm.material && _cm.material.isMeshStandardMaterial){ meshToLight=_cm; break; } } }
+                   if(meshToLight && meshToLight.material && meshToLight.material.isMeshStandardMaterial) { meshToLight.material.emissive = new THREE.Color(0xffffff); meshToLight.material.emissiveIntensity = 0.35; }
                    mapContainer.style.cursor = 'pointer';
                }
                tooltip.style.display = 'block'; tooltip.style.left = (e.clientX - rect.left + 15) + 'px'; tooltip.style.top = (e.clientY - rect.top + 15) + 'px';
@@ -3024,8 +3025,9 @@ window.camera = GLOBAL_CAMERA || camera;
 
        function removerBrilloAnterior() {
            if (objetoResaltadoAnterior) {
-               const meshToLight = objetoResaltadoAnterior.userData.esGaveta ? objetoResaltadoAnterior.children[1] : objetoResaltadoAnterior;
-               if(meshToLight && meshToLight.material) meshToLight.material.emissiveIntensity = 0;
+               var meshToLight = objetoResaltadoAnterior;
+               if (objetoResaltadoAnterior.userData.esGaveta) { meshToLight = null; for (var _ci=0;_ci<objetoResaltadoAnterior.children.length;_ci++){ var _cm=objetoResaltadoAnterior.children[_ci]; if(_cm && _cm.material && _cm.material.isMeshStandardMaterial){ meshToLight=_cm; break; } } }
+               if(meshToLight && meshToLight.material && meshToLight.material.isMeshStandardMaterial) meshToLight.material.emissiveIntensity = 0;
                objetoResaltadoAnterior = null;
            }
        }
@@ -3033,9 +3035,10 @@ window.camera = GLOBAL_CAMERA || camera;
        // OPTIMIZACIÓN DE RENDIMIENTO: Pausar Renderizado 3D
        if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
 
-       function animacion3D() { 
-           animationFrameId = requestAnimationFrame(animacion3D); 
-           
+       function animacion3D() {
+           animationFrameId = requestAnimationFrame(animacion3D);
+           try {
+
            // Si no estamos en la página HOME, no renderizamos el 3D para salvar batería/procesador en el celular.
            if (!document.getElementById('page-home').classList.contains('active')) {
                return;
@@ -3064,7 +3067,8 @@ window.camera = GLOBAL_CAMERA || camera;
                wp.position.y = wp.userData.baseY + Math.sin(time + i) * 0.15;
            });
 
-           renderer.render(scene, camera); 
+           renderer.render(scene, camera);
+           } catch (eAnim) { /* FIX 8.52: un frame con material/objeto inválido no debe saturar la consola ni congelar el loop */ }
        }
        animacion3D();
 

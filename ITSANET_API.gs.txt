@@ -161,33 +161,32 @@ function probarExtraccionItsanet() {
 }
 
 /* ===========================================================================
-   PUENTE CON LA CREACIÓN DE INVENTARIO (reusa validarCSVAvanzado, sin duplicar)
-   El stock se convierte a filas de 17 columnas IDÉNTICAS a las del CSV y se pasa
-   por la MISMA validación/consolidación del wizard.
+   PUENTE CON LA CREACIÓN DE INVENTARIO
+   El stock se convierte a filas de 17 columnas en el formato EXACTO de
+   "PLANILLA DE CONTEO FISICO" (rM) confirmado por el operador, se CONSOLIDA
+   (suma cantidades) y se devuelve { datosLimpios, reporte } listo para que el
+   wizard llame a inyectarDatosDeAPI(datosLimpios, reporte).
    =========================================================================== */
 
-// Índices del array de 17 columnas que consume validarCSVAvanzado.
-// CONFIRMADOS por la validación: 2,3,4,5,6,7,8,16.  Los demás (descripción, unidad, etc.)
-// quedan marcados como "CONFIRMAR" hasta tener el encabezado real del CSV del wizard.
-function _filaCsvDesdeStock(o) {
+// Formato rM (PLANILLA), 17 columnas. Índices CONFIRMADOS por el operador:
+// [4]=Cliente [6]=SKU [7]=Descripción [8]=Serie [9]=Lote [10]=Despacho [11]=Partida
+// [12]=Categoría [13]=Estado [14]=Posición [15]=Unidad [16]=Cantidad ; el resto vacío.
+function _filaRmDesdeStock(o) {
   function v(k){ return (o[k]===null||o[k]===undefined) ? "" : String(o[k]).trim(); }
-  var fila = [];
-  for (var n=0;n<17;n++) fila.push("");
-  // --- Índices USADOS por validarCSVAvanzado (correctos) ---
-  fila[2]  = v('NRO. DESPACHO');                                   // N. Despacho
-  fila[3]  = v('NRO. PARTIDA');                                    // N. Partida
-  fila[4]  = v('COD. CLIENTE');                                    // Cliente
-  fila[5]  = [v('NAVE'),v('CALLE'),v('COLUMNA'),v('NIVEL')].filter(function(x){return x!=="";}).join('-'); // Posición
-  fila[6]  = v('COD. PRODUCTO');                                   // SKU
-  fila[7]  = v('NRO. LOTE');                                       // Lote
-  fila[8]  = v('NRO. SERIE');                                      // Serie
-  fila[16] = parseFloat(v('CANTIDAD')) || 0;                       // Cantidad
-  // --- Campos de paso (CONFIRMAR su índice con el encabezado del CSV del wizard) ---
-  fila[0]  = v('DESCRIPCION');   // ¿col 0?  descripción
-  fila[1]  = v('UNIDAD');        // ¿col 1?  unidad
-  fila[9]  = v('CAT. LOG.');     // ¿col 9?  categoría logística
-  fila[10] = v('EST. MERC.');    // ¿col 10? estado mercadería
-  return fila;
+  var f = []; for (var n=0;n<17;n++) f.push("");
+  f[4]  = v('COD. CLIENTE');
+  f[6]  = v('COD. PRODUCTO');
+  f[7]  = v('DESCRIPCION');
+  f[8]  = v('NRO. SERIE');
+  f[9]  = v('NRO. LOTE');
+  f[10] = v('NRO. DESPACHO');
+  f[11] = v('NRO. PARTIDA');
+  f[12] = v('CAT. LOG.');
+  f[13] = v('EST. MERC.');
+  f[14] = [v('NAVE'),v('CALLE'),v('COLUMNA'),v('NIVEL')].filter(function(x){return x!=="";}).join('-');
+  f[15] = v('UNIDAD');
+  f[16] = parseFloat(v('CANTIDAD')) || 0;
+  return f;
 }
 
 function _setCodigos(listaCodigos) {
@@ -198,36 +197,66 @@ function _setCodigos(listaCodigos) {
   var set = {}; lista.forEach(function(c){ set[c]=true; }); return set;
 }
 
-// Trae el stock y lo devuelve como filas de 17 columnas (formato CSV del wizard).
-// Filtra por lista de códigos si se indica (variantes con sufijo incluidas si incluirVariantes=true).
-function extraerStockComoFilasCSV(listaCodigos, incluirVariantes) {
+// Filtro de cliente flexible (HYCITE == HYCITE2/HYCITE3), MISMO criterio que validarCSVAvanzado.
+function _clienteCoincideItsanet(cliFila, cliSel) {
+  var cli = String(cliFila||"").trim().toUpperCase();
+  var sel = String(cliSel||"").trim().toUpperCase();
+  if (!sel || !cli || cli===sel) return true;
+  var esc = function(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); };
+  if (new RegExp("^"+esc(sel)+"[0-9]+$").test(cli)) return true;
+  if (new RegExp("^"+esc(cli)+"[0-9]+$").test(sel)) return true;
+  var rC=cli.replace(/[0-9]+$/,""), rS=sel.replace(/[0-9]+$/,"");
+  return !!(rC && rC===rS);
+}
+
+// ORQUESTADOR para el wizard: extrae de la API, filtra (cliente flexible + lista de SKUs),
+// CONSOLIDA (suma cantidades por SKU+posición+serie+lote+despacho+partida) y arma el reporte.
+// Devuelve { datosLimpios (filas rM), reporte } para inyectarDatosDeAPI().
+function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVariantes) {
   var r = consultarStockItsanet();
   if (r.code !== 200) throw new Error('getstock HTTP ' + r.code + ' -> ' + String(r.body).substring(0,200));
   var j = JSON.parse(r.body);
   var arr = Array.isArray(j) ? j : (j.Result || j.result || j.data || []);
   var setCods = _setCodigos(listaCodigos);
-  var filas = [];
+
+  var rep = { totalLeidas: arr.length, incluidas:0, excluidas:0, filtradasPorCliente:0,
+              cantidadInvalidas:0, cantidadCero:0, skuVacio:0, skuConCharsExtranios:[],
+              skuSospechosamenteCortos:[], seriesDuplicadasHistorico:[], seriesDuplicadasEnCSV:[],
+              filasIdenticasDuplicadas:0, sumaCantidad:0, skusUnicosCount:0, clientesDetalle:[] };
+  var skusUnicos={}, clientes={}, seriesVistas={}, grupos={}, orden=[];
+
   for (var i=0;i<arr.length;i++){
-    var o = arr[i] || {};
-    var cod = (o['COD. PRODUCTO']==null?'':String(o['COD. PRODUCTO']).trim()).toUpperCase();
-    if (!cod) continue;
-    if (setCods) {
-      var match = !!setCods[cod];
-      if (!match && incluirVariantes) { // variante con sufijo: el código empieza por uno de la lista (ej. 9990_U)
-        for (var k in setCods) { if (cod.indexOf(k) === 0) { match = true; break; } }
-      }
-      if (!match) continue;
+    var o = arr[i]||{};
+    var sku = String(o['COD. PRODUCTO']||"").trim().toUpperCase();
+    var cliRow = String(o['COD. CLIENTE']||"").trim().toUpperCase();
+    if (cliRow) clientes[cliRow] = (clientes[cliRow]||0)+1;
+    if (!sku){ rep.skuVacio++; rep.excluidas++; continue; }
+    if (!_clienteCoincideItsanet(cliRow, clienteSeleccionado)){ rep.filtradasPorCliente++; rep.excluidas++; continue; }
+    if (setCods){
+      var m = !!setCods[sku];
+      if (!m && incluirVariantes){ for (var kk in setCods){ if (sku.indexOf(kk)===0){ m=true; break; } } }
+      if (!m){ rep.excluidas++; continue; }
     }
-    filas.push(_filaCsvDesdeStock(o));
+    var f = _filaRmDesdeStock(o);
+    var cant = parseFloat(f[16]); if (isNaN(cant)) cant=0;
+    if (cant<0){ rep.cantidadInvalidas++; rep.excluidas++; continue; }
+    if (cant===0) rep.cantidadCero++;
+    var serie = String(f[8]||"").toUpperCase();
+    if (serie && serie!=="0" && serie!=="N/A"){
+      if (seriesVistas[serie]){ if (rep.seriesDuplicadasEnCSV.length<50) rep.seriesDuplicadasEnCSV.push({sku:sku, serie:serie}); }
+      else seriesVistas[serie]=true;
+    }
+    // Consolidación: misma clave -> suma cantidades (igual criterio que el cross-check del CSV)
+    var key = f[6]+'|'+f[14]+'|'+f[8]+'|'+f[9]+'|'+f[10]+'|'+f[11];
+    if (grupos[key]){ grupos[key][16] = (parseFloat(grupos[key][16])||0) + cant; rep.filasIdenticasDuplicadas++; }
+    else { f[16]=cant; grupos[key]=f; orden.push(key); rep.incluidas++; skusUnicos[sku]=true; }
+    rep.sumaCantidad += cant;
   }
-  return filas;
+  var datosLimpios = orden.map(function(k){ return grupos[k]; });
+  rep.skusUnicosCount = Object.keys(skusUnicos).length;
+  rep.clientesDetalle = Object.keys(clientes).map(function(k){ return {cliente:k, filas:clientes[k]}; }).sort(function(a,b){ return b.filas-a.filas; });
+  if (!datosLimpios.length) throw new Error('No hay filas para el cliente "'+clienteSeleccionado+'" / códigos indicados.');
+  return { datosLimpios: datosLimpios, reporte: rep };
 }
 
-// ORQUESTADOR para el wizard: extrae de la API y pasa por la MISMA validación del CSV.
-// Devuelve { datosLimpios, reporte } igual que la carga de CSV (mismas reglas/consolidación).
-function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVariantes) {
-  var filas = extraerStockComoFilasCSV(listaCodigos, incluirVariantes);
-  if (!filas.length) throw new Error('La API no devolvió filas para los códigos indicados.');
-  return validarCSVAvanzado(filas, clienteSeleccionado); // reusa toda la lógica del wizard
-}
 
