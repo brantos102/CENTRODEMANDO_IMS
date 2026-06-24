@@ -1,0 +1,113 @@
+/**
+ * ITSANET_API.gs — Conector con la API de ITSANET para obtener STOCK en tiempo real.
+ * Módulo AISLADO: pegar como un archivo .gs NUEVO en el proyecto "Centro de Mando" (Itsanet UIO),
+ * que ya tiene el permiso script.external_request. No modifica nada del flujo actual.
+ *
+ * Cómo funciona (basado en el microservicio compartido "Operaciones_WMS"):
+ *   1) gettoken  -> GET con headers {userid, password}            -> devuelve un token DIARIO.
+ *   2) getstock  -> GET con header  {token}                       -> devuelve el stock (JSON).
+ *   El token se cachea por día en ScriptProperties (no se pide en cada consulta).
+ *
+ * Hay 2 juegos de credenciales/end-points:
+ *   - HCE (Hycite): base https://ec.itsanet.com/q_apidepot   (usuario: hceexcceldep)
+ *   - FINI:         base https://ec.itsanet.com/g_apidepot   (usuario: FINI)
+ *
+ * SEGURIDAD: las contraseñas NO van en el código (no se suben al repo). Se guardan en
+ * ScriptProperties. Edita setupCredencialesItsanet() con tus claves SOLO en tu proyecto de
+ * Apps Script y ejecútalo UNA vez; o cárgalas a mano en Configuración del proyecto > Propiedades.
+ */
+
+// ===== 1) Edita las CLAVES aquí (en TU proyecto, no en el repo) y ejecuta UNA vez =====
+function setupCredencialesItsanet() {
+  var p = PropertiesService.getScriptProperties();
+  // --- Hycite (HCE) ---
+  p.setProperty('ITS_HCE_USER', 'hceexcceldep');
+  p.setProperty('ITS_HCE_PASS', 'PEGAR_AQUI_CLAVE_HCE');     // <-- reemplaza por la clave real de HCE
+  p.setProperty('ITS_HCE_BASE', 'https://ec.itsanet.com/q_apidepot');
+  // --- FINI ---
+  p.setProperty('ITS_FINI_USER', 'FINI');
+  p.setProperty('ITS_FINI_PASS', 'PEGAR_AQUI_CLAVE_FINI');   // <-- reemplaza por la clave real de FINI
+  p.setProperty('ITS_FINI_BASE', 'https://ec.itsanet.com/g_apidepot');
+  Logger.log('Credenciales ITSANET guardadas. (Recuerda poner las claves reales antes de ejecutar.)');
+}
+
+// Mapea el CLIENTE del inventario al juego de credenciales/end-point correcto.
+function _itsanetCfg(cliente) {
+  var p = PropertiesService.getScriptProperties();
+  var c = String(cliente || '').toUpperCase();
+  var pref = (c.indexOf('HYCITE') !== -1 || c.indexOf('HCE') !== -1) ? 'HCE' : 'FINI';
+  var cfg = {
+    key: pref,
+    userid: p.getProperty('ITS_' + pref + '_USER') || '',
+    password: p.getProperty('ITS_' + pref + '_PASS') || '',
+    base: p.getProperty('ITS_' + pref + '_BASE') || ''
+  };
+  if (!cfg.userid || !cfg.password || !cfg.base || cfg.password.indexOf('PEGAR_AQUI') === 0) {
+    throw new Error('Faltan credenciales ITSANET para ' + pref + '. Ejecuta setupCredencialesItsanet() con las claves reales.');
+  }
+  return cfg;
+}
+
+// Obtiene (y cachea por día) el token para el cliente indicado.
+function obtenerTokenItsanet(cliente) {
+  var cfg = _itsanetCfg(cliente);
+  var props = PropertiesService.getScriptProperties();
+  var hoy = Utilities.formatDate(new Date(), 'GMT-5', 'yyyy-MM-dd');
+  var kT = 'ITS_TOKEN_' + cfg.key, kF = 'ITS_TOKEN_FECHA_' + cfg.key;
+  var tok = props.getProperty(kT), fch = props.getProperty(kF);
+  if (tok && fch === hoy) return tok;
+
+  var res = UrlFetchApp.fetch(cfg.base + '/gettoken', {
+    method: 'get',
+    headers: { 'userid': cfg.userid, 'password': cfg.password },
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  var body = res.getContentText();
+  var json = {}; try { json = JSON.parse(body); } catch (e) {}
+  var nuevo = json.token || json.Token || json.Result || json.result;
+  if (!nuevo) throw new Error('gettoken HTTP ' + code + ' -> ' + body.substring(0, 300));
+  props.setProperty(kT, String(nuevo).trim());
+  props.setProperty(kF, hoy);
+  return String(nuevo).trim();
+}
+
+// Consulta el STOCK del cliente. Devuelve {ok, code, data, raw}.
+function obtenerStockItsanet(cliente) {
+  var cfg = _itsanetCfg(cliente);
+  var token = obtenerTokenItsanet(cliente);
+  var res = UrlFetchApp.fetch(cfg.base + '/getstock', {
+    method: 'get',
+    headers: { 'token': String(token).trim() },
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  var body = res.getContentText();
+  var json = null; try { json = JSON.parse(body); } catch (e) {}
+  return { ok: (code === 200), code: code, data: json, raw: body.substring(0, 4000) };
+}
+
+// ===== 2) Ejecuta esto para PROBAR la conexión (revisa: Ver -> Registro de ejecución) =====
+function probarConexionItsanet() {
+  var cliente = 'HYCITE'; // cambia por 'HYCITE2' u otro para probar
+  try {
+    var tok = obtenerTokenItsanet(cliente);
+    Logger.log('OK TOKEN (' + cliente + '): ' + String(tok).substring(0, 14) + '...');
+    var stock = obtenerStockItsanet(cliente);
+    Logger.log('STOCK -> HTTP ' + stock.code + '  ok=' + stock.ok);
+    var arr = Array.isArray(stock.data) ? stock.data
+            : (stock.data && Array.isArray(stock.data.Result)) ? stock.data.Result
+            : (stock.data && Array.isArray(stock.data.result)) ? stock.data.result
+            : (stock.data && Array.isArray(stock.data.data)) ? stock.data.data : null;
+    if (arr) {
+      Logger.log('OK Filas de stock: ' + arr.length);
+      Logger.log('Ejemplo[0]: ' + JSON.stringify(arr[0]));
+    } else {
+      Logger.log('Respuesta (primeros 1000): ' + stock.raw.substring(0, 1000));
+    }
+    return stock;
+  } catch (e) {
+    Logger.log('ERROR de conexion ITSANET: ' + e.message);
+    return { ok: false, error: e.message };
+  }
+}
