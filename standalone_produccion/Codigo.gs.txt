@@ -901,34 +901,54 @@ function registrarAccesoWMS(fileId, cliente, viaCorreo) {
   return true;
 }
 
-// FIX 8.45: registra la ENTREGA en CRONOGRAMA - 2026: Estado (col M) = "Entregado" y Fecha de
-// entrega (col N) en la fila cuyo "ARCHIVO DE TRABAJO" (col Q, smart-chip o texto) apunta al fileId.
-// Si no hay evento asociado, devuelve encontrado:false (el WMS sugiere crearlo). Aislado en try/catch:
-// nunca rompe la entrega aunque el cronograma falle o no exista.
+// FIX 8.46: registra la ENTREGA en CRONOGRAMA - 2026. La columna "ARCHIVO DE TRABAJO" (col Q)
+// usa SMART-CHIPS de archivo, y para esos getLinkUrl() devuelve null -> por eso antes no
+// encontraba la fila. Ahora hace match por: (1) URL del hipervínculo con el fileId, (2) TEXTO
+// VISIBLE del chip == nombre del archivo (getDisplayValues), (3) fileId crudo en la celda.
+// Aislado en try/catch: nunca rompe la entrega aunque el cronograma falle o no exista.
 function _actualizarCronogramaEntrega(fileId, soloFecha) {
   var res = { encontrado: false };
   try {
+    var fid = String(fileId).trim();
+    var fnameN = "";
+    try { fnameN = String(DriveApp.getFileById(fid).getName() || "").trim().toUpperCase(); } catch (e) {}
+
     var ss = SpreadsheetApp.openById(MASTER_DB_ID);
     var cron = ss.getSheetByName("CRONOGRAMA - 2026");
     if (!cron) { var all = ss.getSheets(); for (var a=0;a<all.length;a++){ if (all[a].getName().toUpperCase().indexOf("CRONOGRAMA")===0){ cron=all[a]; break; } } }
     if (!cron) return res;
     var lastR = cron.getLastRow();
     if (lastR < 2) return res;
-    var rng = cron.getRange(1, 17, lastR, 1); // col Q = ARCHIVO DE TRABAJO
+
+    var rng  = cron.getRange(1, 17, lastR, 1); // col Q = ARCHIVO DE TRABAJO
     var rich = rng.getRichTextValues();
+    var disp = rng.getDisplayValues();         // texto VISIBLE (incluye el del smart-chip)
     var vals = rng.getValues();
-    var fid = String(fileId).trim();
-    for (var i = 0; i < rich.length; i++) {
-      var url = "";
+    res.archivo = fnameN;
+
+    for (var i = 1; i < lastR; i++) {          // i=1 -> salta la fila de encabezado
+      var matched = false;
+
+      // (1) hipervínculo cuyo URL contiene el fileId
       try {
-        var rt = rich[i][0];
+        var rt = rich[i][0], url = "";
         if (rt) {
           url = rt.getLinkUrl() || "";
           if (!url) { var runs = rt.getRuns(); for (var k=0;k<runs.length;k++){ var lu=runs[k].getLinkUrl(); if(lu){ url=lu; break; } } }
         }
-      } catch(e) {}
-      if (!url) url = String(vals[i][0] || "");
-      if (url && fid && url.indexOf(fid) !== -1) {
+        if (url && fid && url.indexOf(fid) !== -1) matched = true;
+      } catch (e) {}
+
+      // (2) texto visible (smart-chip o texto plano) coincide con el nombre del archivo
+      if (!matched && fnameN) {
+        var txt = String(disp[i][0] || vals[i][0] || "").trim().toUpperCase();
+        if (txt && txt.length >= 5 && (txt === fnameN || fnameN.indexOf(txt) !== -1 || txt.indexOf(fnameN) !== -1)) matched = true;
+      }
+
+      // (3) fileId crudo dentro del valor de la celda
+      if (!matched && fid && String(vals[i][0] || "").indexOf(fid) !== -1) matched = true;
+
+      if (matched) {
         var fila = i + 1;
         cron.getRange(fila, 13).setValue("Entregado"); // M = Estado
         cron.getRange(fila, 14).setValue(soloFecha);   // N = Fecha de entrega
@@ -936,7 +956,7 @@ function _actualizarCronogramaEntrega(fileId, soloFecha) {
         break;
       }
     }
-  } catch(e) { res.error = e.message; }
+  } catch (e) { res.error = e.message; }
   return res;
 }
 
@@ -970,7 +990,7 @@ function finalizarInventarioWMS(fileId, confirmar) {
     notificarCambioBD(fileId);
     return { exito:true, avance:avance, texto:cRef+" / "+tRef+" Refs",
              fechaFin:Utilities.formatDate(soloFecha, Session.getScriptTimeZone(), "dd/MM/yyyy"),
-             panelActualizado:panelOk, cronograma: cronRes.encontrado, cronError: cronRes.error || "" };
+             panelActualizado:panelOk, cronograma: cronRes.encontrado, cronError: cronRes.error || "", cronArchivo: cronRes.archivo || "" };
   } catch(e){ return { exito:false, mensaje:e.message }; }
 }
 
