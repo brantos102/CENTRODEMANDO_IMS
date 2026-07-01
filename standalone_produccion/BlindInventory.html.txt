@@ -2728,7 +2728,6 @@ window.camera = GLOBAL_CAMERA || camera;
            }
 
            Object.values(rack.items).forEach(slotItems => {
-             try {
                let firstPart = parsePos(slotItems[0].nombre);
                let bayIndex = rack.isMZ ? firstPart.col : Math.ceil(firstPart.col / 2);
                let indiceX = posFisicaBay[bayIndex];
@@ -2886,11 +2885,6 @@ window.camera = GLOBAL_CAMERA || camera;
                        ALERT_WAYPOINTS.push(wp);
                    }
                }
-             } catch (eSlot) {
-               // FIX 8.49: si una posición (gaveta/estantería) falla al dibujarse, NO abortar
-               // todo el render (eso dejaba el rack vacío y sin avatar). Se salta esa posición.
-               try { console.log('WMS render posición', (slotItems && slotItems[0] && slotItems[0].nombre) || '?', '->', eSlot && eSlot.message); } catch(_){}
-             }
            });
        });
 
@@ -2953,11 +2947,10 @@ window.camera = GLOBAL_CAMERA || camera;
        });
        
        mapContainer.addEventListener('pointermove', (e) => {
-          try {
            if(Math.abs(e.clientX - mouseDownPos.x) > 5 || Math.abs(e.clientY - mouseDownPos.y) > 5) {
                isDraggingMap = true;
            }
-
+           
            // Hover logic
            const rect = renderer.domElement.getBoundingClientRect();
            mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1; mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -2970,9 +2963,8 @@ window.camera = GLOBAL_CAMERA || camera;
            if (objectHit) {
                if (objetoResaltadoAnterior !== objectHit) {
                    removerBrilloAnterior(); objetoResaltadoAnterior = objectHit;
-                   var meshToLight = objectHit;
-                   if (objectHit.userData.esGaveta) { meshToLight = null; for (var _ci=0;_ci<objectHit.children.length;_ci++){ var _cm=objectHit.children[_ci]; if(_cm && _cm.material && _cm.material.isMeshStandardMaterial){ meshToLight=_cm; break; } } }
-                   if(meshToLight && meshToLight.material && meshToLight.material.isMeshStandardMaterial) { meshToLight.material.emissive = new THREE.Color(0xffffff); meshToLight.material.emissiveIntensity = 0.35; }
+                   const meshToLight = objectHit.userData.esGaveta ? objectHit.children[1] : objectHit;
+                   if(meshToLight && meshToLight.material) { meshToLight.material.emissive = new THREE.Color(0xffffff); meshToLight.material.emissiveIntensity = 0.35; }
                    mapContainer.style.cursor = 'pointer';
                }
                tooltip.style.display = 'block'; tooltip.style.left = (e.clientX - rect.left + 15) + 'px'; tooltip.style.top = (e.clientY - rect.top + 15) + 'px';
@@ -2988,7 +2980,6 @@ window.camera = GLOBAL_CAMERA || camera;
            } else {
                tooltip.style.display = 'none'; removerBrilloAnterior(); mapContainer.style.cursor = 'default';
            }
-          } catch (eHov) { /* FIX 8.50: el hover nunca debe romper la escena */ try { console.log('WMS hover', eHov && eHov.message); } catch(_){} }
        });
 
        // CLIC SIMPLE: reubica el avatar + previsualiza (validación), SIN re-render (ligero), sin saltar.
@@ -3025,9 +3016,8 @@ window.camera = GLOBAL_CAMERA || camera;
 
        function removerBrilloAnterior() {
            if (objetoResaltadoAnterior) {
-               var meshToLight = objetoResaltadoAnterior;
-               if (objetoResaltadoAnterior.userData.esGaveta) { meshToLight = null; for (var _ci=0;_ci<objetoResaltadoAnterior.children.length;_ci++){ var _cm=objetoResaltadoAnterior.children[_ci]; if(_cm && _cm.material && _cm.material.isMeshStandardMaterial){ meshToLight=_cm; break; } } }
-               if(meshToLight && meshToLight.material && meshToLight.material.isMeshStandardMaterial) meshToLight.material.emissiveIntensity = 0;
+               const meshToLight = objetoResaltadoAnterior.userData.esGaveta ? objetoResaltadoAnterior.children[1] : objetoResaltadoAnterior;
+               if(meshToLight && meshToLight.material) meshToLight.material.emissiveIntensity = 0;
                objetoResaltadoAnterior = null;
            }
        }
@@ -3035,10 +3025,9 @@ window.camera = GLOBAL_CAMERA || camera;
        // OPTIMIZACIÓN DE RENDIMIENTO: Pausar Renderizado 3D
        if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
 
-       function animacion3D() {
-           animationFrameId = requestAnimationFrame(animacion3D);
-           try {
-
+       function animacion3D() { 
+           animationFrameId = requestAnimationFrame(animacion3D); 
+           
            // Si no estamos en la página HOME, no renderizamos el 3D para salvar batería/procesador en el celular.
            if (!document.getElementById('page-home').classList.contains('active')) {
                return;
@@ -3067,8 +3056,7 @@ window.camera = GLOBAL_CAMERA || camera;
                wp.position.y = wp.userData.baseY + Math.sin(time + i) * 0.15;
            });
 
-           renderer.render(scene, camera);
-           } catch (eAnim) { /* FIX 8.52: un frame con material/objeto inválido no debe saturar la consola ni congelar el loop */ }
+           renderer.render(scene, camera); 
        }
        animacion3D();
 
