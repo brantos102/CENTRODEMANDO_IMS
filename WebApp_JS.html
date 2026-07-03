@@ -256,7 +256,28 @@ function calSetVista(v) {
 }
 
 function calSetEstado(v) { calEstadoFiltro = v || 'all'; _calCacheKey = ''; pintarCalendario(); }
-function calHoy() { calRef = new Date(); calRef.setHours(0,0,0,0); _calCacheKey = ''; pintarCalendario(); }
+/* Función supercargada para el botón "Hoy" del calendario */
+function calHoy() { 
+  // 1. Establecer la referencia de tiempo a hoy
+  calRef = new Date(); 
+  calRef.setHours(0,0,0,0); 
+  
+  // 2. Forzar la vista a 'semana' para mejor visualización
+  calVista = 'semana';
+  document.querySelectorAll('.cal-vt').forEach(function(b){
+    b.classList.toggle('active', b.getAttribute('data-cv') === 'semana');
+  });
+  
+  // 3. Limpiar caché y repintar el calendario
+  _calCacheKey = ''; 
+  pintarCalendario(); 
+  
+  // 4. Resaltar automáticamente la columna del día de hoy
+  setTimeout(function() {
+    resaltarGantt('col-dia-' + calRef.getTime());
+  }, 50);
+}
+
 
 function calMover(delta) {
   if (calVista === 'semana') calRef.setDate(calRef.getDate() + delta * 7);
@@ -272,7 +293,7 @@ function _inicioSemana(fecha) {
   return d;
 }
 
-function pintarCalendario() {
+/*function pintarCalendario() {
   if (!estado || !estado.cronograma) {
     $('cal-body').innerHTML = '<div class="empty">Sin datos de cronograma.</div>';
     return;
@@ -334,14 +355,51 @@ function pintarCalendario() {
   }
   eventos.sort(function(a,b){ return (a.fechaInicio||0) - (b.fechaInicio||0); });
 
+  // REEMPLÁZALO POR ESTO:
   var partes = ['<div class="cal-grid" style="--cal-days:' + dias.length + ';--cal-cw:' + colW + ';">'];
+
+  // Header del Calendario (Fijo arriba)
+  partes.push('<div class="cal-grid-head"><div></div>');
+  
+  for (var h = 0; h < dias.length; h++) {
+    var fd = dias[h], dowh = fd.getDay(), wkh = (dowh===0||dowh===6);
+    var colId = 'col-dia-' + fd.getTime();
+    var lbl = '';
+    
+    if (calVista === 'semana') {
+      var dStr = String(fd.getDate()).padStart(2,'0');
+      var mStr = String(fd.getMonth()+1).padStart(2,'0');
+      lbl = '<div style="font-size:9px; color:var(--muted); line-height:1.2; pointer-events:none;">' + diasSemAbr[dowh] + '</div>' +
+            '<div style="font-weight:bold; font-size:11px; line-height:1.2; pointer-events:none;">' + dStr + '/' + mStr + '</div>';
+    } else {
+      lbl = String(fd.getDate());
+    }
+    
+    partes.push('<div class="cal-day-head ' + colId + (wkh?' cal-weekend':'') + '" onclick="resaltarGantt(\''+colId+'\')" style="cursor:pointer; transition:0.2s; display:flex; flex-direction:column; justify-content:center; align-items:center; padding: 2px 0;">' + lbl + '</div>');
+  }
+  
+  partes.push('</div>'); // Cierra cal-grid-head
+
+  // Filas: una por evento
 
   // Header
   partes.push('<div class="cal-grid-head"><div></div>');
   for (var h = 0; h < dias.length; h++) {
     var fd = dias[h], dowh = fd.getDay(), wkh = (dowh===0||dowh===6);
-    var lbl = (calVista==='semana') ? (diasSemAbr[dowh] + ' ' + fd.getDate() + '/' + (fd.getMonth()+1)) : String(fd.getDate());
-    partes.push('<div class="cal-day-head' + (wkh?' cal-weekend':'') + '">' + lbl + '</div>');
+    var colId = 'col-dia-' + fd.getTime();
+    var lbl = '';
+    
+    if (calVista === 'semana') {
+      var dStr = String(fd.getDate()).padStart(2,'0');
+      var mStr = String(fd.getMonth()+1).padStart(2,'0');
+      // Diseño en dos líneas: Día arriba, Fecha abajo
+      lbl = '<div style="font-size:9px; color:var(--muted); line-height:1.2; pointer-events:none;">' + diasSemAbr[dowh] + '</div>' +
+            '<div style="font-weight:bold; font-size:11px; line-height:1.2; pointer-events:none;">' + dStr + '/' + mStr + '</div>';
+    } else {
+      lbl = String(fd.getDate());
+    }
+    
+    partes.push('<div class="cal-day-head ' + colId + (wkh?' cal-weekend':'') + '" onclick="resaltarGantt(\''+colId+'\')" style="cursor:pointer; transition:0.2s; display:flex; flex-direction:column; justify-content:center; align-items:center; padding: 2px 0;">' + lbl + '</div>');
   }
   partes.push('</div>');
 
@@ -363,13 +421,18 @@ function pintarCalendario() {
     var tooltip = (ev.cliente || '') + ' · ' + (ev.titulo || '') + dur + ' · ' +
                   (ev.estado || 'Pendiente') + ' · ' + (ev.responsable || 'Sin responsable');
 
-    partes.push('<div class="cal-grid-row" title="' + tooltip.replace(/"/g,'&quot;') + '">');
+    // REEMPLAZAR POR:
+    var coloresPrio = { "Emergente": "#f59e0b", "Alta": "#ef4444", "Media": "#3b82f6", "Baja": "#10b981" };
+    var colorBorde = coloresPrio[ev.prioridad] || "transparent";
+
+    partes.push('<div class="cal-grid-row" style="border-left: 3px solid ' + colorBorde + ';" title="' + tooltip.replace(/"/g,'&quot;') + '">');
     partes.push('<div class="cal-cli">' + escapeHtml(clienteCorto) + '<small>' + escapeHtml(titCorto) + '</small></div>');
     for (var c = 0; c < dias.length; c++) {
       var cd = dias[c], dowc = cd.getDay(), wkc = (dowc===0||dowc===6);
       var esHoy = cd.getTime() === hoy.getTime();
       var dentro = (cd >= iniE && cd <= finE);
-      var cls = 'cal-cell';
+      var colIdCell = 'col-dia-' + cd.getTime(); // Agregado el ID para resaltar
+      var cls = 'cal-cell ' + colIdCell;
       if (wkc) cls += ' cal-weekend';
       if (esHoy) cls += ' cal-today';
       if (dentro) cls += ' ' + claseEstado;
@@ -380,7 +443,139 @@ function pintarCalendario() {
 
   partes.push('</div>');
   $('cal-body').innerHTML = partes.join('');
+}*/
+
+function pintarCalendario() {
+  if (!estado || !estado.cronograma) {
+    $('cal-body').innerHTML = '<div class="empty">Sin datos de cronograma.</div>';
+    return;
+  }
+  var nombresMes = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                    'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var mesesAbr = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  var diasSemAbr = ['D','L','M','M','J','V','S'];
+  var hoy = new Date(); hoy.setHours(0,0,0,0);
+
+  // Rango visible (array de Date a medianoche) según vista
+  var dias = [], rangoIni, rangoFin, titulo;
+  if (calVista === 'semana') {
+    rangoIni = _inicioSemana(calRef);
+    for (var i = 0; i < 7; i++) { var dw = new Date(rangoIni); dw.setDate(rangoIni.getDate()+i); dias.push(dw); }
+    rangoFin = new Date(dias[6]); rangoFin.setHours(23,59,59,999);
+    titulo = dias[0].getDate() + ' ' + mesesAbr[dias[0].getMonth()] + ' – ' +
+             dias[6].getDate() + ' ' + mesesAbr[dias[6].getMonth()] + ' ' + dias[6].getFullYear();
+  } else {
+    var y = calRef.getFullYear(), mm = calRef.getMonth();
+    var diasMes = new Date(y, mm+1, 0).getDate();
+    for (var j = 1; j <= diasMes; j++) dias.push(new Date(y, mm, j));
+    rangoIni = new Date(y, mm, 1);
+    rangoFin = new Date(y, mm, diasMes, 23,59,59,999);
+    titulo = nombresMes[mm] + ' ' + y;
+  }
+  $('cal-mes-titulo').innerText = titulo;
+  var colW = (calVista === 'semana') ? '78px' : '22px';
+
+  // Cache key
+  var cacheKey = calVista + '-' + (+rangoIni) + '-' + calEstadoFiltro + '-' +
+                 estado.cronograma.length + '-' + (estado._cronoStamp || 0);
+  if (cacheKey === _calCacheKey) return;
+  _calCacheKey = cacheKey;
+
+  // Filtrar eventos por rango visible + estado
+  var eventos = estado.cronograma.filter(function(d){
+    if (!d.fechaInicio) return false;
+    var ini = new Date(d.fechaInicio); ini.setHours(0,0,0,0);
+    var fin = d.fechaFin ? new Date(d.fechaFin) : new Date(d.fechaInicio); fin.setHours(0,0,0,0);
+    if (fin < rangoIni || ini > rangoFin) return false;
+    if (calEstadoFiltro !== 'all') {
+      var est = String(d.estado||'').toLowerCase();
+      var entregado = est.indexOf('entregado')!==-1;
+      var enCurso = est.indexOf('curso')!==-1 || est.indexOf('proceso')!==-1;
+      var vencido = !entregado && fin < hoy;
+      if (calEstadoFiltro==='ent'   && !entregado) return false;
+      if (calEstadoFiltro==='curso' && !enCurso)   return false;
+      if (calEstadoFiltro==='venc'  && !vencido)   return false;
+      if (calEstadoFiltro==='prog'  && (entregado||enCurso||vencido)) return false;
+    }
+    return true;
+  });
+
+  if (eventos.length === 0) {
+    $('cal-body').innerHTML = '<div class="empty">Sin eventos para ' + titulo +
+      (calEstadoFiltro!=='all' ? ' (con el filtro de estado activo)' : '') + '.</div>';
+    return;
+  }
+  eventos.sort(function(a,b){ return (a.fechaInicio||0) - (b.fechaInicio||0); });
+
+  // 1. INICIA LA CUADRÍCULA DEL CALENDARIO
+  var partes = ['<div class="cal-grid" style="--cal-days:' + dias.length + ';--cal-cw:' + colW + ';">'];
+
+  // 2. HEADER DEL CALENDARIO (Fijo arriba / Solo debe haber UNO)
+  partes.push('<div class="cal-grid-head"><div></div>');
+  
+  for (var h = 0; h < dias.length; h++) {
+    var fd = dias[h], dowh = fd.getDay(), wkh = (dowh===0||dowh===6);
+    var colId = 'col-dia-' + fd.getTime();
+    var lbl = '';
+    
+    if (calVista === 'semana') {
+      var dStr = String(fd.getDate()).padStart(2,'0');
+      var mStr = String(fd.getMonth()+1).padStart(2,'0');
+      lbl = '<div style="font-size:9px; color:var(--muted); line-height:1.2; pointer-events:none;">' + diasSemAbr[dowh] + '</div>' +
+            '<div style="font-weight:bold; font-size:11px; line-height:1.2; pointer-events:none;">' + dStr + '/' + mStr + '</div>';
+    } else {
+      lbl = String(fd.getDate());
+    }
+    
+    partes.push('<div class="cal-day-head ' + colId + (wkh?' cal-weekend':'') + '" onclick="resaltarGantt(\''+colId+'\')" style="cursor:pointer; transition:0.2s; display:flex; flex-direction:column; justify-content:center; align-items:center; padding: 2px 0;">' + lbl + '</div>');
+  }
+  partes.push('</div>'); // Cierra cal-grid-head
+
+  // 3. FILAS DE EVENTOS
+  for (var e = 0; e < eventos.length; e++) {
+    var ev = eventos[e];
+    var iniE = new Date(ev.fechaInicio); iniE.setHours(0,0,0,0);
+    var finE = ev.fechaFin ? new Date(ev.fechaFin) : new Date(ev.fechaInicio); finE.setHours(0,0,0,0);
+    var este = String(ev.estado || '').toLowerCase();
+    var claseEstado;
+    if (este.indexOf('entregado') !== -1) claseEstado = 'cal-bar-ent';
+    else if (este.indexOf('curso') !== -1 || este.indexOf('proceso') !== -1) claseEstado = 'cal-bar-curso';
+    else if (finE < hoy) claseEstado = 'cal-bar-venc';
+    else claseEstado = 'cal-bar-prog';
+
+    var clienteCorto = (ev.cliente || '—').toString().substring(0, 15);
+    var titCorto = (ev.titulo || '').toString().substring(0, 18);
+    var dur = ev.duracion ? ' · ' + ev.duracion + 'd' : '';
+    var tooltip = (ev.cliente || '') + ' · ' + (ev.titulo || '') + dur + ' · ' +
+                  (ev.estado || 'Pendiente') + ' · ' + (ev.responsable || 'Sin responsable');
+
+    // Color de prioridad
+    var coloresPrio = { "Emergente": "#f59e0b", "Alta": "#ef4444", "Media": "#3b82f6", "Baja": "#10b981" };
+    var colorBorde = coloresPrio[ev.prioridad] || "transparent";
+
+    partes.push('<div class="cal-grid-row" style="border-left: 3px solid ' + colorBorde + ';" title="' + tooltip.replace(/"/g,'&quot;') + '">');
+    partes.push('<div class="cal-cli">' + escapeHtml(clienteCorto) + '<small>' + escapeHtml(titCorto) + '</small></div>');
+    
+    // Celdas de los días (dentro de cada fila)
+    for (var c = 0; c < dias.length; c++) {
+      var cd = dias[c], dowc = cd.getDay(), wkc = (dowc===0||dowc===6);
+      var esHoy = cd.getTime() === hoy.getTime();
+      var dentro = (cd >= iniE && cd <= finE);
+      var colIdCell = 'col-dia-' + cd.getTime(); // Agregado el ID para resaltar
+      var cls = 'cal-cell ' + colIdCell;
+      if (wkc) cls += ' cal-weekend';
+      if (esHoy) cls += ' cal-today';
+      if (dentro) cls += ' ' + claseEstado;
+      partes.push('<div class="' + cls + '"></div>');
+    }
+    partes.push('</div>'); // Cierra cal-grid-row
+  }
+
+  // 4. CIERRA LA CUADRÍCULA
+  partes.push('</div>'); // Cierra cal-grid
+  $('cal-body').innerHTML = partes.join('');
 }
+
 
 function setCronPeriodo(v) { cronPeriodo = v || 'semana'; pintarCron(); }
 
@@ -391,6 +586,7 @@ function pintarCron() {
   // 'semana' = semana en curso (lunes-domingo) · 'mes' = mes en curso · 'all' = todo.
   // Los eventos SIN fecha que no están entregados se muestran siempre (tareas
   // activas sin programar no deben ocultarse por el filtro de período).
+  // REEMPLAZAR POR:
   var pIni = null, pFin = null;
   if (cronPeriodo === 'semana') {
     pIni = _inicioSemana(new Date());
@@ -399,6 +595,9 @@ function pintarCron() {
     var hy = new Date();
     pIni = new Date(hy.getFullYear(), hy.getMonth(), 1);
     pFin = new Date(hy.getFullYear(), hy.getMonth()+1, 0, 23,59,59,999);
+  } else if (cronPeriodo === 'hoy') {  // NUEVA LÓGICA DE HOY
+    pIni = new Date(); pIni.setHours(0,0,0,0);
+    pFin = new Date(); pFin.setHours(23,59,59,999);
   }
 
   function enPeriodo(d) {
@@ -570,11 +769,16 @@ function verCargaOperario(i) {
     var cat = d.categoria ? '<div style="color:var(--muted);font-size:10px;">'+escapeHtml(d.categoria)+'</div>' : '';
     // % del cronograma como valor inicial (instantáneo); luego se refresca con el WMS.
     var avCell = '<div id="cav-'+ti+'">'+ _avHTML((Number(d.pct)||0)*100, false, '') +'</div>';
+    // REEMPLAZAR POR:
     var acc='';
     if (d.urlArchivo){
       var wu=(d.wmsUrl?d.wmsUrl:window.location.href.split('?')[0])+'?vista=wms&fileId='+encodeURIComponent(d.fileId||'')+'&cliente='+encodeURIComponent(d.cliente||'')+(P.iniciarFin||P.abrirLibro?'&modo=op':'&modo=auditor');
-      if (P.abrirLibro) acc+='<button class="icon-btn" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="Excel">📊</button>';
-      acc+='<button class="icon-btn" onclick="window.open(\''+wu+'\',\'_blank\')" title="WMS">📦</button>';
+      if (P.abrirLibro) acc+='<button class="icon-btn" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="Abrir Excel">📊</button>';
+      acc+='<button class="icon-btn" onclick="window.open(\''+wu+'\',\'_blank\')" title="Conectar WMS">📦</button>';
+    } else {
+      var alerta = "alert('❌ Operación denegada.\\nEste evento aún no tiene un archivo de trabajo asignado en el cronograma.');";
+      if (P.abrirLibro) acc+='<button class="icon-btn" onclick="'+alerta+'" title="Excel (Sin archivo asignado)">📊</button>';
+      acc+='<button class="icon-btn" onclick="'+alerta+'" title="WMS (Sin archivo asignado)">📦</button>';
     }
     return '<div class="rw" style="grid-template-columns:50px 1fr 84px 92px 56px;gap:6px;">'+
       '<div style="color:var(--muted);font-size:11px;">'+fStr+'</div>'+
@@ -591,6 +795,16 @@ function verCargaOperario(i) {
     ? '<div class="tbl" style="font-size:12px;">'+hdr+'<div class="scroll" style="max-height:50vh;">'+filas+'</div></div>'
     : '<div class="empty">Sin tareas activas para este operario.</div>';
   modalCustom('👤 '+nombre+' · '+tareas.length+' tarea(s) activa(s)', '', cuerpo, 'Cerrar', cerrarModal);
+  // Ocultar botón cancelar solo para este modal (ya que el de confirmación dice "Cerrar")
+  var btnCancelar = document.querySelector('#modal .actions button:first-child');
+  if (btnCancelar) btnCancelar.style.display = 'none';
+  
+  // Restaurar el botón cuando se cierre
+  var oldClose = _modalCb;
+  _modalCb = function() {
+    if (btnCancelar) btnCancelar.style.display = 'inline-block';
+    if (oldClose) oldClose();
+  };
 
   // FIX FASE 8.36: refrescar con el AVANCE EN VIVO del WMS (una sola llamada batch,
   // sin bloquear: el modal ya se mostró con el % del cronograma).
@@ -1200,6 +1414,58 @@ function abrirWizardComoModal() {
   // Si ya existe el modal, no duplicar
   if (document.getElementById('wizard-modal-overlay')) return;
 
+  // Usar URL CANÓNICA (script.google.com), no window.location.href
+  var urlBase = window.__WEBAPP_URL__ || window.location.href.split('?')[0].split('#')[0];
+  var urlWizard = urlBase + (urlBase.indexOf('?') === -1 ? '?' : '&') + 'vista=wizard';
+
+  var modal = document.createElement('div');
+  modal.id = 'wizard-modal-overlay';
+  
+  // FIX: Estilo de ventana Modal centrada tipo Iframe Flotante
+  modal.style.cssText =
+    'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:99998;' +
+    'display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);';
+
+  modal.innerHTML =
+    '<div style="background:#131c2e; border:1px solid #283352; border-radius:14px; width:100%; max-width:1150px; height:92vh; max-height:850px; display:flex; flex-direction:column; overflow:hidden; box-shadow: 0 10px 35px rgba(0,0,0,0.6);">' +
+      '<div style="background:#0b1220;color:#e8ecf3;padding:14px 20px;display:flex;' +
+      'justify-content:space-between;align-items:center;border-bottom:1px solid #283352;flex-shrink:0;">' +
+        '<div style="font-size:15px;font-weight:600;display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">📦</span> Asistente de Creación de Inventario</div>' +
+        '<button id="wizard-modal-close" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;' +
+        'padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">✕ Cerrar ventana</button>' +
+      '</div>' +
+      '<div id="wizard-modal-loader" style="position:absolute;inset:56px 0 0 0;background:#0b1220;color:#e8ecf3;' +
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:system-ui,sans-serif;text-align:center;z-index:10;">' +
+        '<div style="width:42px;height:42px;border:3px solid #283352;border-top-color:#3b82f6;border-radius:50%;' +
+        'animation:wiz-spin 1s linear infinite;margin-bottom:14px;"></div>' +
+        '<div style="font-size:14px;font-weight:600;margin-bottom:4px;">Cargando asistente...</div>' +
+        '<div style="font-size:11px;color:#94a3b8;">Conectando con Drive y Base de datos</div>' +
+        '<style>@keyframes wiz-spin { to { transform: rotate(360deg); } }</style>' +
+      '</div>' +
+      '<iframe id="wizard-modal-iframe" src="' + urlWizard + '" ' +
+      'style="flex:1;border:none;background:#0b1220;width:100%;" ' +
+      'onload="document.getElementById(\'wizard-modal-loader\').style.display=\'none\';"></iframe>' +
+    '</div>';
+
+  document.body.appendChild(modal);
+
+  document.getElementById('wizard-modal-close').onclick = function() {
+    if (confirm('¿Cerrar el asistente? Los datos sin guardar se perderán.')) {
+      cerrarWizardModal();
+    }
+  };
+
+  // Permitir cerrar con ESC
+  var escHandler = function(ev) {
+    if (ev.key === 'Escape') { cerrarWizardModal(); document.removeEventListener('keydown', escHandler); }
+  };
+  document.addEventListener('keydown', escHandler);
+}
+
+/*function abrirWizardComoModal() {
+  // Si ya existe el modal, no duplicar
+  if (document.getElementById('wizard-modal-overlay')) return;
+
   // FIX FASE 8.3: Usar URL CANÓNICA (script.google.com), no window.location.href
   // que devuelve el dominio sandbox (googleusercontent.com) y causa pantalla blanca.
   var urlBase = window.__WEBAPP_URL__ || window.location.href.split('?')[0].split('#')[0];
@@ -1245,7 +1511,7 @@ function abrirWizardComoModal() {
   document.addEventListener('keydown', escHandler);
 
   toast('Wizard cargado en pantalla. Procesa para crear el inventario.', 'info');
-}
+}*/
 
 function cerrarWizardModal() {
   var m = document.getElementById('wizard-modal-overlay');
@@ -1395,4 +1661,26 @@ document.addEventListener('keydown', function(e){
   }
   if (e.key === 'Escape' && $('modal').classList.contains('show')) cerrarModal();
 });
+/* Función para resaltar la columna del calendario al hacer clic */
+function resaltarGantt(colId) {
+  // 1. Limpiar los resaltados anteriores
+  document.querySelectorAll('.cal-resaltada').forEach(function(el) {
+    el.classList.remove('cal-resaltada');
+    el.style.boxShadow = '';
+    el.style.backgroundColor = ''; 
+  });
+  
+  // 2. Aplicar el marco a la nueva columna seleccionada
+  document.querySelectorAll('.' + colId).forEach(function(el) {
+    el.classList.add('cal-resaltada');
+    
+    // Si la celda NO tiene una tarea asignada (no tiene clases cal-bar-...), le damos fondo azul tenue
+    if (el.className.indexOf('cal-bar-') === -1) {
+      el.style.backgroundColor = 'rgba(59, 130, 246, 0.10)'; 
+    }
+    
+    // A TODAS (incluyendo las tareas) les ponemos un marco azul elegante
+    el.style.boxShadow = 'inset 0 0 0 2px #3b82f6'; 
+  });
+}
 </script>
