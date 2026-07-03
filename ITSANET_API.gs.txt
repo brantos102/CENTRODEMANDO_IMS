@@ -259,7 +259,9 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
   var rep = { totalLeidas: arr.length, incluidas:0, excluidas:0, filtradasPorCliente:0,
               cantidadInvalidas:0, cantidadCero:0, skuVacio:0, skuConCharsExtranios:[],
               skuSospechosamenteCortos:[], seriesDuplicadasHistorico:[], seriesDuplicadasEnCSV:[],
-              filasIdenticasDuplicadas:0, sumaCantidad:0, skusUnicosCount:0, clientesDetalle:[] };
+              filasIdenticasDuplicadas:0, sumaCantidad:0, skusUnicosCount:0, clientesDetalle:[],
+              // FIX FASE 8.54: métricas de la regla 1 SERIE = 1 UNIDAD (paridad con carga CSV 8.22)
+              filasConSerie:0, filasSinSerie:0, seriesDuplicadas:0, cantidadAjustada:0 };
   var skusUnicos={}, clientes={}, seriesVistas={}, grupos={}, orden=[];
 
   for (var i=0;i<arr.length;i++){
@@ -278,12 +280,39 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
     var cant = parseFloat(f[16]); if (isNaN(cant)) cant=0;
     if (cant<0){ rep.cantidadInvalidas++; rep.excluidas++; continue; }
     if (cant===0) rep.cantidadCero++;
-    var serie = String(f[8]||"").toUpperCase();
-    if (serie && serie!=="0" && serie!=="N/A"){
+
+    /* ══════════════════════════════════════════════════════════════════
+       FIX FASE 8.54: REGLA 1 SERIE = 1 UNIDAD — MISMA LEY que la carga
+       CSV (FIX FASE 8.22 de AsistenteCreacionV2):
+       · Fila CON serie → es un ítem físico ÚNICO: cantidad forzada a 1 y
+         NUNCA se agrupa con otras. Duplicado exacto (misma serie+sku+
+         lote+posición) → se conserva la 1ª y se omite el resto.
+       · Fila SIN serie → consolidación histórica (agrupa por SKU+lote+
+         despacho+partida+posición y suma cantidades), igual que antes.
+       Series "0"/"N/A" se tratan como SIN serie (placeholders del ERP).
+       ══════════════════════════════════════════════════════════════════ */
+    var serie = String(f[8]||"").trim().toUpperCase();
+    var tieneSerie = !!(serie && serie!=="0" && serie!=="N/A");
+    var key;
+
+    if (tieneSerie){
+      if (cant !== 1){ rep.cantidadAjustada++; cant = 1; }
+      // Aviso de serie repetida en el lote extraído (misma semántica que el CSV)
       if (seriesVistas[serie]){ if (rep.seriesDuplicadasEnCSV.length<50) rep.seriesDuplicadasEnCSV.push({sku:sku, serie:serie}); }
       else seriesVistas[serie]=true;
+
+      key = 'S§'+f[6]+'|'+serie+'|'+f[9]+'|'+f[14];
+      if (grupos[key]){ rep.seriesDuplicadas++; continue; } // duplicado exacto → omitir
+      rep.filasConSerie++;
+      f[16]=cant; grupos[key]=f; orden.push(key);
+      rep.incluidas++; skusUnicos[sku]=true;
+      rep.sumaCantidad += cant;
+      continue;
     }
-    var key = f[6]+'|'+f[14]+'|'+f[8]+'|'+f[9]+'|'+f[10]+'|'+f[11];
+
+    // Sin serie → consolidación histórica (comportamiento previo intacto)
+    rep.filasSinSerie++;
+    key = 'N§'+f[6]+'|'+f[9]+'|'+f[10]+'|'+f[11]+'|'+f[14];
     if (grupos[key]){ grupos[key][16] = (parseFloat(grupos[key][16])||0) + cant; rep.filasIdenticasDuplicadas++; }
     else { f[16]=cant; grupos[key]=f; orden.push(key); rep.incluidas++; skusUnicos[sku]=true; }
     rep.sumaCantidad += cant;

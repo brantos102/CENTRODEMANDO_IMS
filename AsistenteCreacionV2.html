@@ -684,14 +684,28 @@
     /* ===== FUENTE ===== */
     function cambiarFuente() {
       const f = document.querySelector('input[name="fuente"]:checked').value;
+      const fPrev = estado.fuente;   // FIX FASE 8.54: fuente anterior
       estado.fuente = f;
       document.querySelectorAll('input[name="fuente"]').forEach(r => {
         r.closest('.radio-mini').classList.toggle('selected', r.checked);
       });
-      
+
       const isData = (f === 'CSV' || f === 'API');
       $('data-zone').style.display = isData ? 'block' : 'none';
-      
+
+      // FIX FASE 8.54: al alternar ENTRE CSV y API se limpian los datos ya
+      // cargados/validados — evita crear un archivo con datos de la fuente
+      // anterior marcados como válidos.
+      if (isData && fPrev && fPrev !== f && (fPrev === 'CSV' || fPrev === 'API')) {
+        estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
+        var inpCsvF = document.getElementById('csv-upload');
+        if (inpCsvF) inpCsvF.value = '';
+        $('csv-status-box').innerHTML = '';
+        $('val-report-box').innerHTML = '';
+        var btnReF = document.getElementById('btn-revalidar');
+        if (btnReF) btnReF.style.display = 'none';
+      }
+
       if (isData) {
         if (f === 'API') {
           $('csv-upload-box').style.display = 'none';
@@ -746,12 +760,15 @@
         estado.csvData = res.datosLimpios; 
         estado.csvAplicado = true;
 
-        // 2. Simulamos las métricas de serie (la API entrega la data ya consolidada)
+        // 2. FIX FASE 8.54: métricas de serie REALES desde el backend
+        // (previsualizarStockItsanet ahora aplica la regla 1 SERIE = 1 UNIDAD,
+        // igual que la carga CSV). Fallback a los valores previos si el .gs
+        // desplegado aún no envía los campos nuevos.
         estado.csvSerieMetrics = {
-          filasConSerie: 0,
-          filasSinSerie: res.reporte.incluidas,
-          seriesDuplicadas: 0,
-          cantidadAjustada: 0,
+          filasConSerie: res.reporte.filasConSerie || 0,
+          filasSinSerie: (res.reporte.filasSinSerie != null) ? res.reporte.filasSinSerie : res.reporte.incluidas,
+          seriesDuplicadas: res.reporte.seriesDuplicadas || 0,
+          cantidadAjustada: res.reporte.cantidadAjustada || 0,
           totalUnidades: res.reporte.sumaCantidad
         };
 
@@ -775,11 +792,24 @@
           varianteHtml = '<span class="csv-metric" style="border-color:#3b82f6;color:#bfdbfe;background:rgba(59,130,246,0.10);">🏷 <b>' + variantesSufijoCount + '</b> variantes con sufijo' + (ejemplo ? ' <small style="opacity:0.8;display:block;font-family:ui-monospace,monospace;margin-top:2px;">ej: ' + ejemplo + '</small>' : '') + '</span>';
         }
 
+        // FIX FASE 8.54: chips de series (paridad visual con la carga CSV)
+        let serieHtml = '';
+        if (estado.csvSerieMetrics.filasConSerie > 0) {
+          serieHtml += '<span class="csv-metric">🔢 <b>' + estado.csvSerieMetrics.filasConSerie + '</b> con serie (1 serie = 1 und)</span>';
+        }
+        if (estado.csvSerieMetrics.cantidadAjustada > 0) {
+          serieHtml += '<span class="csv-metric" style="border-color:#f59e0b;color:#fcd34d;background:rgba(245,158,11,0.10);">⚙ <b>' + estado.csvSerieMetrics.cantidadAjustada + '</b> cantidades ajustadas a 1 por serie</span>';
+        }
+        if (estado.csvSerieMetrics.seriesDuplicadas > 0) {
+          serieHtml += '<span class="csv-metric" style="border-color:#ef4444;color:#fca5a5;background:rgba(239,68,68,0.10);">⚠ <b>' + estado.csvSerieMetrics.seriesDuplicadas + '</b> series duplicadas omitidas</span>';
+        }
+
         $('csv-status-box').innerHTML =
           '<div class="csv-status ok">' +
             '<b>✓ Datos de API ITSANET extraídos</b><br>' +
             '<span class="csv-metric"><b>' + estado.csvData.length + '</b> filas obtenidas</span>' +
             '<span class="csv-metric"><b>' + Math.round(res.reporte.sumaCantidad).toLocaleString() + '</b> unidades totales</span>' +
+            serieHtml +
             varianteHtml +
           '</div>';
 
@@ -1337,6 +1367,10 @@
       if (!estado.folderId || estado.folderId === 'VIRTUAL_ROOT') problemas.push('carpeta');
       if (f === 'CSV' && !estado.csvAplicado) problemas.push('cargar CSV');
       if (f === 'CSV' && estado.csvAplicado && !estado.csvValidado) problemas.push('validar CSV');
+      // FIX FASE 8.54: la fuente API exige EXTRAER stock y VALIDARLO antes de
+      // procesar (antes el botón se habilitaba sin datos → archivo vacío).
+      if (f === 'API' && !estado.csvAplicado) problemas.push('extraer stock API');
+      if (f === 'API' && estado.csvAplicado && !estado.csvValidado) problemas.push('validar datos API');
 
       if (!estado.modo) problemas.push('elegir vinculación');
       else if (estado.modo === 'asignar' && !estado.filaEvento) problemas.push('seleccionar evento');
@@ -1407,6 +1441,10 @@
 
     /* ===== PROCESAR ===== */
     function procesar() {
+      // FIX FASE 8.54: guard real anti doble-envío (la bandera existía pero
+      // nunca se activaba). Se libera en éxito y en error.
+      if (window.isProcessingFile) return;
+      window.isProcessingFile = true;
       const btn = $('btn-procesar');
       btn.disabled = true;
       setStatus('Creando archivo…');
@@ -1556,12 +1594,14 @@
               google.script.run
                 .withSuccessHandler(res => mostrarModalPostCreacion(res))
                 .withFailureHandler(err2 => {
+                  window.isProcessingFile = false; // FIX FASE 8.54
                   setStatus('❌ ' + err2.message, 'err');
                   alert('Error: ' + err2.message);
                   btn.disabled = false;
                 })
                 .procesarCreacionArchivoConValidacion(reintento);
             } else {
+              window.isProcessingFile = false; // FIX FASE 8.54
               setStatus('Cancelado por el usuario.', 'err');
               btn.disabled = false;
             }
@@ -1576,6 +1616,7 @@
 
     /* ===== Modal post-creación con opciones WMS + QR ===== */
     function mostrarModalPostCreacion(res) {
+      window.isProcessingFile = false; // FIX FASE 8.54: liberar bandera al terminar
       let resumen = '';
       if (res.vinculo) resumen += '<div style="color:#22c55e;font-size:12px;margin-bottom:6px;">✓ Vinculado al cronograma (' + res.vinculo.tipo + ', fila ' + res.vinculo.fila + ')</div>';
       if (res.vinculoError) resumen += '<div style="color:#fbbf24;font-size:12px;margin-bottom:6px;">⚠ Vinculación al cronograma falló: ' + res.vinculoError + '</div>';

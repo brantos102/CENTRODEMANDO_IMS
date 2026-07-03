@@ -1646,7 +1646,13 @@ function modalCustom(titulo, msg, bodyHtml, okText, callback, danger) {
   $('modal-ok').onclick = function(){ if (_modalCb) { var r = _modalCb(); /* si devuelve false no cierra */ } };
   $('modal').classList.add('show');
 }
-function cerrarModal(){ $('modal').classList.remove('show'); _modalCb=null; }
+function cerrarModal(){
+  $('modal').classList.remove('show'); _modalCb=null;
+  // FIX FASE 8.54: si un modal ocultó su botón Cancelar (p.ej. carga por operario)
+  // y se cerró con Escape/X, restaurarlo para el siguiente modal.
+  var bcanc = document.querySelector('#modal .actions button:first-child');
+  if (bcanc) bcanc.style.display = 'inline-block';
+}
 
 function toast(msg, type) {
   var t = $('toast'); t.innerText = msg; t.className = type||''; t.classList.add('show');

@@ -2692,10 +2692,15 @@ function validarCSVAvanzado(csvData, clienteSeleccionado) {
     var serie = String(r[8]  || "").trim().toUpperCase();
     var cli   = String(r[4]  || "").trim().toUpperCase();
     var cant  = r[16];
-    var lote  = String(r[7] || "").trim();
-    var despacho = String(r[2] || "").trim();
-    var partida = String(r[3] || "").trim();
-    var posicion = String(r[5] || "").trim();
+    // FIX FASE 8.54: índices corregidos al formato rM (17 col) que envían
+    // AMBOS flujos del wizard (parsearCSV y extraerDesdeAPI):
+    // [7]=Descripción · [9]=Lote · [10]=Despacho · [11]=Partida · [14]=Posición.
+    // Antes se leían índices del CSV crudo → el contador de duplicados exactos
+    // (solo advertencia, no excluye) podía contar mal.
+    var lote  = String(r[9] || "").trim();
+    var despacho = String(r[10] || "").trim();
+    var partida = String(r[11] || "").trim();
+    var posicion = String(r[14] || "").trim();
 
     // Cliente: registramos para reporte
     if (cli) rep.clientesEncontrados[cli] = (rep.clientesEncontrados[cli] || 0) + 1;
