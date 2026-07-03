@@ -334,6 +334,17 @@
             </div>
           </div>
 
+          <!-- FASE 8.56: mes de conteo → sugiere los códigos programados del cliente -->
+          <div class="field" id="api-mes-box" style="display:none;">
+            <label>Mes de conteo (cronograma de códigos)</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select id="mesExtraccion" style="flex:1;"></select>
+              <button type="button" onclick="sugerirCodigosDelMes()"
+                      style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:8px 12px;border-radius:5px;font-size:11px;cursor:pointer;white-space:nowrap;">📅 Sugerir códigos</button>
+            </div>
+            <div id="mes-sugerencia-info" style="font-size:11px;color:var(--muted);margin-top:4px;"></div>
+          </div>
+
           <div class="field">
             <label>Filtrar SKUs (opcional)</label>
             <textarea id="filtroCodigos" rows="2"
@@ -710,10 +721,13 @@
         if (f === 'API') {
           $('csv-upload-box').style.display = 'none';
           $('api-upload-box').style.display = 'flex';
+          $('api-mes-box').style.display = 'block';   // FASE 8.56
+          _poblarMesExtraccion();                      // FASE 8.56
           $('data-zone-title').innerHTML = '<span class="step-num">2</span> Extracción y validación API <small id="csv-cache-status"></small>';
         } else {
           $('csv-upload-box').style.display = 'flex';
           $('api-upload-box').style.display = 'none';
+          $('api-mes-box').style.display = 'none';     // FASE 8.56
           $('data-zone-title').innerHTML = '<span class="step-num">2</span> Carga y validación CSV <small id="csv-cache-status"></small>';
         }
       }
@@ -772,54 +786,227 @@
           totalUnidades: res.reporte.sumaCantidad
         };
 
-        let variantesSufijoCount = 0;
-        const variantesPorRaiz = {};
-        estado.csvData.forEach(r => {
-          const sku = String(r[6] || '').toUpperCase();
-          if (sku.indexOf('_') !== -1) {
-            variantesSufijoCount++;
-            const raiz = sku.split('_')[0];
-            if (!variantesPorRaiz[raiz]) variantesPorRaiz[raiz] = [];
-            variantesPorRaiz[raiz].push(sku);
+        // 3. FASE 8.56: detectar códigos devueltos que NO están en la lista
+        // solicitada (variantes de otros meses, ej. DG100 → DG100GR de julio).
+        // Si hay, abrir la ventana de decisión ANTES de pintar y validar.
+        const solicitadosRaw = $('filtroCodigos').value.trim();
+        if (solicitadosRaw) {
+          const setSolic = new Set(solicitadosRaw.split(/[\s,;\n\r\t]+/)
+            .map(s => s.trim().toUpperCase()).filter(Boolean));
+          const extra = {};
+          estado.csvData.forEach(r => {
+            const sku = String(r[6] || '').toUpperCase();
+            if (sku && !setSolic.has(sku)) {
+              if (!extra[sku]) extra[sku] = { filas: 0, unidades: 0 };
+              extra[sku].filas++;
+              extra[sku].unidades += (parseFloat(r[16]) || 0);
+            }
+          });
+          if (Object.keys(extra).length > 0) {
+            abrirModalVariantesMes(extra);
+            return; // continúa en aplicarVariantesMes()
           }
-        });
-        estado.csvMeta = { variantesSufijoCount, variantesPorRaiz };
-
-        let varianteHtml = '';
-        if (variantesSufijoCount > 0) {
-          const raizEjemplo = Object.keys(variantesPorRaiz).sort((a, b) => variantesPorRaiz[b].length - variantesPorRaiz[a].length)[0];
-          const ejemplo = raizEjemplo ? raizEjemplo + ' → ' + variantesPorRaiz[raizEjemplo].slice(0, 3).join(', ') + (variantesPorRaiz[raizEjemplo].length > 3 ? ', …' : '') : '';
-          varianteHtml = '<span class="csv-metric" style="border-color:#3b82f6;color:#bfdbfe;background:rgba(59,130,246,0.10);">🏷 <b>' + variantesSufijoCount + '</b> variantes con sufijo' + (ejemplo ? ' <small style="opacity:0.8;display:block;font-family:ui-monospace,monospace;margin-top:2px;">ej: ' + ejemplo + '</small>' : '') + '</span>';
         }
 
-        // FIX FASE 8.54: chips de series (paridad visual con la carga CSV)
-        let serieHtml = '';
-        if (estado.csvSerieMetrics.filasConSerie > 0) {
-          serieHtml += '<span class="csv-metric">🔢 <b>' + estado.csvSerieMetrics.filasConSerie + '</b> con serie (1 serie = 1 und)</span>';
-        }
-        if (estado.csvSerieMetrics.cantidadAjustada > 0) {
-          serieHtml += '<span class="csv-metric" style="border-color:#f59e0b;color:#fcd34d;background:rgba(245,158,11,0.10);">⚙ <b>' + estado.csvSerieMetrics.cantidadAjustada + '</b> cantidades ajustadas a 1 por serie</span>';
-        }
-        if (estado.csvSerieMetrics.seriesDuplicadas > 0) {
-          serieHtml += '<span class="csv-metric" style="border-color:#ef4444;color:#fca5a5;background:rgba(239,68,68,0.10);">⚠ <b>' + estado.csvSerieMetrics.seriesDuplicadas + '</b> series duplicadas omitidas</span>';
-        }
-
-        $('csv-status-box').innerHTML =
-          '<div class="csv-status ok">' +
-            '<b>✓ Datos de API ITSANET extraídos</b><br>' +
-            '<span class="csv-metric"><b>' + estado.csvData.length + '</b> filas obtenidas</span>' +
-            '<span class="csv-metric"><b>' + Math.round(res.reporte.sumaCantidad).toLocaleString() + '</b> unidades totales</span>' +
-            serieHtml +
-            varianteHtml +
-          '</div>';
-
-        // 3. Ejecutamos la validación estándar contra el histórico 
-        // (Esto activa el recuadro verde/rojo exactamente igual que el CSV)
-        validarBackend();
+        // 4. Sin variantes extra → pintar y validar directo
+        _pintarStatusApiYValidar('');
 
       }).withFailureHandler(err => {
         $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error de conexión API: ' + (err.message || err) + '</div>';
       }).previsualizarStockItsanet(cli, filtros, incluirVariantes);
+    }
+
+    /* ===== FASE 8.56: status + validación (métricas SIEMPRE desde los datos finales) ===== */
+    function _pintarStatusApiYValidar(notaExtra) {
+      const filas = estado.csvData.length;
+      let unidades = 0, conSerie = 0;
+      estado.csvData.forEach(r => {
+        unidades += (parseFloat(r[16]) || 0);
+        const s = String(r[8] || '').trim().toUpperCase();
+        if (s && s !== '0' && s !== 'N/A') conSerie++;
+      });
+      estado.csvSerieMetrics.totalUnidades = unidades;
+      estado.csvSerieMetrics.filasConSerie = conSerie;
+      estado.csvSerieMetrics.filasSinSerie = filas - conSerie;
+
+      let variantesSufijoCount = 0;
+      const variantesPorRaiz = {};
+      estado.csvData.forEach(r => {
+        const sku = String(r[6] || '').toUpperCase();
+        if (sku.indexOf('_') !== -1) {
+          variantesSufijoCount++;
+          const raiz = sku.split('_')[0];
+          if (!variantesPorRaiz[raiz]) variantesPorRaiz[raiz] = [];
+          variantesPorRaiz[raiz].push(sku);
+        }
+      });
+      estado.csvMeta = { variantesSufijoCount, variantesPorRaiz };
+
+      let varianteHtml = '';
+      if (variantesSufijoCount > 0) {
+        const raizEjemplo = Object.keys(variantesPorRaiz).sort((a, b) => variantesPorRaiz[b].length - variantesPorRaiz[a].length)[0];
+        const ejemplo = raizEjemplo ? raizEjemplo + ' → ' + variantesPorRaiz[raizEjemplo].slice(0, 3).join(', ') + (variantesPorRaiz[raizEjemplo].length > 3 ? ', …' : '') : '';
+        varianteHtml = '<span class="csv-metric" style="border-color:#3b82f6;color:#bfdbfe;background:rgba(59,130,246,0.10);">🏷 <b>' + variantesSufijoCount + '</b> variantes con sufijo' + (ejemplo ? ' <small style="opacity:0.8;display:block;font-family:ui-monospace,monospace;margin-top:2px;">ej: ' + ejemplo + '</small>' : '') + '</span>';
+      }
+
+      let serieHtml = '';
+      if (conSerie > 0) {
+        serieHtml += '<span class="csv-metric">🔢 <b>' + conSerie + '</b> con serie (1 serie = 1 und)</span>';
+      }
+      if (estado.csvSerieMetrics.cantidadAjustada > 0) {
+        serieHtml += '<span class="csv-metric" style="border-color:#f59e0b;color:#fcd34d;background:rgba(245,158,11,0.10);">⚙ <b>' + estado.csvSerieMetrics.cantidadAjustada + '</b> cantidades ajustadas a 1 por serie</span>';
+      }
+      if (estado.csvSerieMetrics.seriesDuplicadas > 0) {
+        serieHtml += '<span class="csv-metric" style="border-color:#ef4444;color:#fca5a5;background:rgba(239,68,68,0.10);">⚠ <b>' + estado.csvSerieMetrics.seriesDuplicadas + '</b> series duplicadas omitidas</span>';
+      }
+
+      $('csv-status-box').innerHTML =
+        '<div class="csv-status ok">' +
+          '<b>✓ Datos de API ITSANET extraídos</b>' + (notaExtra || '') + '<br>' +
+          '<span class="csv-metric"><b>' + filas + '</b> filas obtenidas</span>' +
+          '<span class="csv-metric"><b>' + Math.round(unidades).toLocaleString() + '</b> unidades totales</span>' +
+          serieHtml +
+          varianteHtml +
+        '</div>';
+
+      // Validación estándar contra el histórico (mismo recuadro que el CSV)
+      validarBackend();
+    }
+
+    /* ===== FASE 8.56: mes de conteo + sugerencia de códigos programados ===== */
+    const MESES_CC = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO',
+                      'JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+
+    function _poblarMesExtraccion() {
+      const sel = document.getElementById('mesExtraccion');
+      if (!sel || sel.options.length) return;
+      MESES_CC.forEach((m, i) => {
+        const o = document.createElement('option');
+        o.value = m; o.textContent = m;
+        if (i === new Date().getMonth()) o.selected = true; // mes actual por defecto
+        sel.appendChild(o);
+      });
+    }
+
+    function sugerirCodigosDelMes() {
+      const cli = $('cliente').value.trim();
+      if (!cli) {
+        $('mes-sugerencia-info').innerHTML = '<span style="color:#fbbf24;">⚠ Indica el cliente en el Paso 1.</span>';
+        return;
+      }
+      _poblarMesExtraccion();
+      const mes = $('mesExtraccion').value;
+      const txtActual = $('filtroCodigos').value.trim();
+      if (txtActual && !confirm('La lista de códigos ya tiene contenido.\n¿Reemplazarla con los códigos programados de ' + mes + '?')) return;
+
+      $('mes-sugerencia-info').innerHTML = '⏳ Consultando cronograma de códigos…';
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.existe) {
+          estado.mesCodigosSugeridos = null;
+          $('mes-sugerencia-info').innerHTML =
+            '<span style="color:#fbbf24;">⚠ ' + cli.toUpperCase() + ' no tiene cronograma de códigos cargado. ' +
+            'Pídele al Coordinador cargarlo (Panel → 📅 Cronograma de códigos) o escribe los códigos manualmente.</span>';
+          return;
+        }
+        $('filtroCodigos').value = res.codigos.join('\n');
+        estado.mesCodigosSugeridos = { mes: res.mes, total: res.total };
+        const abcTxt = Object.keys(res.abc || {}).sort().map(k => k + ':' + res.abc[k]).join(' · ');
+        $('mes-sugerencia-info').innerHTML =
+          '<span style="color:#22c55e;">✓ <b>' + res.total + '</b> códigos programados de <b>' + res.mes + '</b>' +
+          (abcTxt ? ' (' + abcTxt + ')' : '') + ' — edita la lista (añadir/quitar) si lo necesitas y luego extrae.</span>';
+        validar();
+      }).withFailureHandler(err => {
+        $('mes-sugerencia-info').innerHTML = '<span style="color:#fca5a5;">❌ ' + (err.message || err) + '</span>';
+      }).obtenerCodigosProgramados(cli, mes);
+    }
+
+    /* ===== FASE 8.56: ventana de variantes fuera de la lista solicitada ===== */
+    let _variantesPendientes = null;
+
+    function abrirModalVariantesMes(extra) {
+      _variantesPendientes = extra;
+      const skus = Object.keys(extra).sort();
+      const mesSel = (document.getElementById('mesExtraccion') && $('mesExtraccion').value) || '';
+
+      const rows = skus.map(sku => {
+        const e = extra[sku];
+        return '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #1c2740;cursor:pointer;font-size:12px;">' +
+          '<input type="checkbox" class="chk-var-mes" value="' + sku + '">' +
+          '<span style="flex:1;font-family:ui-monospace,monospace;">' + sku + '</span>' +
+          '<span style="color:var(--muted);font-size:11px;white-space:nowrap;">' + e.filas + ' fila(s) · ' + Math.round(e.unidades).toLocaleString() + ' und</span>' +
+          '<span class="var-mes-info" data-sku="' + sku + '" style="font-size:10px;color:var(--muted);min-width:96px;text-align:right;">…</span>' +
+        '</label>';
+      }).join('');
+
+      const ov = document.createElement('div');
+      ov.id = 'modal-variantes-mes';
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      ov.innerHTML =
+        '<div style="background:#131c2e;border:1px solid #283352;border-radius:12px;max-width:580px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">' +
+          '<div style="padding:12px 16px;border-bottom:1px solid #283352;">' +
+            '<div style="font-weight:600;font-size:14px;">🏷 Códigos adicionales encontrados (' + skus.length + ')</div>' +
+            '<div style="font-size:11px;color:var(--muted);margin-top:4px;">La API devolvió códigos que <b>NO están en tu lista solicitada</b>' +
+            (mesSel ? ' del mes de <b>' + mesSel + '</b>' : '') +
+            '. Marca los que SÍ deben incluirse en el archivo; los desmarcados se excluyen. ' +
+            '<span style="color:#fbbf24;">⚠ = programado para otro mes.</span></div>' +
+          '</div>' +
+          '<div style="padding:6px 12px;font-size:11px;border-bottom:1px solid #1c2740;">' +
+            '<a href="#" onclick="document.querySelectorAll(\'.chk-var-mes\').forEach(function(c){c.checked=true;});return false;" style="color:var(--accent);margin-right:14px;">Marcar todas</a>' +
+            '<a href="#" onclick="document.querySelectorAll(\'.chk-var-mes\').forEach(function(c){c.checked=false;});return false;" style="color:var(--accent);">Desmarcar todas</a>' +
+          '</div>' +
+          '<div style="overflow-y:auto;flex:1;">' + rows + '</div>' +
+          '<div style="padding:10px 16px;border-top:1px solid #283352;display:flex;justify-content:flex-end;">' +
+            '<button type="button" onclick="aplicarVariantesMes()" style="background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Aplicar y continuar</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(ov);
+
+      // Enriquecer con los meses programados del cronograma del cliente:
+      // si la variante SÍ pertenece al mes seleccionado → se marca por defecto.
+      const cli = $('cliente').value.trim();
+      google.script.run.withSuccessHandler(mapa => {
+        document.querySelectorAll('.var-mes-info').forEach(el => {
+          const sku = el.getAttribute('data-sku');
+          const meses = mapa && mapa[sku];
+          if (meses && meses.length) {
+            const esDelMes = mesSel && meses.indexOf(mesSel) !== -1;
+            el.innerHTML = esDelMes
+              ? '<span style="color:#22c55e;">📅 ' + meses.join(', ') + '</span>'
+              : '<span style="color:#fbbf24;">📅 ' + meses.join(', ') + ' ⚠</span>';
+            if (esDelMes) {
+              const chk = el.closest('label').querySelector('.chk-var-mes');
+              if (chk) chk.checked = true;
+            }
+          } else {
+            el.innerHTML = '<span style="color:var(--muted);">sin cronograma</span>';
+          }
+        });
+      }).withFailureHandler(() => {
+        document.querySelectorAll('.var-mes-info').forEach(el => { el.innerHTML = ''; });
+      }).obtenerMesesDeCodigos(cli, skus);
+    }
+
+    function aplicarVariantesMes() {
+      const incluidas = new Set();
+      document.querySelectorAll('.chk-var-mes:checked').forEach(c => incluidas.add(c.value));
+      const excluir = new Set(Object.keys(_variantesPendientes || {}).filter(s => !incluidas.has(s)));
+      const ov = document.getElementById('modal-variantes-mes');
+      if (ov) ov.remove();
+      _variantesPendientes = null;
+
+      let nota = '';
+      if (excluir.size > 0) {
+        const antes = estado.csvData.length;
+        estado.csvData = estado.csvData.filter(r => !excluir.has(String(r[6] || '').toUpperCase()));
+        nota = ' <span style="color:#fbbf24;font-size:11px;">(' + excluir.size + ' código(s) excluidos · ' + (antes - estado.csvData.length) + ' fila(s))</span>';
+      }
+      if (estado.csvData.length === 0) {
+        estado.csvAplicado = false; estado.csvValidado = null;
+        $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Todos los códigos extraídos fueron excluidos. Ajusta la lista de códigos y vuelve a extraer.</div>';
+        validar();
+        return;
+      }
+      _pintarStatusApiYValidar(nota);
     }
 
     /* Renombramos revalidarCSV a revalidarDatos para que sirva para API y CSV */

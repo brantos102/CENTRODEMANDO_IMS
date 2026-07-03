@@ -322,6 +322,195 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
   rep.clientesDetalle = Object.keys(clientes).map(function(k){ return {cliente:k, filas:clientes[k]}; }).sort(function(a,b){ return b.filas-a.filas; });
   
   if (!datosLimpios.length) throw new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de Quito.');
-  
+
   return { datosLimpios: datosLimpios, reporte: rep };
+}
+
+
+/* ===========================================================================
+   FASE 8.56 — CRONOGRAMA DE CÓDIGOS POR MES (conteos cíclicos por cliente)
+   ---------------------------------------------------------------------------
+   Hoja única CRONOGRAMA_CODIGOS: CLIENTE | CODIGO | ABC | ENERO … DICIEMBRE
+   · Multi-cliente (20+ y crecederos) en UNA sola hoja del maestro.
+   · Actualización por REEMPLAZO del bloque del cliente (solo Coordinador,
+     desde el panel — gate _requiereRol en el servidor).
+   · La hoja queda PROTEGIDA: nadie la edita a mano; el sistema escribe como
+     dueño del proyecto (executeAs USER_DEPLOYING).
+   =========================================================================== */
+
+var CRONCOD_HOJA  = "CRONOGRAMA_CODIGOS";
+var CRONCOD_MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
+                     "JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
+
+function _ssCronCod() {
+  // _getSS() (del Centro de Mando) si existe; fallback al libro activo.
+  return (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+}
+
+function _asegurarHojaCronCodigos() {
+  var ss = _ssCronCod();
+  var sh = ss.getSheetByName(CRONCOD_HOJA);
+  if (!sh) {
+    sh = ss.insertSheet(CRONCOD_HOJA);
+    var head = ["CLIENTE","CODIGO","ABC"].concat(CRONCOD_MESES);
+    sh.getRange(1,1,1,head.length).setValues([head]);
+    sh.getRange(1,1,1,head.length).setFontWeight("bold")
+      .setBackground("#1a73e8").setFontColor("#ffffff");
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1, 120); sh.setColumnWidth(2, 160); sh.setColumnWidth(3, 50);
+  }
+  // Protección de ediciones manuales (idempotente): solo el dueño queda como
+  // editor → el panel (que corre como dueño) escribe; los demás solo leen.
+  try {
+    var prots = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+    var prot = prots.length ? prots[0] : sh.protect();
+    prot.setDescription("Solo editable vía Centro de Mando (Coordinador)");
+    try { prot.removeEditors(prot.getEditors()); } catch (e1) {}
+    try { if (prot.canDomainEdit()) prot.setDomainEdit(false); } catch (e2) {}
+  } catch (eP) {}
+  return sh;
+}
+
+/* Lee las filas del cliente (match flexible: DEGSO ≈ DEGSO2, misma raíz). */
+function _leerCronCodigosCliente(cliente) {
+  var ss = _ssCronCod();
+  var sh = ss.getSheetByName(CRONCOD_HOJA);
+  if (!sh || sh.getLastRow() < 2) return { existe:false, filas:[] };
+  var v = sh.getRange(2, 1, sh.getLastRow()-1, 15).getValues();
+  var filas = [];
+  for (var i=0;i<v.length;i++){
+    var cli = String(v[i][0]||"").trim().toUpperCase();
+    if (!cli || !_clienteCoincideItsanet(cli, cliente)) continue;
+    var cod = String(v[i][1]||"").trim().toUpperCase();
+    if (!cod) continue;
+    var meses = {};
+    for (var m=0;m<12;m++){
+      if (String(v[i][3+m]||"").trim() !== "") meses[CRONCOD_MESES[m]] = true;
+    }
+    filas.push({ codigo: cod, abc: String(v[i][2]||"").trim().toUpperCase(), meses: meses });
+  }
+  return { existe: filas.length>0, filas: filas };
+}
+
+/* WIZARD: códigos programados del cliente para un MES (sugerencia editable). */
+function obtenerCodigosProgramados(cliente, mes) {
+  var mesN = String(mes||"").trim().toUpperCase();
+  if (CRONCOD_MESES.indexOf(mesN) === -1) throw new Error("Mes inválido: " + mes);
+  var data = _leerCronCodigosCliente(cliente);
+  if (!data.existe) {
+    return { existe:false, mes:mesN, codigos:[], total:0, abc:{}, totalCliente:0 };
+  }
+  var cods = [], abc = {};
+  data.filas.forEach(function(f){
+    if (f.meses[mesN]) {
+      cods.push(f.codigo);
+      var k = f.abc || "?";
+      abc[k] = (abc[k]||0) + 1;
+    }
+  });
+  return { existe:true, mes:mesN, codigos:cods, total:cods.length,
+           abc:abc, totalCliente:data.filas.length };
+}
+
+/* VENTANA DE VARIANTES: meses programados de una lista de SKUs.
+   → { "DG100GR": ["JULIO"], ... } (solo los que existen en el cronograma). */
+function obtenerMesesDeCodigos(cliente, listaSkus) {
+  var out = {};
+  var data = _leerCronCodigosCliente(cliente);
+  if (!data.existe) return out;
+  var idx = {};
+  data.filas.forEach(function(f){ idx[f.codigo] = f; });
+  (listaSkus||[]).forEach(function(s){
+    var k = String(s||"").trim().toUpperCase();
+    if (k && idx[k]) out[k] = Object.keys(idx[k].meses);
+  });
+  return out;
+}
+
+/* COORDINADOR: REEMPLAZA el bloque completo del cliente con lo pegado desde
+   su Excel (columnas ABC | producto_id | ENERO…DICIEMBRE con X; también
+   acepta sin la columna ABC). Acepta TSV (pegado directo), ';' o ','. */
+function actualizarCronogramaCodigos(cliente, textoPegado) {
+  _requiereRol(["Coordinador"]);
+  var cliN = String(cliente||"").trim().toUpperCase();
+  if (!cliN) throw new Error("Indica el cliente.");
+  if (!textoPegado || !String(textoPegado).trim()) {
+    throw new Error("Pega el bloque de códigos (ABC | CÓDIGO | ENERO…DICIEMBRE).");
+  }
+
+  var lineas = String(textoPegado).split(/\r?\n/);
+  var nuevas = [];
+  for (var i=0;i<lineas.length;i++){
+    var ln = lineas[i];
+    if (!ln || !ln.trim()) continue;
+    var sep = (ln.indexOf("\t")!==-1) ? "\t" : (ln.indexOf(";")!==-1 ? ";" : ",");
+    var c = ln.split(sep).map(function(x){ return String(x||"").trim(); });
+    var c0 = (c[0]||"").toUpperCase(), c1 = (c[1]||"").toUpperCase();
+    // Saltar encabezados / líneas de meses / títulos
+    if (c0.indexOf("ABC")!==-1 || c1.indexOf("PRODUCTO")!==-1 ||
+        c1.indexOf("CODIGO")!==-1 || CRONCOD_MESES.indexOf(c0)!==-1 ||
+        c0.indexOf("QTY")!==-1 || c0.indexOf("SEMESTRE")!==-1) continue;
+
+    var abc = "", cod = "", mesesArr = [];
+    if (/^[ABC]$/i.test(c0) && c1) {           // formato: ABC | CODIGO | 12 meses
+      abc = c0; cod = c1; mesesArr = c.slice(2, 14);
+    } else if (c0) {                            // formato: CODIGO | 12 meses
+      cod = c0; mesesArr = c.slice(1, 13);
+    }
+    if (!cod) continue;
+    var fila = [cliN, cod, abc];
+    for (var m=0;m<12;m++){ fila.push(String(mesesArr[m]||"").trim() ? "X" : ""); }
+    nuevas.push(fila);
+  }
+  if (!nuevas.length) throw new Error("No se reconoció ningún código en el texto pegado. " +
+    "Copia desde el Excel las columnas ABC + producto_id + los 12 meses.");
+
+  var sh = _asegurarHojaCronCodigos();
+  var last = sh.getLastRow(), borradas = 0;
+  if (last >= 2) {
+    // Releer todo, quitar el bloque del cliente (match EXACTO del registrado) y reescribir.
+    var todo = sh.getRange(2, 1, last-1, 15).getValues();
+    var restantes = todo.filter(function(r){
+      var c = String(r[0]||"").trim().toUpperCase();
+      return c !== "" && c !== cliN;
+    });
+    borradas = todo.filter(function(r){
+      return String(r[0]||"").trim().toUpperCase() === cliN;
+    }).length;
+    sh.getRange(2, 1, last-1, 15).clearContent();
+    if (restantes.length) sh.getRange(2, 1, restantes.length, 15).setValues(restantes);
+    sh.getRange(2 + restantes.length, 1, nuevas.length, 15).setValues(nuevas);
+  } else {
+    sh.getRange(2, 1, nuevas.length, 15).setValues(nuevas);
+  }
+
+  try {
+    if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
+      _registrarActividad(_usuarioActual(), "actualizar_cron_codigos", "",
+        cliN + ": " + nuevas.length + " códigos (reemplazó " + borradas + ")");
+    }
+  } catch (eL) {}
+
+  var porMes = {};
+  CRONCOD_MESES.forEach(function(mn, mi){
+    porMes[mn] = nuevas.filter(function(f){ return f[3+mi] === "X"; }).length;
+  });
+  return { ok:true, cliente:cliN, codigos:nuevas.length, reemplazadas:borradas, porMes:porMes };
+}
+
+/* PANEL: resumen de clientes cargados en el cronograma de códigos. */
+function obtenerResumenCronCodigos() {
+  var ss = _ssCronCod();
+  var sh = ss.getSheetByName(CRONCOD_HOJA);
+  var out = [];
+  if (!sh || sh.getLastRow() < 2) return out;
+  var v = sh.getRange(2, 1, sh.getLastRow()-1, 2).getValues();
+  var cnt = {};
+  v.forEach(function(r){
+    var c = String(r[0]||"").trim().toUpperCase();
+    if (c) cnt[c] = (cnt[c]||0) + 1;
+  });
+  for (var k in cnt) out.push({ cliente:k, codigos:cnt[k] });
+  out.sort(function(a,b){ return a.cliente < b.cliente ? -1 : 1; });
+  return out;
 }

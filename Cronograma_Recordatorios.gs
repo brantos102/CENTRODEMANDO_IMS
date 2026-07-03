@@ -1613,6 +1613,16 @@ function procesarCreacionArchivo(datos) {
     sheet.getRange(newRow, 3).setValue(newFile.getId());
     sheet.getRange(newRow, 4).setValue(fechaFormateada);
 
+    // FIX FASE 8.55: estado inicial "En Proceso" (col G) + responsable = usuario
+    // creador/vinculador (col I). Best-effort: nunca bloquea la creación.
+    try {
+      sheet.getRange(newRow, 7).setValue("En Proceso");
+      var _emailCr = _usuarioActual();
+      var _uCr = _emailCr ? _obtenerUsuario(_emailCr) : null;
+      var _nomCr = (_uCr && _uCr.nombre) ? String(_uCr.nombre).toUpperCase() : (_emailCr || "");
+      if (_nomCr) sheet.getRange(newRow, 9).setValue(_nomCr);
+    } catch (eResp) {}
+
     return {
       folderName: folder.getName(),
       fileUrl: newFile.getUrl()
@@ -1680,6 +1690,16 @@ function _procesarCreacionArchivoInline(datos) {
     sheet.getRange(newRow, 2).setValue(newFile.getUrl());
     sheet.getRange(newRow, 3).setValue(newFile.getId());
     sheet.getRange(newRow, 4).setValue(fechaFormateada);
+
+    // FIX FASE 8.55: estado inicial "En Proceso" (col G) + responsable = usuario
+    // creador/vinculador (col I). Best-effort: nunca bloquea la creación.
+    try {
+      sheet.getRange(newRow, 7).setValue("En Proceso");
+      var _emailCr = _usuarioActual();
+      var _uCr = _emailCr ? _obtenerUsuario(_emailCr) : null;
+      var _nomCr = (_uCr && _uCr.nombre) ? String(_uCr.nombre).toUpperCase() : (_emailCr || "");
+      if (_nomCr) sheet.getRange(newRow, 9).setValue(_nomCr);
+    } catch (eResp) {}
 
     return {
       folderName: folder.getName(),

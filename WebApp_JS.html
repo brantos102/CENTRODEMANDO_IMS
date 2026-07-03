@@ -37,6 +37,7 @@ function aplicarPermisosBotones() {
     'b-limpiar': P.limpiar, 'b-exportar': P.exportar,
     'b-record': P.recordatorios, 'b-sinc': P.recordatorios,
     'b-syncQ': P.recordatorios,
+    'b-cron-codigos': P.gestionUsuarios,   // FASE 8.56: solo Coordinador
     'b-zip': P.exportar || P.verDashboard
   };
   Object.keys(map).forEach(function(id){
@@ -1604,7 +1605,10 @@ function _renderFormEvento() {
         '<input type="date" id="fe-fini" value="'+hoy+'"></div>' +
       '<div class="field"><label>Frecuencia</label>' +
         '<select id="fe-frec"><option>MENSUAL</option><option>SEMANAL</option><option>QUINCENAL</option><option>BIMESTRAL</option><option>TRIMESTRAL</option><option>SEMESTRAL</option><option>ANUAL</option><option>EMERGENTE</option></select></div>' +
-    '</div>',
+    '</div>' +
+    // FIX FASE 8.55: categoría seleccionable (antes quedaba fija en "Inventario Programado")
+    '<div class="field"><label>Categoría</label>' +
+      '<select id="fe-cat"><option>Inventario Programado</option><option>Trabajo Slotting</option><option>Inventario No Programado</option><option>Movimientos</option></select></div>',
     'Crear evento', function(){
       var datos = {
         titulo:       ($('fe-titulo').value || '').trim(),
@@ -1613,7 +1617,7 @@ function _renderFormEvento() {
         prioridad:    $('fe-prio').value,
         fechaInicio:  $('fe-fini').value,
         frecuencia:   $('fe-frec').value,
-        categoria:    'Inventario Programado'
+        categoria:    $('fe-cat').value    // FIX FASE 8.55
       };
       var faltantes = [];
       if (!datos.titulo) faltantes.push('Título');
@@ -1632,6 +1636,34 @@ function _renderFormEvento() {
         .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
         .crearEventoCronograma(datos);
     });
+}
+
+/* ===== FASE 8.56: CRONOGRAMA DE CÓDIGOS POR CLIENTE (solo Coordinador) ===== */
+function abrirCronCodigos() {
+  toast('Cargando resumen…');
+  google.script.run.withSuccessHandler(function(res){
+    var resumen = (res && res.length)
+      ? res.map(function(r){ return '<span class="pill pill-muted" style="margin:2px;display:inline-block;">'+escapeHtml(r.cliente)+': '+r.codigos+'</span>'; }).join(' ')
+      : '<span style="color:var(--muted);">Aún no hay clientes cargados.</span>';
+    modalCustom('📅 Cronograma de códigos por cliente',
+      'Pega desde el Excel del cliente las columnas <b>ABC | producto_id | ENERO…DICIEMBRE</b> (con X en los meses programados). ' +
+      '<b>REEMPLAZA</b> por completo el bloque de ese cliente. La hoja CRONOGRAMA_CODIGOS queda protegida: solo se edita desde aquí.',
+      '<div style="margin-bottom:8px;font-size:11px;max-height:70px;overflow-y:auto;"><b>Clientes cargados:</b><br>'+resumen+'</div>'+
+      '<div class="field"><label>Cliente *</label><input type="text" id="cc-cliente" placeholder="Ej. DEGSO" style="text-transform:uppercase;"></div>'+
+      '<div class="field"><label>Códigos (pegar desde Excel) *</label>'+
+      '<textarea id="cc-datos" rows="8" placeholder="A\t3M1161511MX\tX\t\t\t\tX\t\t\t\tX\t\t\t" style="width:100%;font-family:ui-monospace,monospace;font-size:10px;"></textarea>'+
+      '<div style="font-size:10px;color:var(--muted);margin-top:3px;">Tip: en el Excel selecciona desde la primera fila de datos (sin encabezados) las columnas ABC + producto_id + los 12 meses, copia y pega aquí.</div></div>',
+      'Actualizar cronograma', function(){
+        var cli = $('cc-cliente').value.trim(), txt = $('cc-datos').value;
+        if (!cli || !txt.trim()) { toast('Cliente y códigos obligatorios','error'); return false; }
+        cerrarModal(); toast('Actualizando cronograma de '+cli.toUpperCase()+'…');
+        google.script.run.withSuccessHandler(function(r){
+          toast('✓ '+r.cliente+': '+r.codigos+' códigos cargados (reemplazó '+r.reemplazadas+' anteriores)','success');
+        }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+        .actualizarCronogramaCodigos(cli, txt);
+      });
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+  .obtenerResumenCronCodigos();
 }
 
 /* ===== MODAL GENÉRICO ===== */
