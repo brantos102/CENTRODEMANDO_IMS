@@ -213,13 +213,30 @@
       <div class="logo">IT</div>
       <div>
         <div class="name">Centro de Mando Integral — Itsanet UIO</div>
-        <div class="sub">Inventarios físicos auditables · trazabilidad gerencial</div>
+        <div class="sub">Inventarios físicos auditables · trazabilidad </div>
       </div>
     </div>
     <div class="meta">
       <div class="clock" id="meta-fecha">—</div>
       <div id="meta-hora">—</div>
     </div>
+  </div>
+
+  
+
+  <div style="display:flex; gap:10px; margin-bottom:15px; background:var(--panel-2); padding:10px; border-radius:8px; border:1px solid var(--border); align-items:center;">
+  <span style="font-size:11px; color:var(--muted); font-weight:bold; text-transform:uppercase;">Filtros:</span>
+  <button class="btn btn-outline btn-sm" onclick="filtrarDashboard('hoy')">📅 Hoy</button>
+  <button class="btn btn-outline btn-sm" onclick="filtrarDashboard('semana')">🗓 Esta Semana</button>
+  <button class="btn btn-outline btn-sm" onclick="filtrarDashboard('mes')">📆 Este Mes</button>
+  <button class="btn btn-outline btn-sm" onclick="filtrarDashboard('todos')">🔄 Mostrar Todos</button>
+  <div style="width:1px; height:20px; background:var(--border); margin:0 5px;"></div>
+  <select id="filtro-cliente" class="form-select btn-sm" onchange="aplicarFiltrosTabla()" style="background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px;">
+    <option value="ALL">Todos los Clientes</option>
+  </select>
+  <select id="filtro-operario" class="form-select btn-sm" onchange="aplicarFiltrosTabla()" style="background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px;">
+    <option value="ALL">Todos los Operarios</option>
+  </select>
   </div>
 
   <!-- KPIs Row 1 — operación día a día -->
@@ -412,6 +429,49 @@
         })
         .obtenerEstadoIntegralDashboard();
     }
+
+
+    let filtroTiempoActual = 'todos';
+
+function filtrarDashboard(tiempo) {
+  filtroTiempoActual = tiempo;
+  aplicarFiltrosTabla();
+}
+
+function aplicarFiltrosTabla() {
+  const clienteSelec = document.getElementById('filtro-cliente').value;
+  const operarioSelec = document.getElementById('filtro-operario').value;
+  
+  const hoy = new Date();
+  hoy.setHours(0,0,0,0);
+  
+  // Asumiendo que guardaste tu data en una variable global "datosDashboard"
+  const eventosFiltrados = datosDashboard.cronograma.filter(ev => {
+    let pasaCliente = (clienteSelec === "ALL" || ev.cliente === clienteSelec);
+    let pasaOperario = (operarioSelec === "ALL" || ev.responsable === operarioSelec);
+    
+    let pasaTiempo = true;
+    let fi = new Date(ev.fechaInicio); fi.setHours(0,0,0,0);
+    let ff = new Date(ev.fechaFin || ev.fechaInicio); ff.setHours(0,0,0,0);
+
+    if (filtroTiempoActual === 'hoy') {
+      pasaTiempo = (hoy >= fi && hoy <= ff);
+    } else if (filtroTiempoActual === 'semana') {
+      let inicioSemana = new Date(hoy);
+      inicioSemana.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay() - 1));
+      let finSemana = new Date(inicioSemana);
+      finSemana.setDate(inicioSemana.getDate() + 6);
+      pasaTiempo = (fi <= finSemana && ff >= inicioSemana);
+    } else if (filtroTiempoActual === 'mes') {
+      pasaTiempo = (fi.getMonth() === hoy.getMonth() && fi.getFullYear() === hoy.getFullYear());
+    }
+
+    return pasaCliente && pasaOperario && pasaTiempo;
+  });
+
+  // Aquí llamas a tu función actual para re-pintar el calendario/tabla pasándole los "eventosFiltrados"
+  renderizarGantt(eventosFiltrados); 
+}
 
     function mostrarIndicadorRefresh() {
       var ind = document.getElementById('refresh-ind');
@@ -822,6 +882,21 @@
       window._toastT = setTimeout(() => t.classList.remove('show'), 3500);
     }
 
+    
+
+    function resaltarColumnaGantt(idTiempo) {
+      // Quita el resaltado anterior
+      document.querySelectorAll('.col-resaltada').forEach(el => {
+        el.classList.remove('col-resaltada');
+        el.style.backgroundColor = '';
+      });
+      // Añade resaltado a la columna seleccionada
+      document.querySelectorAll('.col-dia-' + idTiempo).forEach(el => {
+        el.classList.add('col-resaltada');
+        el.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'; // Fondo azul tenue
+      });
+    }
+
     /* ===== ENTER en modales ===== */
     document.addEventListener('keydown', e => {
       if (e.key === 'Enter' && $('modal').classList.contains('show')) {
@@ -856,6 +931,66 @@
       cargar();
       iniciarAutoRefresh();
     };
+
+    /* FIX: LÓGICA DE FILTRADO DINÁMICO */
+    let filtroTiempoActual = 'todos';
+    let ventanaEventosBase = []; // Guarda todos los eventos sin filtrar
+
+    // Llama a esto cuando recibes los datos del servidor por primera vez (en tu onSuccess de obtenerEstadoIntegralDashboard)
+    function inicializarFiltros(datos) {
+      ventanaEventosBase = datos.cronograma;
+      
+      // Llenar select de clientes
+      const selectCli = document.getElementById('filtro-cliente');
+      selectCli.innerHTML = '<option value="ALL">Todos los Clientes</option>';
+      datos.clientes.forEach(c => selectCli.innerHTML += `<option value="${c}">${c}</option>`);
+
+      // Llenar select de operarios
+      const selectOp = document.getElementById('filtro-operario');
+      selectOp.innerHTML = '<option value="ALL">Todos los Operarios</option>';
+      datos.equipo.forEach(op => selectOp.innerHTML += `<option value="${op}">${op}</option>`);
+    }
+
+    function filtrarDashboard(tiempo) {
+      filtroTiempoActual = tiempo;
+      aplicarFiltrosTabla();
+    }
+
+    function aplicarFiltrosTabla() {
+      const clienteSelec = document.getElementById('filtro-cliente').value;
+      const operarioSelec = document.getElementById('filtro-operario').value;
+      const hoy = new Date();
+      hoy.setHours(0,0,0,0);
+      
+      const eventosFiltrados = ventanaEventosBase.filter(ev => {
+        let pasaCliente = (clienteSelec === "ALL" || ev.cliente === clienteSelec);
+        let pasaOperario = (operarioSelec === "ALL" || ev.responsable === operarioSelec);
+        
+        let pasaTiempo = true;
+        let fi = new Date(ev.fechaInicio); fi.setHours(0,0,0,0);
+        let ff = ev.fechaFin ? new Date(ev.fechaFin) : new Date(fi); ff.setHours(0,0,0,0);
+
+        if (filtroTiempoActual === 'hoy') {
+          pasaTiempo = (hoy >= fi && hoy <= ff);
+        } else if (filtroTiempoActual === 'semana') {
+          let inicioSemana = new Date(hoy);
+          inicioSemana.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay() - 1));
+          let finSemana = new Date(inicioSemana);
+          finSemana.setDate(inicioSemana.getDate() + 6);
+          pasaTiempo = (fi <= finSemana && ff >= inicioSemana);
+        } else if (filtroTiempoActual === 'mes') {
+          pasaTiempo = (fi.getMonth() === hoy.getMonth() && fi.getFullYear() === hoy.getFullYear());
+        }
+
+        return pasaCliente && pasaOperario && pasaTiempo;
+      });
+
+      // Re-renderizar tu calendario/tabla con los 'eventosFiltrados'
+      // IMPORTANTE: Aquí debes invocar tu función existente que dibuja el calendario 
+      // (ej. renderGantt(eventosFiltrados) o renderTabla(eventosFiltrados))
+      if (typeof renderCalendario === 'function') renderCalendario(eventosFiltrados);
+    }
+
   </script>
 </body>
 </html>
