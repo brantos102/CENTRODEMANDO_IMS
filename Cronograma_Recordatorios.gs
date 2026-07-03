@@ -12,6 +12,14 @@
    El Código.gs viejo solo recibe 2 microcambios (ver README_FASE1.md).
    ========================================================================== */
 
+
+function autorizarPermisos() {
+  // SIN try/catch: obliga a Google a pedir autorización.
+  const correo = Session.getActiveUser().getEmail();
+  Logger.log('Correo autorizado: ' + correo);
+  return correo;
+}
+
 const CRON_CFG = {
   HOJA_CRONOGRAMA: "CRONOGRAMA - 2026",
   HOJA_EQUIPO:     "EQUIPO_OPERATIVO",
@@ -1347,8 +1355,18 @@ function sincronizarArchivosCronogramaConPanel() {
     var r = dat[i];
     if (!r[CRON_CFG.CR_COL_CLIENTE - 1]) continue;
 
+    // FIX: Evitar auto-vincular archivos viejos a eventos que son futuros / pendientes.
+    var estadoFila = String(r[CRON_CFG.CR_COL_ESTADO - 1] || "").toLowerCase();
+    if (estadoFila.indexOf("pendiente") !== -1 || estadoFila === "") continue;
+
     // Skip si ya tiene archivo en Q
     var urlExistente = _extraerUrlSmartChip(rQ[i][0], r[CRON_CFG.CR_COL_ARCH - 1]);
+  /*for (var i = 0; i < n; i++) {
+    var r = dat[i];
+    if (!r[CRON_CFG.CR_COL_CLIENTE - 1]) continue;
+
+    // Skip si ya tiene archivo en Q
+    var urlExistente = _extraerUrlSmartChip(rQ[i][0], r[CRON_CFG.CR_COL_ARCH - 1]);*/
     if (urlExistente) { yaTenian++; continue; }
 
     var cliCron = String(r[CRON_CFG.CR_COL_CLIENTE - 1]).trim().toUpperCase();
@@ -1463,9 +1481,17 @@ function crearEventoCronograma(datos) {
   if (!cron) throw new Error("No se encontró " + CRON_CFG.HOJA_CRONOGRAMA);
 
   var fila = _proximaFilaCronograma(cron);
-  // FIX FASE 8.36: fechas SOLO FECHA (sin hora) para no afectar duración/cronograma.
-  var fechaIni = _soloFecha(new Date(datos.fechaInicio));
-  var fechaEnt = datos.fechaEntrega ? _soloFecha(new Date(datos.fechaEntrega)) : null;
+  
+  // FIX: Parsear fechas YYYY-MM-DD separando por guiones para evitar desfase de Timezone (1 día menos)
+  function parsearFechaLocal(fechaStr) {
+    if (!fechaStr) return null;
+    var parts = String(fechaStr).split("-");
+    if (parts.length === 3) return new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+    return new Date(fechaStr);
+  }
+  
+  var fechaIni = _soloFecha(parsearFechaLocal(datos.fechaInicio));
+  var fechaEnt = datos.fechaEntrega ? _soloFecha(parsearFechaLocal(datos.fechaEntrega)) : null;
   var anio = fechaIni.getFullYear();
   var mesNum = fechaIni.getMonth();
   var meses = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
@@ -1820,43 +1846,39 @@ function obtenerEstadoIntegralDashboard() {
       var urlArchivoExtraida = _extraerUrlSmartChip(rQ[i][0], r[CRON_CFG.CR_COL_ARCH - 1]);
       var fileIdExtraido = _idDeUrl(urlArchivoExtraida);
 
-      // FIX FASE 8.11: Si extrajimos algo pero NO es un ID válido (URL rota),
-      // descartamos para buscar en PANEL DE CONTROL en su lugar.
       if (urlArchivoExtraida && !fileIdExtraido) {
         urlArchivoExtraida = "";
       } else if (urlArchivoExtraida && fileIdExtraido) {
-        // Reconstruir URL canónica para garantizar formato válido
         urlArchivoExtraida = "https://docs.google.com/spreadsheets/d/" + fileIdExtraido + "/edit";
       }
 
-      // FIX FASE 8.9: si la columna Q NO tiene archivo, buscar en PANEL DE CONTROL
-      // por cliente. Elegir el más cercano en fecha al evento del cronograma.
       var fuenteArchivo = urlArchivoExtraida ? "cronograma_Q" : "ninguno";
+      var archivoSugeridoUrl = "";
+      var archivoSugeridoId = "";
+      
+      // FIX: NUNCA inyectar un archivo "fantasma" al evento. 
+      // Si no tiene archivo en la columna Q, se queda vacío. Solo pre-calculamos una sugerencia.
+      var estadoLower = String(estado).toLowerCase();
       if (!urlArchivoExtraida) {
         var cliCron = String(r[CRON_CFG.CR_COL_CLIENTE - 1] || "").trim().toUpperCase();
         var candidatos = panelPorCliente[cliCron] || [];
         if (candidatos.length > 0) {
-          var elegido;
+          var elegido = candidatos[0];
           if (ts) {
-            // Buscar el archivo cuya fechaInicio sea la más cercana al evento
-            elegido = candidatos[0];
             var menorDif = Math.abs(elegido.fechaInicio - ts);
             for (var k = 1; k < candidatos.length; k++) {
               var dif = Math.abs(candidatos[k].fechaInicio - ts);
               if (dif < menorDif) { elegido = candidatos[k]; menorDif = dif; }
             }
-          } else {
-            // Sin fecha de evento, tomar el más reciente
-            elegido = candidatos[0];
           }
           if (elegido && elegido.id) {
-            // FIX FASE 8.11: elegido.link ya es URL canónica reconstruida
-            urlArchivoExtraida = elegido.link;
-            fileIdExtraido = elegido.id;
-            fuenteArchivo = "panel_de_control";
+            archivoSugeridoUrl = elegido.link;
+            archivoSugeridoId = elegido.id;
           }
         }
       }
+
+      
 
       // FIX FASE 8.23: Calcular fechaFin a partir de la duración (col O).
       // El calendario operativo necesita pintar el rango completo desde
@@ -1876,23 +1898,22 @@ function obtenerEstadoIntegralDashboard() {
         fila: CRON_CFG.CR_FILA_INI + i,
         cliente:      r[CRON_CFG.CR_COL_CLIENTE - 1],
         titulo:       r[CRON_CFG.CR_COL_TITULO - 1] || "",
-        categoria:    categoria,          // FIX FASE 8.34
+        categoria:    categoria,
         responsable:  responsable,
+        prioridad:    r[CRON_CFG.CR_COL_PRIO - 1] || "Media", // FIX: Enviamos la prioridad
         fechaInicio:  ts,
-        fechaFin:     fechaFinTs,           // FIX 8.23
-        duracion:     duracionNum,          // FIX 8.23
-        fechaEntrega: (r[CRON_CFG.CR_COL_FECHA_ENT - 1] instanceof Date) ?
-                      r[CRON_CFG.CR_COL_FECHA_ENT - 1].getTime() : null,
+        fechaFin:     fechaFinTs,
+        duracion:     duracionNum,
+        fechaEntrega: (r[CRON_CFG.CR_COL_FECHA_ENT - 1] instanceof Date) ? r[CRON_CFG.CR_COL_FECHA_ENT - 1].getTime() : null,
         estado:       estado,
         pct:          r[CRON_CFG.CR_COL_PCT - 1] || 0,
-        urlArchivo:   urlArchivoExtraida,
-        // FIX FASE 7.6: extraer fileId y armar wmsUrl para deep-link según rol
+        urlArchivo:   urlArchivoExtraida, // Esto ahora es 100% REAL. Sin fantasmas.
         fileId:       fileIdExtraido,
+        urlSugerida:  archivoSugeridoUrl, // Se pasa la sugerencia aparte
+        idSugerido:   archivoSugeridoId,
         wmsUrl:       _obtenerWmsUrl() || "",
-        // FIX FASE 8.9: indicador para frontend de dónde se resolvió el archivo
         fuenteArchivo: fuenteArchivo,
-        ultimaNotif:  (r[CRON_CFG.CR_COL_NOTIF - 1] instanceof Date) ?
-                      r[CRON_CFG.CR_COL_NOTIF - 1].getTime() : null,
+        ultimaNotif:  (r[CRON_CFG.CR_COL_NOTIF - 1] instanceof Date) ? r[CRON_CFG.CR_COL_NOTIF - 1].getTime() : null,
         diasRestantes: diff
       });
 
@@ -1973,7 +1994,22 @@ function obtenerEstadoIntegralDashboard() {
     });
     // FIX FASE 8.34: wms base + fileId/urlArchivo limpios para el botón de acceso.
     var wmsBasePanel = _obtenerWmsUrl() || "";
-    panelUltimos = orden.slice(0, 8).map(function(r){
+    // FIX: Filtrar para que muestre SOLO actividades de la semana actual
+    var inicioSemana = new Date(hoy);
+    var dow = inicioSemana.getDay();
+    inicioSemana.setDate(inicioSemana.getDate() - (dow === 0 ? 6 : dow - 1));
+    inicioSemana.setHours(0,0,0,0);
+
+    var actividadesSemana = orden.filter(function(r) {
+      var d = r[CRON_CFG.PA_COL_FECHA_I - 1];
+      return (d instanceof Date && d.getTime() >= inicioSemana.getTime());
+    });
+
+    var wmsBasePanel = _obtenerWmsUrl() || "";
+    panelUltimos = actividadesSemana.slice(0, 8).map(function(r){
+
+
+
       var idLimpioPan = _idDeUrl(String(r[CRON_CFG.PA_COL_ID - 1] || "").trim()) ||
                         _idDeUrl(String(r[CRON_CFG.PA_COL_LINK - 1] || "").trim());
       return {
@@ -2480,10 +2516,20 @@ function iniciarEventoConOpciones(filaCronograma, opciones) {
   }
 
   // Fecha de inicio
+  // Fecha de inicio
   var fechaActual = cron.getRange(f, CRON_CFG.CR_COL_FECHA).getValue();
   if (!fechaActual || opciones.fechaInicio) {
-    var fechaUsar = opciones.fechaInicio ? new Date(opciones.fechaInicio) : new Date();
-    if (!isNaN(fechaUsar.getTime())) cron.getRange(f, CRON_CFG.CR_COL_FECHA).setValue(fechaUsar);
+    var fechaUsar = new Date(); // Por defecto hoy
+    if (opciones.fechaInicio) {
+      // FIX: Evitar desfase de 1 día al parsear string enviado desde el frontend
+      var parts = String(opciones.fechaInicio).split("-");
+      if (parts.length === 3) {
+        fechaUsar = new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+      } else {
+        fechaUsar = new Date(opciones.fechaInicio);
+      }
+    }
+    if (!isNaN(fechaUsar.getTime())) cron.getRange(f, CRON_CFG.CR_COL_FECHA).setValue(_soloFecha(fechaUsar));
   }
 
   // Asignar archivo (opcional)
