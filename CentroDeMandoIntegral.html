@@ -431,47 +431,11 @@
     }
 
 
-    let filtroTiempoActual = 'todos';
-
-function filtrarDashboard(tiempo) {
-  filtroTiempoActual = tiempo;
-  aplicarFiltrosTabla();
-}
-
-function aplicarFiltrosTabla() {
-  const clienteSelec = document.getElementById('filtro-cliente').value;
-  const operarioSelec = document.getElementById('filtro-operario').value;
-  
-  const hoy = new Date();
-  hoy.setHours(0,0,0,0);
-  
-  // Asumiendo que guardaste tu data en una variable global "datosDashboard"
-  const eventosFiltrados = datosDashboard.cronograma.filter(ev => {
-    let pasaCliente = (clienteSelec === "ALL" || ev.cliente === clienteSelec);
-    let pasaOperario = (operarioSelec === "ALL" || ev.responsable === operarioSelec);
-    
-    let pasaTiempo = true;
-    let fi = new Date(ev.fechaInicio); fi.setHours(0,0,0,0);
-    let ff = new Date(ev.fechaFin || ev.fechaInicio); ff.setHours(0,0,0,0);
-
-    if (filtroTiempoActual === 'hoy') {
-      pasaTiempo = (hoy >= fi && hoy <= ff);
-    } else if (filtroTiempoActual === 'semana') {
-      let inicioSemana = new Date(hoy);
-      inicioSemana.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay() - 1));
-      let finSemana = new Date(inicioSemana);
-      finSemana.setDate(inicioSemana.getDate() + 6);
-      pasaTiempo = (fi <= finSemana && ff >= inicioSemana);
-    } else if (filtroTiempoActual === 'mes') {
-      pasaTiempo = (fi.getMonth() === hoy.getMonth() && fi.getFullYear() === hoy.getFullYear());
-    }
-
-    return pasaCliente && pasaOperario && pasaTiempo;
-  });
-
-  // Aquí llamas a tu función actual para re-pintar el calendario/tabla pasándole los "eventosFiltrados"
-  renderizarGantt(eventosFiltrados); 
-}
+    /* FIX FASE 8.54: se eliminó aquí un bloque duplicado de filtros
+       (let filtroTiempoActual + filtrarDashboard + aplicarFiltrosTabla) que
+       redeclaraba la misma variable `let` del bloque final del script →
+       SyntaxError que dejaba TODA la página sin ejecutar. La versión vigente
+       (con guard de renderCalendario) vive al final del script. */
 
     function mostrarIndicadorRefresh() {
       var ind = document.getElementById('refresh-ind');
