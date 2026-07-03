@@ -936,8 +936,26 @@ function abrirModalFin(ev, archivos) {
       ${archivos.length===0 ? '<div class="empty">Sin archivos del cliente.</div>' : archivos.map(f=>'<label style="display:flex;gap:8px;padding:6px;border-radius:4px;cursor:pointer;"><input type="radio" name="m-file" value="'+f.id+'|'+f.url+'|'+escapeHtml(f.name)+'"><div><div style="font-size:11px;font-weight:500;">'+escapeHtml(f.name)+'</div><div style="font-size:10px;color:var(--muted);">'+new Date(f.modificado).toLocaleDateString('es-ES')+' · '+escapeHtml(f.carpeta)+'</div></div></label>').join('')}
     </div>`;
   modalCustom('✓ Finalizar — fila #'+ev.fila, 'Cliente: '+escapeHtml(ev.cliente),
-    '<div class="field"><label>📅 Fecha de culminación</label><input type="date" id="m-fecha" value="'+hoy+'"></div>'+filesHtml,
+    '<div class="field"><label>📅 Fecha de culminación</label><input type="date" id="m-fecha" value="'+hoy+'"></div>'+filesHtml+
+    '<div id="m-equipo-box"></div>',
     'Confirmar entrega', function(){ return confirmarFin(ev.fila); });
+
+  // FASE 8.58: cargar el equipo registrado de la tarea (si lo hay). El
+  // responsable puede DESMARCAR a quienes no participaron → quedan EXCLUIDOS.
+  google.script.run.withSuccessHandler(function(eq){
+    eq = (eq || []).filter(function(m){ return String(m.estado).toUpperCase() !== 'EXCLUIDO'; });
+    var box = document.getElementById('m-equipo-box');
+    if (!box || !eq.length) return;
+    box.innerHTML =
+      '<div class="field"><label>👥 Equipo que participó <small style="color:var(--muted);">(desmarca a quien NO participó — quedará excluido del registro)</small></label>' +
+      '<div style="max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:5px;padding:4px;">' +
+      eq.map(function(m){
+        return '<label style="display:flex;gap:6px;align-items:center;padding:3px 4px;font-size:12px;cursor:pointer;">' +
+          '<input type="checkbox" class="m-eq" value="' + m.filaHoja + '" checked> ' + escapeHtml(m.nombre) +
+          ' <span style="color:var(--muted);font-size:10px;">(' + (String(m.rol).toUpperCase() === 'RESPONSABLE' ? 'responsable' : 'apoyo') + ')</span></label>';
+      }).join('') +
+      '</div></div>';
+  }).withFailureHandler(function(){}).obtenerEquipoTarea(ev.fila);
 }
 
 function mToggleFiles() {
@@ -955,7 +973,17 @@ function confirmarFin(fila) {
     if (!fc) { toast('Selecciona archivo o cambia a No','error'); return false; }
     var p = fc.value.split('|'); opciones.fileId=p[0]; opciones.fileUrl=p[1]; opciones.fileName=p.slice(2).join('|');
   }
+  // FASE 8.58: exclusiones de equipo = miembros DESMARCADOS en el modal
+  var exclusiones = [];
+  document.querySelectorAll('.m-eq').forEach(function(c){ if (!c.checked) exclusiones.push(c.value); });
+
   cerrarModal(); toast('Finalizando…');
+  if (exclusiones.length) {
+    google.script.run
+      .withSuccessHandler(function(r){ if (r && r.excluidos) toast('👥 ' + r.excluidos + ' operario(s) excluidos del registro','info'); })
+      .withFailureHandler(function(){})
+      .actualizarEquipoTareaFinal(fila, exclusiones);
+  }
   google.script.run.withSuccessHandler(r=>{toast('✓ Entregado'+(r.archivoAdjuntado?' · archivo en Q':''),'success');cargarDashboard();})
     .withFailureHandler(e=>toast('Error: '+e.message,'error')).finalizarEventoConOpciones(fila, opciones);
 }
@@ -1396,10 +1424,19 @@ function cargarAnalytics() {
   $('analytics-body').innerHTML = '<div class="empty">Cargando…</div>';
   google.script.run.withSuccessHandler(res => {
     if (!res.porUsuario.length) { $('analytics-body').innerHTML = '<div class="empty">Sin actividad registrada aún.</div>'; return; }
-    $('analytics-body').innerHTML = res.porUsuario.map(u =>
-      '<div class="rw"><div style="font-weight:500;font-size:11px;">'+escapeHtml(u.email)+'</div>'+
-      '<div style="color:var(--accent);">'+u.iniciados+'</div><div style="color:var(--ok);">'+u.finalizados+'</div>'+
-      '<div style="color:var(--info);">'+u.creados+'</div><div><b>'+u.total+'</b></div></div>').join('');
+    // FASE 8.58: NOMBRE visible (email debajo, pequeño) + apoyos + exclusiones
+    $('analytics-body').innerHTML = res.porUsuario.map(u => {
+      var nom = u.nombre ? escapeHtml(u.nombre) : escapeHtml(u.email || '—');
+      var sub = (u.nombre && u.email) ? '<div style="font-size:9px;color:var(--muted);">'+escapeHtml(u.email)+'</div>' : '';
+      var ap  = (u.apoyos || 0), ex = (u.exclusiones || 0);
+      return '<div class="rw" style="grid-template-columns:2fr repeat(6,minmax(52px,1fr));">'+
+        '<div><div style="font-weight:500;font-size:11px;">'+nom+'</div>'+sub+'</div>'+
+        '<div style="color:var(--accent);">'+u.iniciados+'</div><div style="color:var(--ok);">'+u.finalizados+'</div>'+
+        '<div style="color:var(--info);">'+u.creados+'</div>'+
+        '<div style="color:#a78bfa;">'+ap+'</div>'+
+        '<div style="color:'+(ex>0?'var(--danger)':'var(--muted)')+';">'+ex+'</div>'+
+        '<div><b>'+u.total+'</b></div></div>';
+    }).join('');
   }).withFailureHandler(e=>$('analytics-body').innerHTML='<div class="empty">Error: '+e.message+'</div>').obtenerAnalyticsGlobal();
 }
 
@@ -1609,16 +1646,28 @@ function _renderFormEvento() {
     '</div>' +
     // FIX FASE 8.55: categoría seleccionable (antes quedaba fija en "Inventario Programado")
     '<div class="field"><label>Categoría</label>' +
-      '<select id="fe-cat"><option>Inventario Programado</option><option>Trabajo Slotting</option><option>Inventario No Programado</option><option>Movimientos</option></select></div>',
+      '<select id="fe-cat"><option>Inventario Programado</option><option>Trabajo Slotting</option><option>Inventario No Programado</option><option>Movimientos</option></select></div>' +
+    // FASE 8.58: equipo de apoyo (multi-operario) — se registra en EQUIPOS_TAREA
+    '<div class="field"><label>👥 Equipo de apoyo <small style="color:var(--muted);">(opcional — el responsable no necesita marcarse)</small></label>' +
+      '<div style="max-height:110px;overflow-y:auto;border:1px solid var(--border);border-radius:5px;padding:4px;">' +
+      (equipoArr.length
+        ? equipoArr.map(function(n){ return '<label style="display:flex;gap:6px;align-items:center;padding:3px 4px;font-size:12px;cursor:pointer;"><input type="checkbox" class="fe-apoyo" value="'+escapeHtml(n)+'"> '+escapeHtml(n)+'</label>'; }).join('')
+        : '<div style="color:var(--muted);font-size:11px;padding:4px;">Sin miembros disponibles.</div>') +
+      '</div></div>',
     'Crear evento', function(){
+      var apoyosSel = [];
+      document.querySelectorAll('.fe-apoyo:checked').forEach(function(c){ apoyosSel.push(c.value); });
+      var respSel = ($('fe-resp').value || '').trim();
       var datos = {
         titulo:       ($('fe-titulo').value || '').trim(),
         cliente:      ($('fe-cliente').value || '').trim(),
-        responsable:  ($('fe-resp').value || '').trim(),
+        responsable:  respSel,
         prioridad:    $('fe-prio').value,
         fechaInicio:  $('fe-fini').value,
         frecuencia:   $('fe-frec').value,
-        categoria:    $('fe-cat').value    // FIX FASE 8.55
+        categoria:    $('fe-cat').value,   // FIX FASE 8.55
+        // FASE 8.58: apoyos sin duplicar al responsable
+        apoyos:       apoyosSel.filter(function(a){ return a.toUpperCase() !== respSel.toUpperCase(); })
       };
       var faltantes = [];
       if (!datos.titulo) faltantes.push('Título');

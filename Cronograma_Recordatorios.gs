@@ -1513,6 +1513,12 @@ function crearEventoCronograma(datos) {
   if (fechaEnt) cron.getRange(fila, CRON_CFG.CR_COL_FECHA_ENT).setValue(fechaEnt).setNumberFormat("dd/MM/yyyy");
   cron.getRange(fila, CRON_CFG.CR_COL_PCT).setValue(0);
 
+  // FASE 8.58: registrar el EQUIPO de la tarea (responsable + apoyos) en
+  // EQUIPOS_TAREA para el analytics de apoyos/exclusiones. Best-effort.
+  try {
+    registrarEquipoTarea(fila, datos.cliente, datos.titulo, datos.responsable, datos.apoyos || []);
+  } catch (eEq) {}
+
   return { ok: true, fila: fila };
 }
 
@@ -4942,6 +4948,114 @@ function _registrarActividad(email, accion, fila, detalle) {
 }
 
 
+/* ==========================================================================
+   FASE 8.58 — EQUIPOS POR TAREA (multi-operario)
+   --------------------------------------------------------------------------
+   Hoja EQUIPOS_TAREA: un registro por PARTICIPACIÓN en una tarea.
+   Columnas: Fecha Registro | Fila Evento | Cliente | Título | Email |
+             Nombre | Rol (RESPONSABLE/APOYO) | Estado (ACTIVO/EXCLUIDO) |
+             Fecha Cambio | Registrado Por
+   · Se alimenta al crear el evento (responsable + apoyos elegidos).
+   · Al FINALIZAR la tarea, el responsable puede EXCLUIR a quienes no
+     participaron; queda el historial (no se borra la fila).
+   · El Analytics cuenta desde aquí los apoyos y exclusiones por persona.
+   ========================================================================== */
+var EQT_CFG = { HOJA: "EQUIPOS_TAREA" };
+
+function _asegurarHojaEquiposTarea() {
+  var ss = _getSS();
+  var sh = ss.getSheetByName(EQT_CFG.HOJA);
+  if (!sh) {
+    sh = ss.insertSheet(EQT_CFG.HOJA);
+    sh.getRange(1, 1, 1, 10).setValues([[
+      "Fecha Registro", "Fila Evento", "Cliente", "Título",
+      "Email", "Nombre", "Rol", "Estado", "Fecha Cambio", "Registrado Por"
+    ]]);
+    sh.getRange(1, 1, 1, 10).setFontWeight("bold")
+      .setBackground("#5f6368").setFontColor("#ffffff");
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/* Registra responsable + apoyos de una tarea. Resuelve el email de cada
+   nombre desde USUARIOS (si existe). Nombres duplicados se registran una vez. */
+function registrarEquipoTarea(filaEvento, cliente, titulo, responsable, apoyos) {
+  var sh = _asegurarHojaEquiposTarea();
+  var quien = _usuarioActual();
+  var ahora = new Date();
+
+  // Mapa nombre(MAYÚSC) → email desde USUARIOS (una sola lectura)
+  var emailPorNombre = {};
+  try {
+    var shU = _getSS().getSheetByName(USR_CFG.HOJA);
+    if (shU && shU.getLastRow() > 1) {
+      var vu = shU.getRange(2, 1, shU.getLastRow() - 1, 2).getValues();
+      vu.forEach(function(r){
+        var nom = String(r[1] || "").trim().toUpperCase();
+        if (nom && !emailPorNombre[nom]) emailPorNombre[nom] = String(r[0] || "").trim();
+      });
+    }
+  } catch (eU) {}
+
+  var filas = [], agregados = {};
+  function _push(nombre, rol) {
+    var n = String(nombre || "").trim();
+    if (!n) return;
+    var key = n.toUpperCase();
+    if (agregados[key]) return;
+    agregados[key] = true;
+    filas.push([ahora, filaEvento || "", String(cliente || "").toUpperCase(),
+                titulo || "", emailPorNombre[key] || "", key, rol, "ACTIVO", "", quien]);
+  }
+  _push(responsable, "RESPONSABLE");
+  (apoyos || []).forEach(function(a){ _push(a, "APOYO"); });
+
+  if (filas.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, filas.length, 10).setValues(filas);
+  }
+  return { ok: true, registrados: filas.length };
+}
+
+/* Equipo registrado de un evento (para el modal de finalización). */
+function obtenerEquipoTarea(filaEvento) {
+  var ss = _getSS();
+  var sh = ss.getSheetByName(EQT_CFG.HOJA);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues();
+  var out = [];
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][1]) !== String(filaEvento)) continue;
+    out.push({ filaHoja: i + 2, email: v[i][4], nombre: v[i][5],
+               rol: v[i][6], estado: v[i][7] });
+  }
+  return out;
+}
+
+/* Al finalizar la tarea: marca EXCLUIDO a los desmarcados por el responsable.
+   exclusiones = array de filaHoja devueltas por obtenerEquipoTarea. */
+function actualizarEquipoTareaFinal(filaEvento, exclusiones) {
+  var ss = _getSS();
+  var sh = ss.getSheetByName(EQT_CFG.HOJA);
+  if (!sh || !exclusiones || !exclusiones.length) return { ok: true, excluidos: 0 };
+  var ahora = new Date(), n = 0;
+  exclusiones.forEach(function(fh){
+    var f = parseInt(fh, 10);
+    if (!f || f < 2 || f > sh.getLastRow()) return;
+    // Seguridad: la fila debe pertenecer al evento indicado
+    if (String(sh.getRange(f, 2).getValue()) !== String(filaEvento)) return;
+    sh.getRange(f, 8).setValue("EXCLUIDO");
+    sh.getRange(f, 9).setValue(ahora);
+    n++;
+  });
+  try {
+    _registrarActividad(_usuarioActual(), "excluir_operarios", "",
+      "Evento fila " + filaEvento + ": " + n + " excluido(s)");
+  } catch (eL) {}
+  return { ok: true, excluidos: n };
+}
+
+
 /* ---------- Analytics por usuario ---------- */
 function obtenerAnalyticsUsuario(email) {
   var ss = _getSS();
@@ -4969,21 +5083,71 @@ function obtenerAnalyticsGlobal() {
   var ss = _getSS();
   var sh = ss.getSheetByName(USR_CFG.HOJA_LOG);
   var porUsuario = {};
-  if (!sh || sh.getLastRow() < 2) return { porUsuario: [], totalAcciones: 0 };
-  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
-  v.forEach(function(r){
-    var em = String(r[1]);
-    var acc = String(r[2]);
-    if (!porUsuario[em]) porUsuario[em] = { email: em, iniciados:0, finalizados:0, creados:0, total:0 };
-    if (acc === "iniciar") porUsuario[em].iniciados++;
-    else if (acc === "finalizar") porUsuario[em].finalizados++;
-    else if (acc === "crear_archivo") porUsuario[em].creados++;
-    porUsuario[em].total++;
+  var totalAcciones = 0;
+
+  if (sh && sh.getLastRow() >= 2) {
+    var v = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
+    totalAcciones = v.length;
+    v.forEach(function(r){
+      // FASE 8.58: clave normalizada en minúsculas para no duplicar usuarios
+      var em = String(r[1] || "").trim().toLowerCase();
+      if (!em) return;
+      var acc = String(r[2]);
+      if (!porUsuario[em]) porUsuario[em] = { email: em, nombre: "", iniciados:0, finalizados:0, creados:0, apoyos:0, exclusiones:0, total:0 };
+      if (acc === "iniciar") porUsuario[em].iniciados++;
+      else if (acc === "finalizar") porUsuario[em].finalizados++;
+      else if (acc === "crear_archivo") porUsuario[em].creados++;
+      porUsuario[em].total++;
+    });
+  }
+
+  // FASE 8.58: nombre visible desde USUARIOS (validación efectiva de identidad)
+  var nombrePorEmail = {}, emailPorNombre = {};
+  try {
+    var shU = ss.getSheetByName(USR_CFG.HOJA);
+    if (shU && shU.getLastRow() > 1) {
+      var vu = shU.getRange(2, 1, shU.getLastRow() - 1, 2).getValues();
+      vu.forEach(function(r){
+        var em = String(r[0] || "").trim().toLowerCase();
+        var nom = String(r[1] || "").trim();
+        if (em && nom) { nombrePorEmail[em] = nom; emailPorNombre[nom.toUpperCase()] = em; }
+      });
+    }
+  } catch (eU) {}
+
+  // FASE 8.58: apoyos operativos y exclusiones desde EQUIPOS_TAREA
+  try {
+    var shE = ss.getSheetByName(EQT_CFG.HOJA);
+    if (shE && shE.getLastRow() >= 2) {
+      var ve = shE.getRange(2, 1, shE.getLastRow() - 1, 10).getValues();
+      ve.forEach(function(r){
+        var em  = String(r[4] || "").trim().toLowerCase();
+        var nom = String(r[5] || "").trim();
+        var rol = String(r[6] || "").trim().toUpperCase();
+        var est = String(r[7] || "").trim().toUpperCase();
+        // Resolver email por nombre si la fila no lo trae
+        if (!em && nom) em = emailPorNombre[nom.toUpperCase()] || "";
+        var key = em || ("(sin correo) " + nom.toUpperCase());
+        if (!key.trim()) return;
+        if (!porUsuario[key]) porUsuario[key] = { email: em || "", nombre: nom, iniciados:0, finalizados:0, creados:0, apoyos:0, exclusiones:0, total:0 };
+        if (est === "EXCLUIDO") porUsuario[key].exclusiones++;
+        else if (rol === "APOYO") porUsuario[key].apoyos++;
+      });
+    }
+  } catch (eE) {}
+
+  // Completar nombres faltantes
+  Object.keys(porUsuario).forEach(function(k){
+    var u = porUsuario[k];
+    if (!u.nombre) u.nombre = nombrePorEmail[u.email] || "";
+    if (u.apoyos === undefined) u.apoyos = 0;
+    if (u.exclusiones === undefined) u.exclusiones = 0;
   });
+
   return {
     porUsuario: Object.keys(porUsuario).map(function(k){ return porUsuario[k]; })
                   .sort(function(a,b){ return b.total - a.total; }),
-    totalAcciones: v.length
+    totalAcciones: totalAcciones
   };
 }
 
