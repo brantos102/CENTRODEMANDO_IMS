@@ -38,6 +38,7 @@ function aplicarPermisosBotones() {
     'b-record': P.recordatorios, 'b-sinc': P.recordatorios,
     'b-syncQ': P.recordatorios,
     'b-cron-codigos': P.gestionUsuarios,   // FASE 8.56: solo Coordinador
+    'b-cred-api': P.gestionUsuarios,       // FASE 8.57: solo Coordinador
     'b-zip': P.exportar || P.verDashboard
   };
   Object.keys(map).forEach(function(id){
@@ -1664,6 +1665,64 @@ function abrirCronCodigos() {
       });
   }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
   .obtenerResumenCronCodigos();
+}
+
+/* ===== FASE 8.57: CREDENCIALES API (solo Coordinador, claves fuera del libro) ===== */
+function abrirCredencialesAPI() {
+  toast('Cargando…');
+  google.script.run.withSuccessHandler(function(res){
+    res = res || { clientes: [], hojaLegacyExiste: false };
+    var filas = (res.clientes && res.clientes.length)
+      ? res.clientes.map(function(c){
+          return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;">' +
+            '<b style="min-width:110px;">' + escapeHtml(c.cliente) + '</b>' +
+            '<span style="flex:1;color:var(--muted);">usuario: ' + escapeHtml(c.usuario || '—') + ' · clave: ••••••</span>' +
+            '<button class="mini-btn" title="Eliminar credencial" onclick="eliminarCredAPI(\'' + escapeHtml(c.cliente) + '\')">🗑</button></div>';
+        }).join('')
+      : '<div style="color:var(--muted);font-size:12px;">Sin credenciales registradas todavía.</div>';
+    var legacy = res.hojaLegacyExiste
+      ? '<div style="background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.3);color:#fde047;padding:7px;border-radius:5px;font-size:11px;margin:8px 0;">' +
+        '⚠ Aún existe la pestaña CREDENCIALES_API con claves a la vista de los editores. ' +
+        '<a href="#" onclick="migrarCredAPI();return false;" style="color:#fde047;text-decoration:underline;font-weight:600;">Migrar y eliminar la pestaña ahora</a></div>'
+      : '';
+    modalCustom('🔐 Credenciales API ITSANET',
+      'Las claves se guardan en el almacenamiento interno del script — <b>invisibles en el libro</b> para cualquier usuario. ' +
+      'Guardar con un cliente ya existente <b>REEMPLAZA</b> su credencial.',
+      '<div style="max-height:140px;overflow-y:auto;margin-bottom:8px;">' + filas + '</div>' + legacy +
+      '<div class="field"><label>Cliente *</label><input type="text" id="ca-cliente" placeholder="Ej. BELIA" style="text-transform:uppercase;"></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+        '<div class="field"><label>Usuario API *</label><input type="text" id="ca-user" autocomplete="off"></div>' +
+        '<div class="field"><label>Contraseña API *</label><input type="password" id="ca-pass" autocomplete="new-password"></div>' +
+      '</div>',
+      'Guardar credencial', function(){
+        var cli = $('ca-cliente').value.trim(), us = $('ca-user').value.trim(), pa = $('ca-pass').value;
+        if (!cli || !us || !pa) { toast('Completa cliente, usuario y contraseña','error'); return false; }
+        cerrarModal(); toast('Guardando credencial de ' + cli.toUpperCase() + '…');
+        google.script.run.withSuccessHandler(function(){ toast('✓ Credencial guardada (token renovará con la clave nueva)','success'); })
+          .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+          .guardarCredencialAPI(cli, us, pa);
+      });
+  }).withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+  .listarClientesAPI();
+}
+
+function eliminarCredAPI(cliente) {
+  if (!confirm('¿Eliminar la credencial API de ' + cliente + '?\nEse cliente dejará de poder extraer stock hasta registrar una nueva.')) return;
+  toast('Eliminando…');
+  google.script.run.withSuccessHandler(function(){ toast('✓ Credencial eliminada','success'); cerrarModal(); abrirCredencialesAPI(); })
+    .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+    .eliminarCredencialAPI(cliente);
+}
+
+function migrarCredAPI() {
+  if (!confirm('¿Migrar las credenciales de la pestaña CREDENCIALES_API al almacenamiento interno y ELIMINAR la pestaña?\n\nDespués de esto las claves ya no estarán visibles en el libro.')) return;
+  toast('Migrando…');
+  google.script.run.withSuccessHandler(function(r){
+      toast('✓ ' + (r && r.mensaje ? r.mensaje : 'Migración completa'),'success');
+      cerrarModal(); abrirCredencialesAPI();
+    })
+    .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+    .migrarCredencialesAScriptProperties();
 }
 
 /* ===== MODAL GENÉRICO ===== */

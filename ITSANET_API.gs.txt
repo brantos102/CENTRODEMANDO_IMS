@@ -11,47 +11,159 @@
 var ITSANET_BASE = "https://ec.itsanet.com/q_apidepot"; // Endpoint QUITO
 
 /**
- * (0) EJECUTA ESTA FUNCIÓN UNA SOLA VEZ DESDE EL EDITOR
- * Creará la pestaña para gestionar las credenciales de tus 100 clientes.
+ * (0) LEGACY — la pestaña ya NO es el almacén oficial (ver FASE 8.57).
+ * Se conserva solo por compatibilidad; usa el panel → 🔐 Credenciales API.
  */
 function crearHojaCredencialesAPI() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName("CREDENCIALES_API");
-  
+
   if (!sh) {
     sh = ss.insertSheet("CREDENCIALES_API");
     sh.getRange(1, 1, 1, 3).setValues([["CLIENTE (Igual al Panel)", "USUARIO_API", "PASSWORD_API"]]);
     sh.getRange(1, 1, 1, 3).setFontWeight("bold").setBackground("#1a73e8").setFontColor("#ffffff");
-    
-    // Ejemplos iniciales
-    sh.appendRow(["FINI", "FINI", "TU_CLAVE_FINI_AQUI"]);
-    sh.appendRow(["BELIA", "ITSABELIA", "ITSABELIA%/.2026"]);
-    
+
+    // Ejemplo (placeholder — NUNCA claves reales aquí: usa el panel)
+    sh.appendRow(["EJEMPLO", "USUARIO_API", "TU_CLAVE_AQUI"]);
+
     sh.setColumnWidth(1, 200); sh.setColumnWidth(2, 150); sh.setColumnWidth(3, 200);
-    SpreadsheetApp.getUi().alert("✅ ÉXITO: Pestaña 'CREDENCIALES_API' creada.\nAgrega ahí los usuarios y claves de tus 100 clientes.");
+    SpreadsheetApp.getUi().alert("⚠ AVISO: esta pestaña es LEGACY. Registra las credenciales desde el Panel → 🔐 Credenciales API (quedan fuera de la vista).");
   } else {
     sh.showSheet();
-    SpreadsheetApp.getUi().alert("ℹ️ La pestaña 'CREDENCIALES_API' ya existe. Llénala con tus clientes.");
+    SpreadsheetApp.getUi().alert("ℹ️ La pestaña 'CREDENCIALES_API' ya existe. Recomendado: migra al almacenamiento interno (Panel → 🔐 Credenciales API → Migrar).");
   }
 }
 
+/* ===========================================================================
+   FASE 8.57 — CREDENCIALES EN SCRIPTPROPERTIES (fuera de la vista del libro)
+   ---------------------------------------------------------------------------
+   · Las claves viven en el almacenamiento interno del script (Properties):
+     NINGÚN usuario del libro puede verlas; solo el dueño del proyecto.
+   · El Coordinador las gestiona desde el panel (añadir/editar/eliminar por
+     cliente) sin exponer las guardadas.
+   · Lectura con fallback a la pestaña legacy mientras no se migre.
+   =========================================================================== */
+
+var CRED_API_PREFIX = "CRED_API_";
+
+function _credKey(cliente) {
+  return CRED_API_PREFIX + String(cliente || "").trim().toUpperCase();
+}
+
 /**
- * Busca internamente las credenciales del cliente solicitado
+ * Busca las credenciales del cliente: ScriptProperties primero (seguro),
+ * pestaña CREDENCIALES_API como fallback legacy si aún existe.
  */
 function _obtenerCredencialesAPI(cliente) {
   var cliStr = String(cliente).trim().toUpperCase();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1) Almacenamiento interno (FASE 8.57)
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(_credKey(cliStr));
+    if (raw) {
+      var j = JSON.parse(raw);
+      if (j && j.user && j.pass) return { user: String(j.user), pass: String(j.pass) };
+    }
+  } catch (eP) {}
+
+  // 2) Fallback legacy: pestaña (si aún no se migró)
+  var ss = _ssCronCod();
   var sh = ss.getSheetByName("CREDENCIALES_API");
-  
-  if (!sh) throw new Error("Falta la pestaña CREDENCIALES_API. Ejecuta 'crearHojaCredencialesAPI' en el editor.");
-  
-  var data = sh.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]).trim().toUpperCase() === cliStr) {
-      return { user: String(data[i][1]).trim(), pass: String(data[i][2]).trim() };
+  if (sh) {
+    var data = sh.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim().toUpperCase() === cliStr) {
+        return { user: String(data[i][1]).trim(), pass: String(data[i][2]).trim() };
+      }
     }
   }
-  throw new Error("No hay credenciales configuradas para el cliente '" + cliStr + "' en CREDENCIALES_API.");
+  throw new Error("No hay credenciales API para '" + cliStr +
+    "'. Pídele al Coordinador registrarlas (Panel → 🔐 Credenciales API).");
+}
+
+/** COORDINADOR: crea o REEMPLAZA la credencial de un cliente. */
+function guardarCredencialAPI(cliente, usuario, password) {
+  _requiereRol(["Coordinador"]);
+  var cliN = String(cliente || "").trim().toUpperCase();
+  if (!cliN || !String(usuario || "").trim() || !String(password || "").trim()) {
+    throw new Error("Cliente, usuario y contraseña son obligatorios.");
+  }
+  PropertiesService.getScriptProperties().setProperty(
+    _credKey(cliN),
+    JSON.stringify({ user: String(usuario).trim(), pass: String(password).trim() })
+  );
+  // Invalida el token del día para forzar renovación con la clave nueva
+  try {
+    var sp = PropertiesService.getScriptProperties();
+    sp.deleteProperty("ITSANET_TOKEN_" + cliN);
+    sp.deleteProperty("FECHA_TOKEN_" + cliN);
+  } catch (eT) {}
+  try {
+    if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
+      _registrarActividad(_usuarioActual(), "guardar_cred_api", "", cliN);
+    }
+  } catch (eL) {}
+  return { ok: true, cliente: cliN };
+}
+
+/** COORDINADOR: elimina la credencial de un cliente. */
+function eliminarCredencialAPI(cliente) {
+  _requiereRol(["Coordinador"]);
+  var cliN = String(cliente || "").trim().toUpperCase();
+  PropertiesService.getScriptProperties().deleteProperty(_credKey(cliN));
+  try {
+    if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
+      _registrarActividad(_usuarioActual(), "eliminar_cred_api", "", cliN);
+    }
+  } catch (eL) {}
+  return { ok: true, cliente: cliN };
+}
+
+/** COORDINADOR: lista clientes configurados (SIN devolver claves). */
+function listarClientesAPI() {
+  _requiereRol(["Coordinador"]);
+  var props = PropertiesService.getScriptProperties().getProperties();
+  var out = [];
+  for (var k in props) {
+    if (k.indexOf(CRED_API_PREFIX) === 0) {
+      var usuario = "";
+      try { usuario = (JSON.parse(props[k]) || {}).user || ""; } catch (e) {}
+      out.push({ cliente: k.substring(CRED_API_PREFIX.length), usuario: usuario });
+    }
+  }
+  out.sort(function(a, b) { return a.cliente < b.cliente ? -1 : 1; });
+  var hojaLegacy = false;
+  try { hojaLegacy = !!_ssCronCod().getSheetByName("CREDENCIALES_API"); } catch (e2) {}
+  return { clientes: out, hojaLegacyExiste: hojaLegacy };
+}
+
+/** COORDINADOR: migra la pestaña legacy a Properties y LA ELIMINA. */
+function migrarCredencialesAScriptProperties() {
+  _requiereRol(["Coordinador"]);
+  var ss = _ssCronCod();
+  var sh = ss.getSheetByName("CREDENCIALES_API");
+  if (!sh) {
+    return { ok: true, migradas: 0, mensaje: "La pestaña CREDENCIALES_API ya no existe (nada que migrar)." };
+  }
+  var data = sh.getDataRange().getValues();
+  var sp = PropertiesService.getScriptProperties(), n = 0;
+  for (var i = 1; i < data.length; i++) {
+    var cli = String(data[i][0] || "").trim().toUpperCase();
+    var usr = String(data[i][1] || "").trim();
+    var pas = String(data[i][2] || "").trim();
+    if (!cli || !usr || !pas) continue;
+    if (cli === "EJEMPLO" || pas.indexOf("TU_CLAVE") !== -1) continue; // placeholders
+    sp.setProperty(_credKey(cli), JSON.stringify({ user: usr, pass: pas }));
+    n++;
+  }
+  ss.deleteSheet(sh); // elimina la pestaña con claves a la vista
+  try {
+    if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
+      _registrarActividad(_usuarioActual(), "migrar_cred_api", "", n + " credenciales");
+    }
+  } catch (eL) {}
+  return { ok: true, migradas: n,
+           mensaje: "Migradas " + n + " credenciales al almacenamiento interno. La pestaña CREDENCIALES_API fue eliminada." };
 }
 
 /**
