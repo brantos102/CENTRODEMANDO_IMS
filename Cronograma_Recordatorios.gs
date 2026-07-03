@@ -1492,6 +1492,9 @@ function crearEventoCronograma(datos) {
   
   var fechaIni = _soloFecha(parsearFechaLocal(datos.fechaInicio));
   var fechaEnt = datos.fechaEntrega ? _soloFecha(parsearFechaLocal(datos.fechaEntrega)) : null;
+  // FASE 8.59: si no se indica fecha fin tentativa, se ASIGNA inicio + 4 días
+  // (ventana estándar del cronograma; editable después en la hoja).
+  if (!fechaEnt) fechaEnt = _soloFecha(new Date(fechaIni.getTime() + 4 * 86400000));
   var anio = fechaIni.getFullYear();
   var mesNum = fechaIni.getMonth();
   var meses = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
@@ -1783,6 +1786,26 @@ function obtenerEstadoIntegralDashboard() {
   // -------- Cronograma --------
   var cronograma = [];
   var cargaResp = {};
+
+  // FASE 8.59: apoyos ACTIVOS por evento (hoja EQUIPOS_TAREA) — una sola lectura.
+  // Visibilidad para jefes: quién apoya cada tarea, en cronograma y carga.
+  var apoyosPorFila = {};
+  try {
+    var shEqD = ss.getSheetByName(EQT_CFG.HOJA);
+    if (shEqD && shEqD.getLastRow() >= 2) {
+      var vEqD = shEqD.getRange(2, 1, shEqD.getLastRow() - 1, 10).getValues();
+      vEqD.forEach(function(rq){
+        var fe = String(rq[1] || "").trim();
+        if (!fe) return;
+        if (String(rq[7] || "").toUpperCase() === "EXCLUIDO") return;
+        if (String(rq[6] || "").toUpperCase() !== "APOYO") return;
+        var nomAp = String(rq[5] || "").trim();
+        if (!nomAp) return;
+        if (!apoyosPorFila[fe]) apoyosPorFila[fe] = [];
+        if (apoyosPorFila[fe].indexOf(nomAp) === -1) apoyosPorFila[fe].push(nomAp);
+      });
+    }
+  } catch (eEqD) {}
   // FIX FASE 8.34: serie "Trabajos Slotting" del gráfico — se cuentan los
   // eventos del CRONOGRAMA cuya CATEGORIA (col F) contenga 'slotting',
   // entregados, agrupados por MES DE ENTREGA (col N) del año actual.
@@ -1926,6 +1949,7 @@ function obtenerEstadoIntegralDashboard() {
         titulo:       r[CRON_CFG.CR_COL_TITULO - 1] || "",
         categoria:    categoria,
         responsable:  responsable,
+        apoyos:       apoyosPorFila[String(CRON_CFG.CR_FILA_INI + i)] || [], // FASE 8.59
         prioridad:    r[CRON_CFG.CR_COL_PRIO - 1] || "Media", // FIX: Enviamos la prioridad
         fechaInicio:  ts,
         fechaFin:     fechaFinTs,
@@ -1953,6 +1977,17 @@ function obtenerEstadoIntegralDashboard() {
       var esResponsableReal = responsable && FREC_BLOCK.indexOf(respUp) === -1;
       if (!entregado && esResponsableReal) {
         cargaResp[responsable] = (cargaResp[responsable] || 0) + 1;
+      }
+      // FASE 8.59: los APOYOS activos también suman en la carga por operario
+      // (los jefes ven dónde está cada usuario, sea responsable o apoyo).
+      if (!entregado) {
+        var apsC = apoyosPorFila[String(CRON_CFG.CR_FILA_INI + i)] || [];
+        for (var ac = 0; ac < apsC.length; ac++) {
+          var apn = apsC[ac];
+          if (apn && apn.toUpperCase() !== respUp) {
+            cargaResp[apn] = (cargaResp[apn] || 0) + 1;
+          }
+        }
       }
     }
     cronograma.sort(function(a,b){
@@ -5053,6 +5088,29 @@ function actualizarEquipoTareaFinal(filaEvento, exclusiones) {
       "Evento fila " + filaEvento + ": " + n + " excluido(s)");
   } catch (eL) {}
   return { ok: true, excluidos: n };
+}
+
+/* FASE 8.59: PAUSAR un evento — vuelve a "Pendiente" para retomarlo luego.
+   Guard: solo si está En Proceso/En Curso; nunca toca eventos Entregados. */
+function dash_pausarEvento(filaCronograma) {
+  var ss = _getSS();
+  var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
+  if (!cron) throw new Error("No se encontró " + CRON_CFG.HOJA_CRONOGRAMA);
+  var f = parseInt(filaCronograma, 10);
+  if (!f || f < CRON_CFG.CR_FILA_INI) throw new Error("Fila inválida.");
+  var est = String(cron.getRange(f, CRON_CFG.CR_COL_ESTADO).getValue() || "").toLowerCase();
+  if (est.indexOf("entregado") !== -1) {
+    throw new Error("El evento ya está Entregado; no se puede pausar.");
+  }
+  if (est.indexOf("proceso") === -1 && est.indexOf("curso") === -1) {
+    return { ok: true, sinCambio: true, estado: est || "Pendiente" };
+  }
+  cron.getRange(f, CRON_CFG.CR_COL_ESTADO).setValue("Pendiente");
+  try {
+    _registrarActividad(_usuarioActual(), "pausar", String(f),
+      "Evento pausado (vuelve a Pendiente)");
+  } catch (eL) {}
+  return { ok: true, estado: "Pendiente" };
 }
 
 

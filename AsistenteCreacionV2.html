@@ -860,6 +860,50 @@
         serieHtml += '<span class="csv-metric" style="border-color:#ef4444;color:#fca5a5;background:rgba(239,68,68,0.10);">⚠ <b>' + estado.csvSerieMetrics.seriesDuplicadas + '</b> series duplicadas omitidas</span>';
       }
 
+      // ════════════════════════════════════════════════════════════════
+      // FASE 8.59: COBERTURA DE LA SOLICITUD — "de los N solicitados, M con
+      // datos y K sin datos (sin parecidos)". Los K alimentan el correo de
+      // inicio vía window._codigosNoEncontrados (mismo canal que el CSV).
+      // ════════════════════════════════════════════════════════════════
+      var covHtml = '';
+      try {
+        var solicRaw2 = $('filtroCodigos').value.trim();
+        if (solicRaw2) {
+          var solicArr = solicRaw2.split(/[\s,;\n\r\t]+/).map(function(s){ return limpiarSku(s); }).filter(Boolean);
+          var solicUnicos = []; var vistosS = {};
+          solicArr.forEach(function(c){ var u=c.toUpperCase(); if(!vistosS[u]){vistosS[u]=true; solicUnicos.push(u);} });
+          var raizDe = function(s){ return String(s).split('_')[0]; };
+          var obtenidosExact = {}, obtenidosRaiz = {};
+          estado.csvData.forEach(function(r){
+            var sk = String(r[6]||'').toUpperCase();
+            if (!sk) return;
+            obtenidosExact[sk] = true; obtenidosRaiz[raizDe(sk)] = true;
+          });
+          var noEnc = [];
+          solicUnicos.forEach(function(cU){
+            var ok = obtenidosExact[cU] || obtenidosRaiz[raizDe(cU)];
+            if (!ok) { // parecido inverso: algún obtenido empieza con el solicitado
+              for (var sk2 in obtenidosExact) { if (sk2.indexOf(cU) === 0) { ok = true; break; } }
+            }
+            if (!ok) noEnc.push(cU);
+          });
+          window._codigosNoEncontrados = noEnc;   // → correo de inicio + modal post-creación
+          var conDatos = solicUnicos.length - noEnc.length;
+          covHtml =
+            '<div class="val-report" style="margin-top:6px;">' +
+              '<div class="row"><span>📊 Códigos solicitados:</span><b>' + solicUnicos.length + '</b></div>' +
+              '<div class="row"><span>Con datos en la extracción:</span><b style="color:var(--ok)">' + conDatos + '</b></div>' +
+              '<div class="row"><span>Sin datos (sin parecidos):</span><b style="color:' + (noEnc.length ? 'var(--danger)' : 'var(--ok)') + '">' + noEnc.length + '</b></div>' +
+              (noEnc.length
+                ? '<div style="margin-top:4px;"><small style="color:var(--muted);">Estos códigos NO tienen stock en la bodega y se reportarán como "no encontrados" en el correo de inicio:</small>' +
+                  '<textarea readonly rows="' + Math.min(5, Math.max(2, Math.ceil(noEnc.length/3))) + '" style="width:100%;font-family:ui-monospace,monospace;font-size:10px;background:#0b1220;color:#fca5a5;border:1px solid #334155;border-radius:4px;margin-top:2px;">' + noEnc.join('\n') + '</textarea></div>'
+                : '') +
+            '</div>';
+        } else {
+          window._codigosNoEncontrados = [];
+        }
+      } catch (eCov) { covHtml = ''; }
+
       $('csv-status-box').innerHTML =
         '<div class="csv-status ok">' +
           '<b>✓ Datos de API ITSANET extraídos</b>' + (notaExtra || '') + '<br>' +
@@ -867,7 +911,7 @@
           '<span class="csv-metric"><b>' + Math.round(unidades).toLocaleString() + '</b> unidades totales</span>' +
           serieHtml +
           varianteHtml +
-        '</div>';
+        '</div>' + covHtml;
 
       // Validación estándar contra el histórico (mismo recuadro que el CSV)
       validarBackend();
@@ -1358,6 +1402,7 @@
     function reseleccionarCSV() {
       var inp = document.getElementById('csv-upload');
       if (inp) inp.value = '';
+      window._codigosNoEncontrados = []; // FASE 8.59: limpiar cobertura previa
       estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
       $('csv-status-box').innerHTML = '';
       $('val-report-box').innerHTML = '';

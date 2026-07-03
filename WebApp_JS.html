@@ -687,9 +687,13 @@ function filaCron(d) {
   } else {
     actions = accesos || '<span style="color:var(--muted);font-size:10px;">solo lectura</span>';
   }
+  // FASE 8.59: apoyos visibles bajo el responsable (visibilidad para jefes)
+  var apoyosHtml = (d.apoyos && d.apoyos.length)
+    ? '<div style="font-size:9px;color:#a78bfa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Apoyo: '+escapeHtml(d.apoyos.join(', '))+'">👥 '+escapeHtml(d.apoyos.join(', '))+'</div>'
+    : '';
   return '<div class="rw"><div style="color:var(--muted);font-size:11px;">'+fechaStr+'</div>'+
     '<div><div style="font-weight:500;">'+escapeHtml(d.cliente)+'</div><div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo)+'</div></div>'+
-    '<div style="font-size:11px;color:var(--info);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(d.responsable?escapeHtml(d.responsable):'<i style="color:var(--muted)">—</i>')+'</div>'+
+    '<div style="font-size:11px;color:var(--info);overflow:hidden;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(d.responsable?escapeHtml(d.responsable):'<i style="color:var(--muted)">—</i>')+'</div>'+apoyosHtml+'</div>'+
     '<div><span class="pill '+cdClass+'">'+cdText+'</span></div><div class="act-grp">'+actions+'</div></div>';
 }
 
@@ -715,9 +719,15 @@ function pintarPan() {
       acc += '<button class="icon-btn" onclick="window.open(\''+wu+'\',\'_blank\')" title="Abrir Terminal WMS">📦</button>';
     } else { acc = '<span style="color:var(--muted);font-size:10px;">—</span>'; }
     var resp = d.responsable ? escapeHtml(d.responsable) : '<i style="color:var(--muted)">—</i>';
+    // FASE 8.59: apoyos del evento vinculado a este archivo (match por fileId)
+    var apPan = '';
+    if (d.fileId && estado.cronograma) {
+      var evPan = estado.cronograma.find(function(e){ return e.fileId && e.fileId === d.fileId && e.apoyos && e.apoyos.length; });
+      if (evPan) apPan = '<div style="font-size:9px;color:#a78bfa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Apoyo: '+escapeHtml(evPan.apoyos.join(', '))+'">👥 '+escapeHtml(evPan.apoyos.join(', '))+'</div>';
+    }
     return '<div class="rw">'+
       '<div><div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente)+'</div></div>'+
-      '<div style="font-size:11px;color:var(--info);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+resp+'</div>'+
+      '<div style="font-size:11px;color:var(--info);overflow:hidden;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+resp+'</div>'+apPan+'</div>'+
       '<div>'+fmtNum(d.unidades)+'</div>'+
       '<div style="color:'+efColor+';font-weight:500;">'+ef+'</div>'+
       '<div><span class="pill '+cls+'">'+escapeHtml(txt)+'</span></div>'+
@@ -742,11 +752,27 @@ function verCargaOperario(i) {
   var nombre = (_cargaArr[i] || [])[0] || '';
   if (!nombre) return;
   var meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  // FASE 8.59: incluye tareas como RESPONSABLE y como APOYO. Por defecto SOLO
+  // "En proceso"; con el toggle se agregan las Pendientes; las entregadas NUNCA.
+  var incluirPend = !!arguments[1];
+  var nomUp = String(nombre).trim().toUpperCase();
   var tareas = (estado.cronograma || []).filter(function(d){
-    return String(d.responsable||'').trim().toUpperCase() === String(nombre).trim().toUpperCase()
-        && String(d.estado||'').toLowerCase().indexOf('entregado') === -1;
+    var est = String(d.estado||'').toLowerCase();
+    if (est.indexOf('entregado') !== -1) return false;
+    var esResp = String(d.responsable||'').trim().toUpperCase() === nomUp;
+    var esApoyo = (d.apoyos||[]).some(function(a){ return String(a).trim().toUpperCase() === nomUp; });
+    if (!esResp && !esApoyo) return false;
+    d._rolEnTarea = esResp ? 'RESPONSABLE' : 'APOYO';
+    var enProc = est.indexOf('proceso') !== -1 || est.indexOf('curso') !== -1;
+    return enProc || incluirPend;
   });
-  tareas.sort(function(a,b){ return (a.fechaInicio||0) - (b.fechaInicio||0); });
+  tareas.sort(function(a,b){
+    var ea = String(a.estado||'').toLowerCase(), eb = String(b.estado||'').toLowerCase();
+    var pa = (ea.indexOf('proceso')!==-1 || ea.indexOf('curso')!==-1) ? 0 : 1;
+    var pb = (eb.indexOf('proceso')!==-1 || eb.indexOf('curso')!==-1) ? 0 : 1;
+    if (pa !== pb) return pa - pb;   // las EN PROCESO primero (dónde está AHORA)
+    return (a.fechaInicio||0) - (b.fechaInicio||0);
+  });
 
   // FIX FASE 8.36: barra de avance reutilizable (cronograma=gris/azul; en vivo=azul claro).
   function _avHTML(pct, live, texto) {
@@ -782,9 +808,14 @@ function verCargaOperario(i) {
       if (P.abrirLibro) acc+='<button class="icon-btn" onclick="'+alerta+'" title="Excel (Sin archivo asignado)">📊</button>';
       acc+='<button class="icon-btn" onclick="'+alerta+'" title="WMS (Sin archivo asignado)">📦</button>';
     }
-    return '<div class="rw" style="grid-template-columns:50px 1fr 84px 92px 56px;gap:6px;">'+
+    // FASE 8.59: badge de rol + resaltado del evento EN PROCESO (dónde está ahora)
+    var rolBadge = d._rolEnTarea === 'APOYO'
+      ? ' <span style="font-size:8px;background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 5px;border-radius:8px;vertical-align:middle;">APOYO</span>' : '';
+    var rwStyle = 'grid-template-columns:50px 1fr 84px 92px 56px;gap:6px;' +
+      (enProc ? 'border-left:2px solid #60a5fa;background:rgba(96,165,250,0.05);' : '');
+    return '<div class="rw" style="'+rwStyle+'">'+
       '<div style="color:var(--muted);font-size:11px;">'+fStr+'</div>'+
-      '<div><div style="font-weight:500;">'+escapeHtml(d.cliente||'—')+'</div>'+
+      '<div><div style="font-weight:500;">'+escapeHtml(d.cliente||'—')+rolBadge+'</div>'+
         '<div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo||'')+'</div>'+cat+'</div>'+
       '<div>'+avCell+'</div>'+
       '<div><span class="pill '+pill+'">'+ptxt+'</span></div>'+
@@ -793,10 +824,13 @@ function verCargaOperario(i) {
 
   var hdr = '<div class="rw" style="grid-template-columns:50px 1fr 84px 92px 56px;gap:6px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--border);padding-bottom:4px;">'+
     '<div>Fecha</div><div>Cliente / Tarea</div><div>Avance</div><div>Estado</div><div></div></div>';
-  var cuerpo = tareas.length
+  // FASE 8.59: toggle para ver también los pendientes (los finalizados NUNCA)
+  var toggleHtml = '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:6px;cursor:pointer;">'+
+    '<input type="checkbox" '+(incluirPend?'checked':'')+' onchange="verCargaOperario('+i+', this.checked)"> Mostrar también pendientes</label>';
+  var cuerpo = toggleHtml + (tareas.length
     ? '<div class="tbl" style="font-size:12px;">'+hdr+'<div class="scroll" style="max-height:50vh;">'+filas+'</div></div>'
-    : '<div class="empty">Sin tareas activas para este operario.</div>';
-  modalCustom('👤 '+nombre+' · '+tareas.length+' tarea(s) activa(s)', '', cuerpo, 'Cerrar', cerrarModal);
+    : '<div class="empty">Sin tareas EN PROCESO para este operario. Activa "Mostrar también pendientes" para ver lo programado.</div>');
+  modalCustom('👤 '+nombre+' · '+tareas.length+(incluirPend?' tarea(s) activa(s)':' en proceso'), '', cuerpo, 'Cerrar', cerrarModal);
   // Ocultar botón cancelar solo para este modal (ya que el de confirmación dice "Cerrar")
   var btnCancelar = document.querySelector('#modal .actions button:first-child');
   if (btnCancelar) btnCancelar.style.display = 'none';
@@ -1441,8 +1475,88 @@ function cargarAnalytics() {
 }
 
 /* ===== WIZARD / FORM EVENTO (overlays) ===== */
-function abrirWizard() {
+/* ===== FASE 8.59: RECORDATORIO DE TRABAJOS ACTIVOS ANTES DE CREAR =====
+   Antes de crear un evento o archivo, se muestran los trabajos del usuario
+   (responsable o apoyo) que siguen En Proceso o Pendientes, con acciones:
+   ⏸ Dejar pendiente (pausa) · ▶ Retomar · ✓ Finalizar · o Continuar sin cambios. */
+function _misTrabajosActivos() {
+  var nomU = String((U && U.nombre) || '').trim().toUpperCase();
+  if (!nomU || !estado || !estado.cronograma) return [];
+  return estado.cronograma.filter(function(d){
+    var est = String(d.estado || '').toLowerCase();
+    if (est.indexOf('entregado') !== -1) return false;
+    var esResp = String(d.responsable || '').trim().toUpperCase() === nomU;
+    var esApoyo = (d.apoyos || []).some(function(a){ return String(a).trim().toUpperCase() === nomU; });
+    if (!esResp && !esApoyo) return false;
+    d._rolEnTarea = esResp ? 'RESPONSABLE' : 'APOYO';
+    return true;
+  });
+}
+
+function verificarTrabajosAntesDeCrear(continuar) {
+  var evs = _misTrabajosActivos();
+  if (!evs.length) { continuar(); return; }
+  evs.sort(function(a,b){
+    var pa = String(a.estado||'').toLowerCase().indexOf('proceso') !== -1 ? 0 : 1;
+    var pb = String(b.estado||'').toLowerCase().indexOf('proceso') !== -1 ? 0 : 1;
+    return pa - pb;
+  });
+  var filas = evs.slice(0, 10).map(function(d){
+    var est = String(d.estado||'').toLowerCase();
+    var enP = est.indexOf('proceso') !== -1 || est.indexOf('curso') !== -1;
+    var pill = enP ? '<span class="pill pill-info">⏳ En proceso</span>' : '<span class="pill pill-muted">Pendiente</span>';
+    var rolTxt = d._rolEnTarea === 'APOYO' ? ' <span style="color:#a78bfa;font-size:9px;">(apoyo)</span>' : '';
+    var accs = enP
+      ? '<button class="mini-btn" onclick="accionTrabajo(\'pausar\','+d.fila+')">⏸ Dejar pendiente</button>'
+      : '<button class="mini-btn start" onclick="accionTrabajo(\'retomar\','+d.fila+')">▶ Retomar</button>';
+    accs += '<button class="mini-btn end" onclick="accionTrabajo(\'fin\','+d.fila+')">✓ Finalizar</button>';
+    return '<div class="rw" id="trab-'+d.fila+'" style="grid-template-columns:1fr 92px auto;gap:6px;align-items:center;">'+
+      '<div><div style="font-weight:500;font-size:12px;">'+escapeHtml(d.cliente||'—')+rolTxt+'</div>'+
+      '<div style="font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo||'')+'</div></div>'+
+      '<div>'+pill+'</div><div class="act-grp">'+accs+'</div></div>';
+  }).join('');
+  window._postTrabajosCb = continuar;
+  modalCustom('📋 Tienes '+evs.length+' trabajo(s) activo(s)',
+    'Decide qué hacer con tus trabajos actuales antes de crear uno nuevo, o continúa sin cambios:',
+    '<div class="tbl" style="font-size:12px;"><div class="scroll" style="max-height:45vh;">'+filas+'</div></div>',
+    'Continuar con la creación', function(){
+      cerrarModal();
+      var cb = window._postTrabajosCb; window._postTrabajosCb = null;
+      if (cb) cb();
+    });
+}
+
+function accionTrabajo(tipo, fila) {
+  if (tipo === 'fin') {
+    window._postTrabajosCb = null;
+    cerrarModal();
+    finalizarEvt(fila);   // flujo de finalización existente (incluye equipo)
+    return;
+  }
+  var row = document.getElementById('trab-'+fila);
+  toast(tipo === 'pausar' ? 'Pausando…' : 'Retomando…');
+  var runner = google.script.run.withSuccessHandler(function(){
+    toast(tipo === 'pausar' ? '✓ Quedó Pendiente (pausado)' : '✓ Quedó En Proceso','success');
+    if (row) {
+      var pillCell = row.children[1], accCell = row.children[2];
+      if (pillCell) pillCell.innerHTML = (tipo === 'pausar')
+        ? '<span class="pill pill-muted">Pendiente</span>'
+        : '<span class="pill pill-info">⏳ En proceso</span>';
+      if (accCell) accCell.innerHTML = '<span style="color:var(--ok);font-size:10px;">✓ actualizado</span>';
+    }
+    cargarDashboard();
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); });
+  if (tipo === 'pausar') runner.dash_pausarEvento(fila);
+  else runner.iniciarEventoConOpciones(fila, {});
+}
+
+function abrirWizard(skipCheck) {
   if (!P.crearInventario) return toast('Tu rol no permite crear inventarios','error');
+  // FASE 8.59: recordatorio de trabajos activos antes de crear
+  if (!skipCheck && _misTrabajosActivos().length) {
+    verificarTrabajosAntesDeCrear(function(){ abrirWizard(true); });
+    return;
+  }
   // FIX FASE 8.2: El wizard se abre como modal overlay DENTRO de la misma pantalla.
   // No abre pestaña nueva, no redirige al libro. El iframe carga ?vista=wizard
   // del MISMO origen, lo que evita los problemas de pantalla blanca del sandbox.
@@ -1584,8 +1698,13 @@ window.addEventListener('message', function(ev) {
    - Responsable dropdown con TODOS los miembros del equipo activo
    - Si el equipo no está cargado al abrir, lo solicita en paralelo (fallback)
    - Todos los campos son independientes y se pueden llenar en cualquier orden */
-function abrirFormEvento() {
+function abrirFormEvento(skipCheck) {
   if (!P.crearInventario) return toast('Tu rol no permite crear eventos','error');
+  // FASE 8.59: recordatorio de trabajos activos antes de crear
+  if (!skipCheck && _misTrabajosActivos().length) {
+    verificarTrabajosAntesDeCrear(function(){ abrirFormEvento(true); });
+    return;
+  }
 
   // Garantizar que equipo y clientes estén disponibles
   var equipoCargado = (estado && estado.equipo && estado.equipo.length > 0);
@@ -1618,6 +1737,8 @@ function _renderFormEvento() {
   var clientesOpts = clientesArr.map(function(c){ return '<option value="'+escapeHtml(c)+'">'; }).join('');
 
   var hoy = new Date().toISOString().slice(0,10);
+  // FASE 8.59: fecha fin tentativa por defecto = hoy + 4 días
+  var finTent = new Date(Date.now() + 4*86400000).toISOString().slice(0,10);
 
   // Aviso si el equipo está vacío (operativo, no bloqueante)
   var avisoVacio = (equipoArr.length === 0)
@@ -1644,9 +1765,14 @@ function _renderFormEvento() {
       '<div class="field"><label>Frecuencia</label>' +
         '<select id="fe-frec"><option>MENSUAL</option><option>SEMANAL</option><option>QUINCENAL</option><option>BIMESTRAL</option><option>TRIMESTRAL</option><option>SEMESTRAL</option><option>ANUAL</option><option>EMERGENTE</option></select></div>' +
     '</div>' +
-    // FIX FASE 8.55: categoría seleccionable (antes quedaba fija en "Inventario Programado")
-    '<div class="field"><label>Categoría</label>' +
-      '<select id="fe-cat"><option>Inventario Programado</option><option>Trabajo Slotting</option><option>Inventario No Programado</option><option>Movimientos</option></select></div>' +
+    // FIX FASE 8.55/8.59: categoría + fecha fin tentativa (si se deja vacía, el
+    // servidor asigna inicio + 4 días — ventana estándar del cronograma)
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+      '<div class="field"><label>Fecha fin tentativa</label>' +
+        '<input type="date" id="fe-fent" value="'+finTent+'"></div>' +
+      '<div class="field"><label>Categoría</label>' +
+        '<select id="fe-cat"><option>Inventario Programado</option><option>Trabajo Slotting</option><option>Inventario No Programado</option><option>Movimientos</option></select></div>' +
+    '</div>' +
     // FASE 8.58: equipo de apoyo (multi-operario) — se registra en EQUIPOS_TAREA
     '<div class="field"><label>👥 Equipo de apoyo <small style="color:var(--muted);">(opcional — el responsable no necesita marcarse)</small></label>' +
       '<div style="max-height:110px;overflow-y:auto;border:1px solid var(--border);border-radius:5px;padding:4px;">' +
@@ -1666,6 +1792,7 @@ function _renderFormEvento() {
         fechaInicio:  $('fe-fini').value,
         frecuencia:   $('fe-frec').value,
         categoria:    $('fe-cat').value,   // FIX FASE 8.55
+        fechaEntrega: $('fe-fent').value,  // FASE 8.59: fecha fin tentativa
         // FASE 8.58: apoyos sin duplicar al responsable
         apoyos:       apoyosSel.filter(function(a){ return a.toUpperCase() !== respSel.toUpperCase(); })
       };
