@@ -309,7 +309,54 @@
         </div>
 
         <!-- 2. CSV (condicional) -->
-        <div class="card" id="csv-zone">
+        <div class="card" id="data-zone" style="display:none;">
+          <div class="ttl" id="data-zone-title"><span class="step-num">2</span> Carga y validación CSV
+            <small id="csv-cache-status"></small>
+          </div>
+
+          <div class="field" id="csv-upload-box">
+            <label>Archivo CSV / TXT</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="file" id="csv-upload" accept=".csv,.txt" style="flex:1;">
+              <button type="button" onclick="reseleccionarCSV()" title="Limpiar y reseleccionar"
+                      style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:6px 10px;border-radius:5px;font-size:11px;cursor:pointer;">↻ Reset</button>
+            </div>
+          </div>
+
+          <div class="field" id="api-upload-box" style="display:none;">
+            <label>Conexión ERP (API ITSANET)</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button type="button" onclick="extraerDesdeAPI()" style="flex:1;background:var(--accent);color:#fff;border:none;padding:9px 10px;border-radius:5px;font-size:12px;font-weight:600;display:flex;justify-content:center;align-items:center;gap:8px;cursor:pointer;box-shadow:0 4px 10px rgba(59,130,246,0.3);">
+                ⬇️ Extraer Stock desde API
+              </button>
+              <button type="button" onclick="reseleccionarCSV()" title="Limpiar datos"
+                      style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:9px 12px;border-radius:5px;font-size:11px;cursor:pointer;">↻ Limpiar</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Filtrar SKUs (opcional)</label>
+            <textarea id="filtroCodigos" rows="2"
+              placeholder="Pega los SKUs separados por línea. Vacío = importa el 100%."></textarea>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none;">
+              <input type="checkbox" id="chkIncluirVariantes" checked style="margin:0;">
+              <span>Incluir <b style="color:var(--text);">variantes con sufijo</b> (ej. <code style="font-family:ui-monospace,monospace;background:#1c2740;padding:1px 4px;border-radius:3px;">_U</code>)</span>
+            </label>
+          </div>
+
+          <div style="text-align:right; margin-bottom: 8px;">
+            <button type="button" id="btn-revalidar" onclick="revalidarDatos()" title="Re-validar contra histórico"
+                    style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:6px 10px;border-radius:5px;font-size:11px;cursor:pointer;display:none;">✓ Re-validar datos</button>
+          </div>
+
+          <div id="csv-status-box"></div>
+          <div id="val-report-box"></div>
+        </div>
+
+
+
+
+        <!-- <div class="card" id="csv-zone">
           <div class="ttl"><span class="step-num">2</span> Carga y validación CSV
             <small id="csv-cache-status"></small>
           </div>
@@ -337,7 +384,8 @@
 
           <div id="csv-status-box"></div>
           <div id="val-report-box"></div>
-        </div>
+        </div>-->
+
 
         <!-- 3. Vinculación cronograma -->
         <div class="card">
@@ -503,6 +551,10 @@
     };
     let cacheDash = null;
 
+    // FIX: Bandera absoluta para evitar doble creación
+
+    window.isProcessingFile = false;
+
     /* ===== INIT ===== */
     window.onload = function() {
       // FIX FASE 7.7: handler de fallo + estado visible en el loader
@@ -608,7 +660,7 @@
     }
 
     /* ===== FUENTE ===== */
-    function cambiarFuente() {
+    /*function cambiarFuente() {
       const f = document.querySelector('input[name="fuente"]:checked').value;
       estado.fuente = f;
       document.querySelectorAll('input[name="fuente"]').forEach(r => {
@@ -628,7 +680,135 @@
         $('val-report-box').innerHTML = '';
       }
       validar();
+    }*/
+    /* ===== FUENTE ===== */
+    function cambiarFuente() {
+      const f = document.querySelector('input[name="fuente"]:checked').value;
+      estado.fuente = f;
+      document.querySelectorAll('input[name="fuente"]').forEach(r => {
+        r.closest('.radio-mini').classList.toggle('selected', r.checked);
+      });
+      
+      const isData = (f === 'CSV' || f === 'API');
+      $('data-zone').style.display = isData ? 'block' : 'none';
+      
+      if (isData) {
+        if (f === 'API') {
+          $('csv-upload-box').style.display = 'none';
+          $('api-upload-box').style.display = 'flex';
+          $('data-zone-title').innerHTML = '<span class="step-num">2</span> Extracción y validación API <small id="csv-cache-status"></small>';
+        } else {
+          $('csv-upload-box').style.display = 'flex';
+          $('api-upload-box').style.display = 'none';
+          $('data-zone-title').innerHTML = '<span class="step-num">2</span> Carga y validación CSV <small id="csv-cache-status"></small>';
+        }
+      }
+
+      var info = document.getElementById('fuente-info-blank');
+      if (info) {
+        var cliente = ($('cliente').value || '').trim();
+        info.style.display = (f === 'BLANK' && cliente) ? 'block' : 'none';
+      }
+      
+      // Resetear vista si cambian de fuente
+      if (!isData) {
+        estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
+        $('csv-status-box').innerHTML = '';
+        $('val-report-box').innerHTML = '';
+        var btnRe = document.getElementById('btn-revalidar');
+        if (btnRe) btnRe.style.display = 'none';
+      }
+      validar();
     }
+
+    /* ===== EXTRACCIÓN API ===== */
+    function extraerDesdeAPI() {
+      const cli = $('cliente').value.trim();
+      if (!cli) {
+        $('csv-status-box').innerHTML = '<div class="csv-status err">⚠ Indica el cliente en el Paso 1 antes de conectar a la API.</div>';
+        return;
+      }
+      const filtros = $('filtroCodigos').value.trim();
+      const incluirVariantes = $('chkIncluirVariantes').checked;
+
+      $('csv-status-box').innerHTML = '<div class="csv-status">⏳ Conectando con API ITSANET y extrayendo stock...</div>';
+      $('val-report-box').innerHTML = '';
+      var btnRe = document.getElementById('btn-revalidar');
+      if (btnRe) btnRe.style.display = 'none';
+
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.datosLimpios) {
+          $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error: La API no devolvió datos válidos.</div>';
+          return;
+        }
+
+        // 1. Guardamos la matriz ya formateada por la API como si fuera el CSV
+        estado.csvData = res.datosLimpios; 
+        estado.csvAplicado = true;
+
+        // 2. Simulamos las métricas de serie (la API entrega la data ya consolidada)
+        estado.csvSerieMetrics = {
+          filasConSerie: 0,
+          filasSinSerie: res.reporte.incluidas,
+          seriesDuplicadas: 0,
+          cantidadAjustada: 0,
+          totalUnidades: res.reporte.sumaCantidad
+        };
+
+        let variantesSufijoCount = 0;
+        const variantesPorRaiz = {};
+        estado.csvData.forEach(r => {
+          const sku = String(r[6] || '').toUpperCase();
+          if (sku.indexOf('_') !== -1) {
+            variantesSufijoCount++;
+            const raiz = sku.split('_')[0];
+            if (!variantesPorRaiz[raiz]) variantesPorRaiz[raiz] = [];
+            variantesPorRaiz[raiz].push(sku);
+          }
+        });
+        estado.csvMeta = { variantesSufijoCount, variantesPorRaiz };
+
+        let varianteHtml = '';
+        if (variantesSufijoCount > 0) {
+          const raizEjemplo = Object.keys(variantesPorRaiz).sort((a, b) => variantesPorRaiz[b].length - variantesPorRaiz[a].length)[0];
+          const ejemplo = raizEjemplo ? raizEjemplo + ' → ' + variantesPorRaiz[raizEjemplo].slice(0, 3).join(', ') + (variantesPorRaiz[raizEjemplo].length > 3 ? ', …' : '') : '';
+          varianteHtml = '<span class="csv-metric" style="border-color:#3b82f6;color:#bfdbfe;background:rgba(59,130,246,0.10);">🏷 <b>' + variantesSufijoCount + '</b> variantes con sufijo' + (ejemplo ? ' <small style="opacity:0.8;display:block;font-family:ui-monospace,monospace;margin-top:2px;">ej: ' + ejemplo + '</small>' : '') + '</span>';
+        }
+
+        $('csv-status-box').innerHTML =
+          '<div class="csv-status ok">' +
+            '<b>✓ Datos de API ITSANET extraídos</b><br>' +
+            '<span class="csv-metric"><b>' + estado.csvData.length + '</b> filas obtenidas</span>' +
+            '<span class="csv-metric"><b>' + Math.round(res.reporte.sumaCantidad).toLocaleString() + '</b> unidades totales</span>' +
+            varianteHtml +
+          '</div>';
+
+        // 3. Ejecutamos la validación estándar contra el histórico 
+        // (Esto activa el recuadro verde/rojo exactamente igual que el CSV)
+        validarBackend();
+
+      }).withFailureHandler(err => {
+        $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error de conexión API: ' + (err.message || err) + '</div>';
+      }).previsualizarStockItsanet(cli, filtros, incluirVariantes);
+    }
+
+    /* Renombramos revalidarCSV a revalidarDatos para que sirva para API y CSV */
+    function revalidarDatos() {
+      if (!estado.csvData || estado.csvData.length === 0) {
+        setStatus('No hay datos cargados para validar.', 'err');
+        return;
+      }
+      var cli = $('cliente').value.trim();
+      if (!cli) {
+        setStatus('Indica primero el cliente para re-validar.', 'err');
+        return;
+      }
+      validarBackend();
+    }
+
+
+
+
 
     /* ===== TREE CARPETAS ===== */
     function crearNodo(id, name, isRoot, parent) {
@@ -1325,7 +1505,7 @@
         observaciones: ''
       } : null;
 
-      const payload = {
+      /*const payload = {
         clientName: $('cliente').value.trim(),
         fileName: $('fileName').value.trim(),
         dataSource: estado.fuente,
@@ -1337,13 +1517,34 @@
           filaEvento: estado.filaEvento,
           datosEvento: datosEvento
         }
+      };*/
+      const payload = {
+        clientName: $('cliente').value.trim(),
+        fileName: $('fileName').value.trim(),
+        
+        // ENGAÑO INTELIGENTE: Si la fuente es API, la mandamos como 'CSV' al backend.
+        // Como 'extraerDesdeAPI' ya formatea la matriz a las 17 columnas perfectas,
+        // el backend la validará e insertará usando su lógica actual intacta. Cero riesgos.
+        dataSource: estado.fuente === 'API' ? 'CSV' : estado.fuente,
+        
+        folderId: estado.folderId,
+        csvData: datosEnviar,
+        codigosNoEncontrados: window._codigosNoEncontrados || [],
+        eventoAsignacion: {
+          modo: estado.modo,
+          filaEvento: estado.filaEvento,
+          datosEvento: datosEvento
+        }
       };
+
+
 
       google.script.run
         .withSuccessHandler(res => {
           mostrarModalPostCreacion(res);
         })
         .withFailureHandler(err => {
+          window.isProcessingFile = false; // Liberamos la bandera si hay error
           // Detectar el error tipificado "CLIENTE_NO_MATCHEA"
           const msg = String(err.message || err);
           if (msg.indexOf('CLIENTE_NO_MATCHEA||') !== -1) {
