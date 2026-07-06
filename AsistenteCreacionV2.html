@@ -2017,10 +2017,34 @@
                 <button onclick="cerrarPostModal()" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Cerrar y volver al panel</button>
               </div>
             </div>
+            <div id="post-autoclose" style="text-align:center;font-size:11px;color:#94a3b8;margin-top:10px;">
+              ⏱ Volviendo al panel automáticamente en <b id="post-count" style="color:#60a5fa;">12</b>s ·
+              <a href="#" onclick="cancelarAutoCierre();return false;" style="color:#60a5fa;">mantener abierta</a>
+            </div>
           </div>
         </div>`;
       document.body.insertAdjacentHTML('beforeend', modalHtml);
       window._postRes = res;
+
+      // FASE 8.61: cierre AUTOMÁTICO — terminado el proceso (archivo + correo),
+      // el modal se cierra solo y se vuelve al panel (cerrarPostModal ya avisa
+      // al padre, que cierra el wizard y recarga el dashboard). Cualquier
+      // interacción de teclado/clic dentro del modal cancela el conteo.
+      window._postCierreSeg = 12;
+      if (window._postCierreT) clearInterval(window._postCierreT);
+      window._postCierreT = setInterval(function(){
+        window._postCierreSeg--;
+        var c = document.getElementById('post-count');
+        if (c) c.innerText = window._postCierreSeg;
+        if (window._postCierreSeg <= 0) { cancelarAutoCierre(); cerrarPostModal(); }
+      }, 1000);
+    }
+
+    /* FASE 8.61: cancelar el cierre automático del modal post-creación */
+    function cancelarAutoCierre() {
+      if (window._postCierreT) { clearInterval(window._postCierreT); window._postCierreT = null; }
+      var n = document.getElementById('post-autoclose');
+      if (n) n.style.display = 'none';
     }
 
     function escapeAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
@@ -2029,6 +2053,7 @@
     /* FIX FASE 8.7: Al cerrar el modal post-creación, AVISA al panel padre
        que debe recargar el dashboard (porque hay archivo nuevo en PANEL DE CONTROL). */
     function cerrarPostModal() {
+      try { if (window._postCierreT) clearInterval(window._postCierreT); } catch(e) {} // FASE 8.61
       var m = document.getElementById('post-modal-bg');
       if (m) m.remove();
       // Avisar al panel padre que se creó archivo

@@ -60,7 +60,7 @@ function nav(sec) {
 }
 
 /* ===== DASHBOARD ===== */
-var AUTO_REFRESH_MS = 60000;
+var AUTO_REFRESH_MS = 30000; // FASE 8.61: 30s — auditoría en vivo necesita datos frescos
 var _autoTimer = null;
 
 function cargarDashboard(silencioso) {
@@ -691,11 +691,11 @@ function filaCron(d) {
   }
   // FASE 8.59: apoyos visibles bajo el responsable (visibilidad para jefes)
   var apoyosHtml = (d.apoyos && d.apoyos.length)
-    ? '<div style="font-size:9px;color:#a78bfa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Apoyo: '+escapeHtml(d.apoyos.join(', '))+'">👥 '+escapeHtml(d.apoyos.join(', '))+'</div>'
+    ? '<div style="font-size:9px;color:#2dd4bf;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Apoyo: '+escapeHtml(d.apoyos.join(', '))+'">👥 '+escapeHtml(d.apoyos.join(', '))+'</div>'
     : '';
   return '<div class="rw"><div style="color:var(--muted);font-size:11px;">'+fechaStr+'</div>'+
     '<div><div style="font-weight:500;">'+escapeHtml(d.cliente)+'</div><div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo)+'</div></div>'+
-    '<div style="font-size:11px;color:var(--info);overflow:hidden;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(d.responsable?escapeHtml(d.responsable):'<i style="color:var(--muted)">—</i>')+'</div>'+apoyosHtml+'</div>'+
+    '<div style="font-size:11px;color:#60a5fa;overflow:hidden;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(d.responsable?escapeHtml(d.responsable):'<i style="color:var(--muted)">—</i>')+'</div>'+apoyosHtml+'</div>'+
     '<div><span class="pill '+cdClass+'">'+cdText+'</span></div><div class="act-grp">'+actions+'</div></div>';
 }
 
@@ -725,14 +725,14 @@ function pintarPan() {
     var apPan = '';
     if (d.fileId && estado.cronograma) {
       var evPan = estado.cronograma.find(function(e){ return e.fileId && e.fileId === d.fileId && e.apoyos && e.apoyos.length; });
-      if (evPan) apPan = '<div style="font-size:9px;color:#a78bfa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Apoyo: '+escapeHtml(evPan.apoyos.join(', '))+'">👥 '+escapeHtml(evPan.apoyos.join(', '))+'</div>';
+      if (evPan) apPan = '<div style="font-size:9px;color:#2dd4bf;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Apoyo: '+escapeHtml(evPan.apoyos.join(', '))+'">👥 '+escapeHtml(evPan.apoyos.join(', '))+'</div>';
     }
     // FASE 8.60: columna AVANCE (carga operativa del archivo, en vivo vía batch)
     var avIni = (av.indexOf('entregado') !== -1) ? '<b style="color:#22c55e;">100%</b>'
               : (d.fileId ? '<span style="color:var(--muted);">…</span>' : '—');
     return '<div class="rw" style="grid-template-columns:1.3fr 1.1fr 60px 52px 86px 88px 52px;gap:6px;">'+
       '<div><div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente)+'</div></div>'+
-      '<div style="font-size:11px;color:var(--info);overflow:hidden;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+resp+'</div>'+apPan+'</div>'+
+      '<div style="font-size:11px;color:#60a5fa;overflow:hidden;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+resp+'</div>'+apPan+'</div>'+
       '<div>'+fmtNum(d.unidades)+'</div>'+
       '<div style="color:'+efColor+';font-weight:500;">'+ef+'</div>'+
       '<div id="pan-av-'+di+'" style="font-size:11px;">'+avIni+'</div>'+
@@ -857,27 +857,32 @@ function verCargaOperario(i) {
       if (enProc) acc = '<button class="mini-btn" title="Pausar (vuelve a Pendiente)" onclick="cargaAccion(\'pausar\','+d.fila+','+i+','+(incluirPend?'true':'false')+')">⏸</button>' + acc;
       else acc = '<button class="mini-btn start" title="Retomar (pasa a En Proceso)" onclick="cargaAccion(\'retomar\','+d.fila+','+i+','+(incluirPend?'true':'false')+')">▶</button>' + acc;
     }
-    // FASE 8.59: badge de rol + resaltado del evento EN PROCESO (dónde está ahora)
+    // FASE 8.61: TARJETA por tarea (legible y móvil) — reemplaza la grilla
+    // apretada que encimaba avance/estado. Responsable = AZUL · Apoyo = TURQUESA.
     var rolBadge = d._rolEnTarea === 'APOYO'
-      ? ' <span style="font-size:8px;background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 5px;border-radius:8px;vertical-align:middle;">APOYO</span>' : '';
-    var rwStyle = 'grid-template-columns:50px 1fr 84px 92px 84px;gap:6px;' +
-      (enProc ? 'border-left:2px solid #60a5fa;background:rgba(96,165,250,0.05);' : '');
-    return '<div class="rw" style="'+rwStyle+'">'+
-      '<div style="color:var(--muted);font-size:11px;">'+fStr+'</div>'+
-      '<div><div style="font-weight:500;">'+escapeHtml(d.cliente||'—')+rolBadge+'</div>'+
-        '<div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo||'')+'</div>'+cat+'</div>'+
-      '<div>'+avCell+'</div>'+
-      '<div><span class="pill '+pill+'">'+ptxt+'</span></div>'+
-      '<div class="act-grp">'+(acc||'<span style="color:var(--muted);font-size:10px;">—</span>')+'</div></div>';
+      ? ' <span style="font-size:8px;background:rgba(45,212,191,0.15);color:#2dd4bf;padding:1px 6px;border-radius:8px;vertical-align:middle;">APOYO</span>'
+      : ' <span style="font-size:8px;background:rgba(96,165,250,0.15);color:#60a5fa;padding:1px 6px;border-radius:8px;vertical-align:middle;">RESPONSABLE</span>';
+    return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px;'+
+        (enProc ? 'border-left:3px solid #60a5fa;background:rgba(96,165,250,0.06);' : '')+'">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">'+
+        '<div style="min-width:0;flex:1;"><span style="font-weight:600;font-size:12px;">'+escapeHtml(d.cliente||'—')+'</span>'+rolBadge+
+          ' <span style="color:var(--muted);font-size:10px;">· '+fStr+'</span></div>'+
+        '<span class="pill '+pill+'" style="flex-shrink:0;">'+ptxt+'</span>'+
+      '</div>'+
+      '<div style="font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:2px 0 6px;">'+
+        escapeHtml(d.titulo||'')+(d.categoria ? ' · '+escapeHtml(d.categoria) : '')+'</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'+
+        '<div style="flex:1;min-width:150px;">'+avCell+'</div>'+
+        '<div class="act-grp" style="flex-shrink:0;">'+(acc||'')+'</div>'+
+      '</div>'+
+    '</div>';
   }).join('');
 
-  var hdr = '<div class="rw" style="grid-template-columns:50px 1fr 84px 92px 84px;gap:6px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--border);padding-bottom:4px;">'+
-    '<div>Fecha</div><div>Cliente / Tarea</div><div>Avance / Desde</div><div>Estado</div><div></div></div>';
   // FASE 8.59: toggle para ver también los pendientes (los finalizados NUNCA)
   var toggleHtml = '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:6px;cursor:pointer;">'+
     '<input type="checkbox" '+(incluirPend?'checked':'')+' onchange="verCargaOperario('+i+', this.checked)"> Mostrar también pendientes</label>';
   var cuerpo = toggleHtml + (tareas.length
-    ? '<div class="tbl" style="font-size:12px;">'+hdr+'<div class="scroll" style="max-height:50vh;">'+filas+'</div></div>'
+    ? '<div class="scroll" style="max-height:55vh;">'+filas+'</div>'
     : '<div class="empty">Sin tareas EN PROCESO para este operario. Activa "Mostrar también pendientes" para ver lo programado.</div>');
   modalCustom('👤 '+nombre+' · '+tareas.length+(incluirPend?' tarea(s) activa(s)':' en proceso'), '', cuerpo, 'Cerrar', cerrarModal);
   // Ocultar botón cancelar solo para este modal (ya que el de confirmación dice "Cerrar")
@@ -1532,7 +1537,7 @@ function cargarAnalytics() {
         '<div><div style="font-weight:500;font-size:11px;">'+nom+'</div>'+sub+'</div>'+
         '<div style="color:var(--accent);">'+u.iniciados+'</div><div style="color:var(--ok);">'+u.finalizados+'</div>'+
         '<div style="color:var(--info);">'+u.creados+'</div>'+
-        '<div style="color:#a78bfa;">'+ap+'</div>'+
+        '<div style="color:#2dd4bf;">'+ap+'</div>'+
         '<div style="color:'+(ex>0?'var(--danger)':'var(--muted)')+';">'+ex+'</div>'+
         '<div><b>'+u.total+'</b></div></div>';
     }).join('');
@@ -1570,7 +1575,7 @@ function verificarTrabajosAntesDeCrear(continuar) {
     var est = String(d.estado||'').toLowerCase();
     var enP = est.indexOf('proceso') !== -1 || est.indexOf('curso') !== -1;
     var pill = enP ? '<span class="pill pill-info">⏳ En proceso</span>' : '<span class="pill pill-muted">Pendiente</span>';
-    var rolTxt = d._rolEnTarea === 'APOYO' ? ' <span style="color:#a78bfa;font-size:9px;">(apoyo)</span>' : '';
+    var rolTxt = d._rolEnTarea === 'APOYO' ? ' <span style="color:#2dd4bf;font-size:9px;">(apoyo)</span>' : '';
     var accs = enP
       ? '<button class="mini-btn" onclick="accionTrabajo(\'pausar\','+d.fila+')">⏸ Dejar pendiente</button>'
       : '<button class="mini-btn start" onclick="accionTrabajo(\'retomar\','+d.fila+')">▶ Retomar</button>';
@@ -1619,8 +1624,8 @@ function accionTrabajo(tipo, fila) {
 function feApoyoToggle(chk) {
   var lbl = chk.closest('label');
   if (lbl) {
-    lbl.style.background = chk.checked ? 'rgba(167,139,250,0.15)' : '';
-    lbl.style.borderColor = chk.checked ? '#a78bfa' : 'var(--border)';
+    lbl.style.background = chk.checked ? 'rgba(45,212,191,0.15)' : '';
+    lbl.style.borderColor = chk.checked ? '#2dd4bf' : 'var(--border)';
   }
   var sel = [];
   document.querySelectorAll('.fe-apoyo:checked').forEach(function(c){ sel.push(c.value); });
@@ -1858,11 +1863,11 @@ function _renderFormEvento() {
       (equipoArr.length
         ? equipoArr.map(function(n){
             return '<label style="display:flex;gap:6px;align-items:center;padding:5px 8px;font-size:12px;cursor:pointer;border:1px solid var(--border);border-radius:6px;transition:all .15s;">' +
-              '<input type="checkbox" class="fe-apoyo" value="'+escapeHtml(n)+'" onchange="feApoyoToggle(this)" style="accent-color:#a78bfa;"> '+escapeHtml(n)+'</label>';
+              '<input type="checkbox" class="fe-apoyo" value="'+escapeHtml(n)+'" onchange="feApoyoToggle(this)" style="accent-color:#2dd4bf;"> '+escapeHtml(n)+'</label>';
           }).join('')
         : '<div style="color:var(--muted);font-size:11px;padding:4px;grid-column:1/-1;">Sin miembros disponibles.</div>') +
       '</div>' +
-      '<div id="fe-apoyos-sel" style="font-size:11px;color:#a78bfa;margin-top:4px;min-height:14px;">Sin apoyos seleccionados.</div></div>',
+      '<div id="fe-apoyos-sel" style="font-size:11px;color:#2dd4bf;margin-top:4px;min-height:14px;">Sin apoyos seleccionados.</div></div>',
     'Crear evento', function(){
       var apoyosSel = [];
       document.querySelectorAll('.fe-apoyo:checked').forEach(function(c){ apoyosSel.push(c.value); });

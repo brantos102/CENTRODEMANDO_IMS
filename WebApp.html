@@ -236,6 +236,17 @@
     .cal-bar-prog:hover, .cal-bar-curso:hover, .cal-bar-ent:hover, .cal-bar-venc:hover { filter:brightness(1.2); }
 
     @media (max-width:900px){ .grid{grid-template-columns:1fr} .kpis{grid-template-columns:repeat(2,1fr)} .profile-grid{grid-template-columns:1fr} }
+    /* FASE 8.61: móvil — modales a pantalla completa, tablas con scroll propio,
+       botones táctiles; la operación se audita también desde el celular. */
+    @media (max-width:640px){
+      .modal{width:96vw;max-width:96vw;padding:14px;max-height:92vh;overflow-y:auto}
+      .kpis{grid-template-columns:repeat(2,1fr)}
+      .tbl{overflow-x:auto}
+      .tbl .hd,.tbl .rw{font-size:10px}
+      #cal-body{overflow-x:auto}
+      .mini-btn,.icon-btn{min-height:30px;min-width:30px}
+      .actbox .btn{padding:10px 12px}
+    }
   </style>
 </head>
 <body>
