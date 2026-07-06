@@ -888,16 +888,46 @@
             if (!ok) noEnc.push(cU);
           });
           window._codigosNoEncontrados = noEnc;   // → correo de inicio + modal post-creación
-          var conDatos = solicUnicos.length - noEnc.length;
+
+          // FASE 8.60: TABLA detallada y COPIABLE para adjuntar al correo de inicio.
+          // Adicionales = códigos presentes en el archivo que NO fueron solicitados
+          // exactamente (variantes aceptadas / códigos de otros meses).
+          var conDatosList = solicUnicos.filter(function(c){ return noEnc.indexOf(c) === -1; });
+          var adicionales = [];
+          for (var skA in obtenidosExact) { if (!vistosS[skA]) adicionales.push(skA); }
+          adicionales.sort();
+
+          var cliTxt = $('cliente').value.trim().toUpperCase();
+          var mesTxt = (document.getElementById('mesExtraccion') && $('mesExtraccion').value) || '';
+          var L = [];
+          L.push('RESUMEN DE EXTRACCIÓN API ITSANET — ' + cliTxt + (mesTxt ? ' · ' + mesTxt : '') + ' · ' + new Date().toLocaleString());
+          L.push('Solicitados: ' + solicUnicos.length + ' | Con datos en stock: ' + conDatosList.length + ' | Sin stock: ' + noEnc.length + ' | Adicionales (variantes/otros meses): ' + adicionales.length);
+          L.push('');
+          L.push('— CON DATOS EN STOCK (' + conDatosList.length + ') —');
+          L.push(conDatosList.join(', ') || '(ninguno)');
+          L.push('');
+          L.push('— SIN STOCK / NO ENCONTRADOS (' + noEnc.length + ') —');
+          L.push(noEnc.join(', ') || '(ninguno)');
+          L.push('');
+          L.push('— ADICIONALES INCLUIDOS · no solicitados: variantes u otros meses (' + adicionales.length + ') —');
+          L.push(adicionales.join(', ') || '(ninguno)');
+          window._covTexto = L.join('\n');
+
+          var mkFilaCov = function(lbl, arr, color){
+            return '<tr><td style="padding:4px 6px;border-bottom:1px solid #1c2740;white-space:nowrap;color:'+color+';font-weight:600;vertical-align:top;">'+lbl+' ('+arr.length+')</td>' +
+              '<td style="padding:4px 6px;border-bottom:1px solid #1c2740;font-family:ui-monospace,monospace;font-size:9px;word-break:break-all;">'+(arr.length ? arr.join(', ') : '—')+'</td></tr>';
+          };
           covHtml =
             '<div class="val-report" style="margin-top:6px;">' +
-              '<div class="row"><span>📊 Códigos solicitados:</span><b>' + solicUnicos.length + '</b></div>' +
-              '<div class="row"><span>Con datos en la extracción:</span><b style="color:var(--ok)">' + conDatos + '</b></div>' +
-              '<div class="row"><span>Sin datos (sin parecidos):</span><b style="color:' + (noEnc.length ? 'var(--danger)' : 'var(--ok)') + '">' + noEnc.length + '</b></div>' +
-              (noEnc.length
-                ? '<div style="margin-top:4px;"><small style="color:var(--muted);">Estos códigos NO tienen stock en la bodega y se reportarán como "no encontrados" en el correo de inicio:</small>' +
-                  '<textarea readonly rows="' + Math.min(5, Math.max(2, Math.ceil(noEnc.length/3))) + '" style="width:100%;font-family:ui-monospace,monospace;font-size:10px;background:#0b1220;color:#fca5a5;border:1px solid #334155;border-radius:4px;margin-top:2px;">' + noEnc.join('\n') + '</textarea></div>'
-                : '') +
+              '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;">' +
+                '<b style="font-size:11px;">📊 Resumen de extracción — ' + solicUnicos.length + ' códigos solicitados</b>' +
+                '<button type="button" onclick="copiarCobertura(this)" style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:4px 10px;border-radius:5px;font-size:10px;cursor:pointer;white-space:nowrap;">📋 Copiar tabla (correo de inicio)</button>' +
+              '</div>' +
+              '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10px;">' +
+                mkFilaCov('✓ Con datos en stock', conDatosList, 'var(--ok)') +
+                mkFilaCov('✗ Sin stock (no encontrados)', noEnc, 'var(--danger)') +
+                mkFilaCov('➕ Adicionales (variantes/otros meses)', adicionales, '#fbbf24') +
+              '</table></div>' +
             '</div>';
         } else {
           window._codigosNoEncontrados = [];
@@ -1051,6 +1081,27 @@
         return;
       }
       _pintarStatusApiYValidar(nota);
+    }
+
+    /* FASE 8.60: copiar la tabla de cobertura al portapapeles (correo de inicio) */
+    function copiarCobertura(btn) {
+      var txt = window._covTexto || '';
+      if (!txt) return;
+      var done = function(){
+        if (btn) { var o = btn.innerText; btn.innerText = '✓ Copiada'; setTimeout(function(){ btn.innerText = o; }, 1800); }
+      };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(done, function(){ _covCopiaFallback(txt, done); });
+        } else { _covCopiaFallback(txt, done); }
+      } catch (e) { _covCopiaFallback(txt, done); }
+    }
+    function _covCopiaFallback(txt, done) {
+      var ta = document.createElement('textarea');
+      ta.value = txt; ta.style.cssText = 'position:fixed;opacity:0;';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta); done();
     }
 
     /* Renombramos revalidarCSV a revalidarDatos para que sirva para API y CSV */

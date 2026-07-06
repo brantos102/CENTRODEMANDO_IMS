@@ -1433,14 +1433,17 @@ function asignarArchivoAEvento(filaCronograma, fileId, fileUrl, fileName) {
     .setText(nombreVisible).setLinkUrl(url).build();
   cron.getRange(filaCronograma, CRON_CFG.CR_COL_ARCH).setRichTextValue(rich);
 
-  // 2. FIX FASE 8.36: Fecha de Inicio = fecha de CREACIÓN del archivo (solo fecha),
-  //    si está vacía. Así el inicio del cronograma coordina con el archivo asociado
-  //    y no afecta la duración (se guarda sin hora). Si no se obtiene, usa hoy.
-  if (!cron.getRange(filaCronograma, CRON_CFG.CR_COL_FECHA).getValue()) {
-    var fIniArch = _fechaCreacionArchivo(fileId) || _soloFecha(new Date());
-    cron.getRange(filaCronograma, CRON_CFG.CR_COL_FECHA)
-        .setValue(fIniArch).setNumberFormat("dd/MM/yyyy");
-  }
+  // 2. FASE 8.60 (antes 8.36): al vincular el archivo la actividad ARRANCA HOY:
+  //    · Fecha de Inicio (col L) = fecha de creación del archivo — SIEMPRE se
+  //      reemplaza (una fecha planificada lejana ya no aplica si arrancó hoy).
+  //    · Fecha de Entrega tentativa (col N) = inicio + 1 día (plazo estándar
+  //      de cierre de inventario; editable a mano después).
+  var fIniArch = _fechaCreacionArchivo(fileId) || _soloFecha(new Date());
+  cron.getRange(filaCronograma, CRON_CFG.CR_COL_FECHA)
+      .setValue(fIniArch).setNumberFormat("dd/MM/yyyy");
+  var fEntTent = _soloFecha(new Date(fIniArch.getTime() + 86400000));
+  cron.getRange(filaCronograma, CRON_CFG.CR_COL_FECHA_ENT)
+      .setValue(fEntTent).setNumberFormat("dd/MM/yyyy");
 
   // 3. Estado = "En Proceso" si estaba "Pendiente" o vacío
   var estadoActual = String(cron.getRange(filaCronograma, CRON_CFG.CR_COL_ESTADO).getValue() || "").toLowerCase();
@@ -1492,9 +1495,9 @@ function crearEventoCronograma(datos) {
   
   var fechaIni = _soloFecha(parsearFechaLocal(datos.fechaInicio));
   var fechaEnt = datos.fechaEntrega ? _soloFecha(parsearFechaLocal(datos.fechaEntrega)) : null;
-  // FASE 8.59: si no se indica fecha fin tentativa, se ASIGNA inicio + 4 días
-  // (ventana estándar del cronograma; editable después en la hoja).
-  if (!fechaEnt) fechaEnt = _soloFecha(new Date(fechaIni.getTime() + 4 * 86400000));
+  // FASE 8.60: la fecha fin tentativa es OPCIONAL — si no se indica, se ASIGNA
+  // inicio + 1 día (plazo estándar de cierre; editable después en la hoja).
+  if (!fechaEnt) fechaEnt = _soloFecha(new Date(fechaIni.getTime() + 86400000));
   var anio = fechaIni.getFullYear();
   var mesNum = fechaIni.getMonth();
   var meses = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
@@ -1790,6 +1793,7 @@ function obtenerEstadoIntegralDashboard() {
   // FASE 8.59: apoyos ACTIVOS por evento (hoja EQUIPOS_TAREA) — una sola lectura.
   // Visibilidad para jefes: quién apoya cada tarea, en cronograma y carga.
   var apoyosPorFila = {};
+  var apoyosDesdePorFila = {};   // FASE 8.60: NOMBRE → timestamp de registro (desde cuándo apoya)
   try {
     var shEqD = ss.getSheetByName(EQT_CFG.HOJA);
     if (shEqD && shEqD.getLastRow() >= 2) {
@@ -1803,6 +1807,11 @@ function obtenerEstadoIntegralDashboard() {
         if (!nomAp) return;
         if (!apoyosPorFila[fe]) apoyosPorFila[fe] = [];
         if (apoyosPorFila[fe].indexOf(nomAp) === -1) apoyosPorFila[fe].push(nomAp);
+        var tsReg = (rq[0] instanceof Date) ? rq[0].getTime() : null;
+        if (tsReg) {
+          if (!apoyosDesdePorFila[fe]) apoyosDesdePorFila[fe] = {};
+          if (!apoyosDesdePorFila[fe][nomAp.toUpperCase()]) apoyosDesdePorFila[fe][nomAp.toUpperCase()] = tsReg;
+        }
       });
     }
   } catch (eEqD) {}
@@ -1950,6 +1959,7 @@ function obtenerEstadoIntegralDashboard() {
         categoria:    categoria,
         responsable:  responsable,
         apoyos:       apoyosPorFila[String(CRON_CFG.CR_FILA_INI + i)] || [], // FASE 8.59
+        apoyosDesde:  apoyosDesdePorFila[String(CRON_CFG.CR_FILA_INI + i)] || {}, // FASE 8.60
         prioridad:    r[CRON_CFG.CR_COL_PRIO - 1] || "Media", // FIX: Enviamos la prioridad
         fechaInicio:  ts,
         fechaFin:     fechaFinTs,

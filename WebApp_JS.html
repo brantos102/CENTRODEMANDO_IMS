@@ -88,6 +88,8 @@ function iniciarAutoRefresh() {
   _autoTimer = setInterval(function() {
     if (document.hidden) return;
     if ($('modal').classList.contains('show')) return;
+    // FASE 8.60: no refrescar mientras el wizard está abierto (auditoría en curso)
+    if (document.getElementById('wizard-modal-overlay')) return;
     // Solo refrescar la sección activa
     var activa = document.querySelector('.section.active');
     if (!activa) return;
@@ -702,7 +704,7 @@ function pintarPan() {
   if (!datos || !datos.length) { $('pan-body').innerHTML = '<div class="empty">Sin datos.</div>'; return; }
   var enProcesoN = datos.filter(function(d){ return String(d.avance||'').toLowerCase().indexOf('proceso')!==-1; }).length;
   var rp = $('pan-resumen'); if (rp) rp.innerText = datos.length + ' recientes · ' + enProcesoN + ' en proceso';
-  $('pan-body').innerHTML = datos.map(function(d){
+  $('pan-body').innerHTML = datos.map(function(d, di){
     var av = String(d.avance||'').toLowerCase(), cls='pill-muted', txt=d.avance||'—';
     if (av.indexOf('entregado')!==-1) cls='pill-ok'; else if (av.indexOf('proceso')!==-1) cls='pill-warn';
     // FIX FASE 8.34: efectividad con color (verde ≥90%, ámbar ≥70%, rojo <70%)
@@ -725,14 +727,40 @@ function pintarPan() {
       var evPan = estado.cronograma.find(function(e){ return e.fileId && e.fileId === d.fileId && e.apoyos && e.apoyos.length; });
       if (evPan) apPan = '<div style="font-size:9px;color:#a78bfa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Apoyo: '+escapeHtml(evPan.apoyos.join(', '))+'">👥 '+escapeHtml(evPan.apoyos.join(', '))+'</div>';
     }
-    return '<div class="rw">'+
+    // FASE 8.60: columna AVANCE (carga operativa del archivo, en vivo vía batch)
+    var avIni = (av.indexOf('entregado') !== -1) ? '<b style="color:#22c55e;">100%</b>'
+              : (d.fileId ? '<span style="color:var(--muted);">…</span>' : '—');
+    return '<div class="rw" style="grid-template-columns:1.3fr 1.1fr 60px 52px 86px 88px 52px;gap:6px;">'+
       '<div><div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente)+'</div></div>'+
       '<div style="font-size:11px;color:var(--info);overflow:hidden;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+resp+'</div>'+apPan+'</div>'+
       '<div>'+fmtNum(d.unidades)+'</div>'+
       '<div style="color:'+efColor+';font-weight:500;">'+ef+'</div>'+
+      '<div id="pan-av-'+di+'" style="font-size:11px;">'+avIni+'</div>'+
       '<div><span class="pill '+cls+'">'+escapeHtml(txt)+'</span></div>'+
       '<div class="act-grp">'+acc+'</div></div>';
   }).join('');
+
+  // FASE 8.60: avance EN VIVO de los archivos en curso (una llamada batch,
+  // sin bloquear el render; token para descartar respuestas viejas).
+  var fidsPan = [];
+  datos.forEach(function(d){
+    if (d.fileId && String(d.avance||'').toLowerCase().indexOf('entregado') === -1) fidsPan.push(d.fileId);
+  });
+  if (fidsPan.length) {
+    var tokPan = Date.now(); _panTok = tokPan;
+    google.script.run.withSuccessHandler(function(mapa){
+      if (_panTok !== tokPan) return;
+      mapa = mapa || {};
+      datos.forEach(function(d, di){
+        if (!d.fileId || !mapa[d.fileId] || mapa[d.fileId].avance == null) return;
+        var cel = document.getElementById('pan-av-'+di);
+        if (!cel) return;
+        var pv = Math.max(0, Math.min(100, Math.round(mapa[d.fileId].avance)));
+        cel.innerHTML = '<b style="color:'+(pv>=100?'#22c55e':'#60a5fa')+';">'+pv+'%</b>'+
+          (mapa[d.fileId].texto ? ' <span style="color:var(--muted);font-size:9px;">'+escapeHtml(mapa[d.fileId].texto)+'</span>' : '');
+      });
+    }).withFailureHandler(function(){}).obtenerAvancesWMS(fidsPan);
+  }
 }
 
 var _cargaArr = [];
@@ -796,7 +824,23 @@ function verCargaOperario(i) {
     var fStr='—'; if (d.fechaInicio){ var dt=new Date(d.fechaInicio); fStr=String(dt.getDate()).padStart(2,'0')+' '+meses[dt.getMonth()]; }
     var cat = d.categoria ? '<div style="color:var(--muted);font-size:10px;">'+escapeHtml(d.categoria)+'</div>' : '';
     // % del cronograma como valor inicial (instantáneo); luego se refresca con el WMS.
-    var avCell = '<div id="cav-'+ti+'">'+ _avHTML((Number(d.pct)||0)*100, false, '') +'</div>';
+    // FASE 8.60: sin archivo → mostrar DESDE CUÁNDO está en la actividad
+    // (apoyo: fecha/hora de registro en EQUIPOS_TAREA; responsable: fecha inicio).
+    var avCell;
+    if (d.urlArchivo) {
+      avCell = '<div id="cav-'+ti+'">'+ _avHTML((Number(d.pct)||0)*100, false, '') +'</div>';
+    } else {
+      var desdeTxt = 'sin archivo';
+      if (d._rolEnTarea === 'APOYO' && d.apoyosDesde && d.apoyosDesde[nomUp]) {
+        var dd = new Date(d.apoyosDesde[nomUp]);
+        desdeTxt = 'apoyo desde ' + String(dd.getDate()).padStart(2,'0') + ' ' + meses[dd.getMonth()] +
+                   ' ' + String(dd.getHours()).padStart(2,'0') + ':' + String(dd.getMinutes()).padStart(2,'0');
+      } else if (d.fechaInicio) {
+        var di = new Date(d.fechaInicio);
+        desdeTxt = 'en actividad desde ' + String(di.getDate()).padStart(2,'0') + ' ' + meses[di.getMonth()];
+      }
+      avCell = '<div style="font-size:10px;color:#fbbf24;white-space:nowrap;">🕒 '+desdeTxt+'</div>';
+    }
     // REEMPLAZAR POR:
     var acc='';
     if (d.urlArchivo){
@@ -808,10 +852,15 @@ function verCargaOperario(i) {
       if (P.abrirLibro) acc+='<button class="icon-btn" onclick="'+alerta+'" title="Excel (Sin archivo asignado)">📊</button>';
       acc+='<button class="icon-btn" onclick="'+alerta+'" title="WMS (Sin archivo asignado)">📦</button>';
     }
+    // FASE 8.60: pausar/retomar directo desde la carga del operario
+    if (P.iniciarFin) {
+      if (enProc) acc = '<button class="mini-btn" title="Pausar (vuelve a Pendiente)" onclick="cargaAccion(\'pausar\','+d.fila+','+i+','+(incluirPend?'true':'false')+')">⏸</button>' + acc;
+      else acc = '<button class="mini-btn start" title="Retomar (pasa a En Proceso)" onclick="cargaAccion(\'retomar\','+d.fila+','+i+','+(incluirPend?'true':'false')+')">▶</button>' + acc;
+    }
     // FASE 8.59: badge de rol + resaltado del evento EN PROCESO (dónde está ahora)
     var rolBadge = d._rolEnTarea === 'APOYO'
       ? ' <span style="font-size:8px;background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 5px;border-radius:8px;vertical-align:middle;">APOYO</span>' : '';
-    var rwStyle = 'grid-template-columns:50px 1fr 84px 92px 56px;gap:6px;' +
+    var rwStyle = 'grid-template-columns:50px 1fr 84px 92px 84px;gap:6px;' +
       (enProc ? 'border-left:2px solid #60a5fa;background:rgba(96,165,250,0.05);' : '');
     return '<div class="rw" style="'+rwStyle+'">'+
       '<div style="color:var(--muted);font-size:11px;">'+fStr+'</div>'+
@@ -822,8 +871,8 @@ function verCargaOperario(i) {
       '<div class="act-grp">'+(acc||'<span style="color:var(--muted);font-size:10px;">—</span>')+'</div></div>';
   }).join('');
 
-  var hdr = '<div class="rw" style="grid-template-columns:50px 1fr 84px 92px 56px;gap:6px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--border);padding-bottom:4px;">'+
-    '<div>Fecha</div><div>Cliente / Tarea</div><div>Avance</div><div>Estado</div><div></div></div>';
+  var hdr = '<div class="rw" style="grid-template-columns:50px 1fr 84px 92px 84px;gap:6px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--border);padding-bottom:4px;">'+
+    '<div>Fecha</div><div>Cliente / Tarea</div><div>Avance / Desde</div><div>Estado</div><div></div></div>';
   // FASE 8.59: toggle para ver también los pendientes (los finalizados NUNCA)
   var toggleHtml = '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:6px;cursor:pointer;">'+
     '<input type="checkbox" '+(incluirPend?'checked':'')+' onchange="verCargaOperario('+i+', this.checked)"> Mostrar también pendientes</label>';
@@ -861,6 +910,22 @@ function verCargaOperario(i) {
   }
 }
 var _cargaTok = 0;
+var _panTok = 0;
+
+/* FASE 8.60: pausar/retomar desde el drilldown de carga — actualiza el estado
+   local para re-render inmediato y refresca el dashboard en silencio. */
+function cargaAccion(tipo, fila, idx, incluirPend) {
+  toast(tipo === 'pausar' ? 'Pausando…' : 'Retomando…');
+  var runner = google.script.run.withSuccessHandler(function(){
+    toast(tipo === 'pausar' ? '✓ Pausado (Pendiente)' : '✓ En Proceso','success');
+    var ev = (estado.cronograma || []).find(function(d){ return d.fila === fila; });
+    if (ev) ev.estado = (tipo === 'pausar') ? 'Pendiente' : 'En Proceso';
+    verCargaOperario(idx, incluirPend);   // re-render inmediato del modal
+    cargarDashboard(true);                // refresco silencioso del resto
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); });
+  if (tipo === 'pausar') runner.dash_pausarEvento(fila);
+  else runner.iniciarEventoConOpciones(fila, {});
+}
 
 function setF(el, f) {
   document.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
@@ -1550,6 +1615,21 @@ function accionTrabajo(tipo, fila) {
   else runner.iniciarEventoConOpciones(fila, {});
 }
 
+/* FASE 8.60: resaltar chip de apoyo al marcar + resumen en vivo */
+function feApoyoToggle(chk) {
+  var lbl = chk.closest('label');
+  if (lbl) {
+    lbl.style.background = chk.checked ? 'rgba(167,139,250,0.15)' : '';
+    lbl.style.borderColor = chk.checked ? '#a78bfa' : 'var(--border)';
+  }
+  var sel = [];
+  document.querySelectorAll('.fe-apoyo:checked').forEach(function(c){ sel.push(c.value); });
+  var box = document.getElementById('fe-apoyos-sel');
+  if (box) box.innerHTML = sel.length
+    ? '✓ <b>'+sel.length+'</b> apoyo(s): '+sel.map(escapeHtml).join(', ')
+    : 'Sin apoyos seleccionados.';
+}
+
 function abrirWizard(skipCheck) {
   if (!P.crearInventario) return toast('Tu rol no permite crear inventarios','error');
   // FASE 8.59: recordatorio de trabajos activos antes de crear
@@ -1737,8 +1817,6 @@ function _renderFormEvento() {
   var clientesOpts = clientesArr.map(function(c){ return '<option value="'+escapeHtml(c)+'">'; }).join('');
 
   var hoy = new Date().toISOString().slice(0,10);
-  // FASE 8.59: fecha fin tentativa por defecto = hoy + 4 días
-  var finTent = new Date(Date.now() + 4*86400000).toISOString().slice(0,10);
 
   // Aviso si el equipo está vacío (operativo, no bloqueante)
   var avisoVacio = (equipoArr.length === 0)
@@ -1768,18 +1846,23 @@ function _renderFormEvento() {
     // FIX FASE 8.55/8.59: categoría + fecha fin tentativa (si se deja vacía, el
     // servidor asigna inicio + 4 días — ventana estándar del cronograma)
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
-      '<div class="field"><label>Fecha fin tentativa</label>' +
-        '<input type="date" id="fe-fent" value="'+finTent+'"></div>' +
+      '<div class="field"><label>Fecha fin tentativa <small style="color:var(--muted);">(opcional — vacío = inicio + 1 día)</small></label>' +
+        '<input type="date" id="fe-fent"></div>' +
       '<div class="field"><label>Categoría</label>' +
         '<select id="fe-cat"><option>Inventario Programado</option><option>Trabajo Slotting</option><option>Inventario No Programado</option><option>Movimientos</option></select></div>' +
     '</div>' +
-    // FASE 8.58: equipo de apoyo (multi-operario) — se registra en EQUIPOS_TAREA
+    // FASE 8.58/8.60: equipo de apoyo — chips claros (resaltado al marcar) +
+    // resumen EN VIVO de seleccionados para no perder de vista a quién se marcó.
     '<div class="field"><label>👥 Equipo de apoyo <small style="color:var(--muted);">(opcional — el responsable no necesita marcarse)</small></label>' +
-      '<div style="max-height:110px;overflow-y:auto;border:1px solid var(--border);border-radius:5px;padding:4px;">' +
+      '<div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:5px;padding:6px;display:grid;grid-template-columns:1fr 1fr;gap:4px;">' +
       (equipoArr.length
-        ? equipoArr.map(function(n){ return '<label style="display:flex;gap:6px;align-items:center;padding:3px 4px;font-size:12px;cursor:pointer;"><input type="checkbox" class="fe-apoyo" value="'+escapeHtml(n)+'"> '+escapeHtml(n)+'</label>'; }).join('')
-        : '<div style="color:var(--muted);font-size:11px;padding:4px;">Sin miembros disponibles.</div>') +
-      '</div></div>',
+        ? equipoArr.map(function(n){
+            return '<label style="display:flex;gap:6px;align-items:center;padding:5px 8px;font-size:12px;cursor:pointer;border:1px solid var(--border);border-radius:6px;transition:all .15s;">' +
+              '<input type="checkbox" class="fe-apoyo" value="'+escapeHtml(n)+'" onchange="feApoyoToggle(this)" style="accent-color:#a78bfa;"> '+escapeHtml(n)+'</label>';
+          }).join('')
+        : '<div style="color:var(--muted);font-size:11px;padding:4px;grid-column:1/-1;">Sin miembros disponibles.</div>') +
+      '</div>' +
+      '<div id="fe-apoyos-sel" style="font-size:11px;color:#a78bfa;margin-top:4px;min-height:14px;">Sin apoyos seleccionados.</div></div>',
     'Crear evento', function(){
       var apoyosSel = [];
       document.querySelectorAll('.fe-apoyo:checked').forEach(function(c){ apoyosSel.push(c.value); });
