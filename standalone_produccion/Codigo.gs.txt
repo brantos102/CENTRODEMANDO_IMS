@@ -106,7 +106,7 @@ function getUsuariosConHoja() {
           var rolPanel = String(r[2] || "").trim();
           var rolWms = (nc >= 8 && String(r[7] || "").trim())
             ? String(r[7]).trim().toUpperCase()
-            : ((rolPanel === "Coordinador" || rolPanel === "Lider de Conteo" || rolPanel === "Líder de Conteo") ? "ADMIN" : "OPERADOR");
+            : ((rolPanel === "Admin" || rolPanel === "Coordinador" || rolPanel === "Lider de Conteo" || rolPanel === "Líder de Conteo") ? "ADMIN" : "OPERADOR");
           var pass = (nc >= 9 && String(r[8] || "").trim()) ? String(r[8]).trim() : "";
           hoja[em] = { nombre: String(r[1] || "").trim() || em.split("@")[0], rol: rolWms, pass: pass };
         });

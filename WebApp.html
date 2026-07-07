@@ -24,6 +24,17 @@
       --text:#e8ecf3; --muted:#7d8aa8; --accent:#3b82f6; --ok:#22c55e;
       --warn:#eab308; --danger:#ef4444; --info:#8b5cf6; --teal:#14b8a6;
     }
+    /* FASE 8.62 R2: MODO DÍA (tema claro). Se activa con data-theme="light" en <html>.
+       Solo reasigna las variables → toda la interfaz cambia sin tocar componentes. */
+    :root[data-theme="light"] {
+      --bg:#f1f5f9; --panel:#ffffff; --panel-2:#eef2f7; --border:#d3dae6;
+      --text:#0f1e33; --muted:#5a6b85; --accent:#2563eb; --ok:#16a34a;
+      --warn:#b45309; --danger:#dc2626; --info:#7c3aed; --teal:#0d9488;
+    }
+    :root[data-theme="light"] body { background:var(--bg); }
+    /* Sombras/realces suaves en claro para conservar profundidad */
+    :root[data-theme="light"] .card,
+    :root[data-theme="light"] .kpi { box-shadow:0 1px 3px rgba(15,30,51,0.06); }
     * { box-sizing:border-box; }
     body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text);
            margin:0; font-size:13px; }
@@ -282,6 +293,9 @@
       </div>
     </div>
     <div class="user-box">
+      <!-- FASE 8.62 R2: interruptor de tema día/noche -->
+      <button id="theme-toggle" onclick="toggleTema()" title="Cambiar tema día / noche"
+              style="background:var(--panel-2);border:1px solid var(--border);color:var(--text);width:34px;height:34px;border-radius:8px;font-size:16px;cursor:pointer;">🌙</button>
       <div class="user-info">
         <div class="n" id="u-nombre">—</div>
         <div class="r" id="u-rol">—</div>
@@ -409,6 +423,8 @@
             <button class="btn" id="b-cron-codigos" onclick="abrirCronCodigos()"><span>📅</span> Cronograma de códigos</button>
             <!-- FASE 8.57: credenciales API fuera de la vista (solo Coordinador) -->
             <button class="btn" id="b-cred-api" onclick="abrirCredencialesAPI()"><span>🔐</span> Credenciales API</button>
+            <!-- FASE 8.62 R1: garantizar accesos del equipo a los archivos hijos -->
+            <button class="btn" id="b-accesos" onclick="garantizarAccesos()"><span>🔒</span> Garantizar accesos equipo</button>
             <!-- FIX FASE 8.25: Pre-validar y Limpiar duplicados removidos del menú.
                  Esa funcionalidad ya está cubierta por los modos del Consolidar:
                  - "Reporte solo" pre-valida sin escribir

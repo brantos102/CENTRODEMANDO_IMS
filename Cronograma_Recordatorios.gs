@@ -429,6 +429,76 @@ function _compartirArchivoConEquipo(file) {
 }
 
 /* ==========================================================================
+   FASE 8.62 (R1): GARANTÍA PERMANENTE DE ACCESOS — solución final
+   --------------------------------------------------------------------------
+   · El equipo activo queda como EDITOR individual de cada archivo hijo
+     (inmune a cambios de "acceso por link": nunca pierden edición).
+   · El dominio ITSANET queda como LECTOR por link (modo auditor).
+   · Todo SILENCIOSO (sin correos) y ADITIVO (nunca quita ni degrada).
+   · Al consolidar NO se re-comparte salvo que el EQUIPO haya cambiado
+     (hash), evitando trabajo/redundancia; hay botón para forzar reparación.
+   ========================================================================== */
+
+// Hash del conjunto de emails del equipo activo (para detectar altas/bajas).
+function _equipoHashActivo() {
+  try {
+    var em = _listarEmailsEquipoActivo().map(function(e){ return String(e).toLowerCase(); }).sort();
+    return em.join("|");
+  } catch (e) { return ""; }
+}
+
+// Garantiza accesos de UN archivo (aditivo + silencioso). Reutiliza la lógica
+// probada de _compartirArchivoConEquipo (dominio VIEW + editores del equipo).
+function _garantizarAccesoArchivo(fileId) {
+  try {
+    var file = DriveApp.getFileById(String(fileId).trim());
+    return _compartirArchivoConEquipo(file);
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+// Recorre una lista de fileIds y garantiza accesos, con tope de tiempo.
+// Devuelve {aplicados, fallos, completo}.
+function _garantizarAccesosLote(fileIds, deadlineMs) {
+  var aplicados = 0, fallos = 0, completo = true;
+  for (var i = 0; i < fileIds.length; i++) {
+    if (deadlineMs && Date.now() > deadlineMs) { completo = false; break; }
+    var fid = String(fileIds[i] || "").trim();
+    if (!fid) continue;
+    var r = _garantizarAccesoArchivo(fid);
+    if (r && r.dominio !== false && !r.error) aplicados++; else fallos++;
+  }
+  return { aplicados: aplicados, fallos: fallos, completo: completo };
+}
+
+/* Botón de panel: garantiza accesos en TODOS los archivos del PANEL DE CONTROL.
+   Úsalo una vez tras deployar o cuando incorpores operarios. Silencioso. */
+function dash_garantizarAccesosTodos() {
+  _requiereRol(["Admin", "Coordinador"]);
+  var ss = _getSS();
+  var pan = ss.getSheetByName(CRON_CFG.HOJA_PANEL);
+  if (!pan || pan.getLastRow() < 2) return { ok: false, mensaje: "Panel vacío." };
+  var d = pan.getRange(2, 1, pan.getLastRow() - 1, 7).getValues();
+  var ids = [];
+  for (var i = 0; i < d.length; i++) {
+    var fid = extractIdFromUrl(d[i][CRON_CFG.PA_COL_ID - 1]);
+    if (fid) ids.push(fid);
+  }
+  var res = _garantizarAccesosLote(ids, Date.now() + 320 * 1000);
+  // Marca el hash del equipo como aplicado (evita re-trabajo en la próxima consolidación)
+  try { _consolProps().setProperty("ACCESOS_TEAM_HASH", _equipoHashActivo()); } catch (e) {}
+  return {
+    ok: true,
+    aplicados: res.aplicados, fallos: res.fallos, total: ids.length, completo: res.completo,
+    mensaje: "🔒 Accesos garantizados en " + res.aplicados + " de " + ids.length + " archivos" +
+             (res.fallos ? " (" + res.fallos + " sin acceso del dueño — revisar)" : "") +
+             (res.completo ? "." : " · faltaron algunos por tiempo, vuelve a ejecutar.") +
+             "\nEquipo = editores · ITSANET = lector por link (auditor). Sin correos."
+  };
+}
+
+/* ==========================================================================
    FIX FASE 8.28: HERRAMIENTAS DE DIAGNÓSTICO Y REPARACIÓN
    - diagnosticarUsuarioEquipo(email): explica si un email entra en el equipo
    - repararPermisosArchivo(fileId): re-aplica permisos a UN solo archivo
@@ -2567,7 +2637,11 @@ function iniciarEventoConOpciones(filaCronograma, opciones) {
   _requiereRol(["Coordinador", "Líder de Conteo"]);
   if (!filaCronograma) throw new Error("Falta fila del cronograma.");
   opciones = opciones || {};
-  if (!opciones.responsable) throw new Error("Selecciona un responsable (operario/líder/coordinador).");
+  // FASE 8.62 (R5): si no se indica responsable, se usa el USUARIO QUE INICIA
+  // (autor) como responsable — antes lanzaba error y no registraba nada.
+  var respIn = String(opciones.responsable || "").trim();
+  if (!respIn) respIn = _nombreUsuarioActual();
+  if (!respIn) throw new Error("No se pudo determinar el responsable (usuario no registrado).");
 
   var ss = _getSS();
   var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
@@ -2580,11 +2654,14 @@ function iniciarEventoConOpciones(filaCronograma, opciones) {
   }
   var yaEnProceso = estadoActual.indexOf("proceso") !== -1;
 
-  // Responsable
+  // Responsable (col I): se registra si está vacío o si se pide sobrescribir.
+  // FASE 8.62 (R5): garantiza que SIEMPRE quede autor cuando se inicia.
   var respActual = String(cron.getRange(f, CRON_CFG.CR_COL_RESP).getValue() || "").trim();
   if (!respActual || opciones.sobrescribirResponsable) {
-    cron.getRange(f, CRON_CFG.CR_COL_RESP).setValue(String(opciones.responsable).trim().toUpperCase());
+    cron.getRange(f, CRON_CFG.CR_COL_RESP).setValue(respIn.toUpperCase());
+    respActual = respIn.toUpperCase();
   }
+  opciones.responsable = respIn; // para el log y el retorno
 
   // Fecha de inicio
   // Fecha de inicio
@@ -3807,6 +3884,26 @@ function _consolidarNucleo(opciones) {
     // FIX FASE 8.37: regenerar el LOG único de consolidación (nunca rompe el flujo).
     try { generarLogConsolidacion(); } catch (eLog) {}
 
+    // ── FASE 8.62 (R1): garantía de accesos al COMPLETAR ──────────────────────
+    // Solo re-comparte si el EQUIPO cambió (altas/bajas) desde la última vez.
+    // Así una consolidación normal NO re-comparte ni envía correos, y cuando se
+    // incorpora un operario, la siguiente consolidación le da acceso a todo.
+    try {
+      var _teamHashNow = _equipoHashActivo();
+      var _teamHashOld = _consolProps().getProperty("ACCESOS_TEAM_HASH") || "";
+      if (_teamHashNow && _teamHashNow !== _teamHashOld) {
+        var _idsAcc = [];
+        for (var _ea = 0; _ea < entries.length; _ea++) {
+          if (entries[_ea] && entries[_ea].id) _idsAcc.push(entries[_ea].id);
+        }
+        var _rAcc = _garantizarAccesosLote(_idsAcc, Date.now() + 90 * 1000);
+        if (_rAcc.completo) _consolProps().setProperty("ACCESOS_TEAM_HASH", _teamHashNow);
+        Logger.log("FASE 8.62 R1 accesos: aplicados=" + _rAcc.aplicados +
+                   " fallos=" + _rAcc.fallos + " completo=" + _rAcc.completo +
+                   " (equipo cambió)");
+      }
+    } catch (eAcc62) { Logger.log("FASE 8.62 R1 garantía accesos: " + eAcc62.message); }
+
     // Totales GRANDES: en batch vienen del estado acumulado entre lotes;
     // en estricto (pasada única) son los locales de esta ejecución.
     var G = esBatch ? _consolAccLeer() : {
@@ -4487,7 +4584,7 @@ function setupCompletoConProteccion() {
 var USR_CFG = {
   HOJA: "USUARIOS",
   HOJA_LOG: "LOG_ACTIVIDAD",
-  ROLES: ["Coordinador", "Líder de Conteo", "Auditor"]
+  ROLES: ["Admin", "Coordinador", "Líder de Conteo", "Auditor"]
 };
 
 
@@ -4788,6 +4885,8 @@ function _requiereRol(rolesPermitidos) {
   }
   // FIX FASE 7.2: comparación normalizada (trim + lowercase)
   var rolN = String(u.rol || "").trim().toLowerCase();
+  // FASE 8.62 (R4): Admin es súper-usuario — pasa CUALQUIER control de rol.
+  if (rolN === "admin") return u;
   var permitidosN = rolesPermitidos.map(function(r){ return String(r).trim().toLowerCase(); });
   if (permitidosN.indexOf(rolN) === -1) {
     throw new Error("Tu rol (" + u.rol + ") no tiene permiso para esta acción.");
@@ -4839,6 +4938,13 @@ function diagnosticoWMS() {
 function _permisosDeRol(rol) {
   // FIX FASE 7.2: Sanitizar rol para no caer en default por espacios o mayúsculas.
   var rolN = String(rol || "").trim().toLowerCase();
+
+  // FASE 8.62 (R4): Admin — dueño de todos los poderes (todo en true + flag admin).
+  if (rolN === "admin") {
+    return { verDashboard:true, crearInventario:true, iniciarFin:true,
+             consolidar:true, limpiar:true, recordatorios:true, exportar:true,
+             abrirLibro:true, gestionUsuarios:true, verAnalytics:true, admin:true };
+  }
 
   if (rolN === "coordinador") {
     return { verDashboard:true, crearInventario:true, iniciarFin:true,
@@ -4909,7 +5015,7 @@ function crearUsuario(datos) {
   }
   // Rol WMS y Contraseña: si no se especifican, se derivan del rol del panel.
   var rolWms = String(datos.rolWms || "").trim().toUpperCase();
-  if (!rolWms) rolWms = (datos.rol === "Coordinador" || datos.rol === "Líder de Conteo") ? "ADMIN" : "AUDITOR";
+  if (!rolWms) rolWms = (datos.rol === "Admin" || datos.rol === "Coordinador" || datos.rol === "Líder de Conteo") ? "ADMIN" : "AUDITOR";
   var pass = String(datos.pass || "").trim() || "1234";
   sh.appendRow([
     datos.email.trim(), datos.nombre.trim(), datos.rol,
@@ -5100,14 +5206,40 @@ function actualizarEquipoTareaFinal(filaEvento, exclusiones) {
   return { ok: true, excluidos: n };
 }
 
-/* FASE 8.59: PAUSAR un evento — vuelve a "Pendiente" para retomarlo luego.
-   Guard: solo si está En Proceso/En Curso; nunca toca eventos Entregados. */
+/* FASE 8.62: nombre visible del usuario actual (desde USUARIOS; fallback email). */
+function _nombreUsuarioActual() {
+  try {
+    var em = _usuarioActual();
+    var u = em ? _obtenerUsuario(em) : null;
+    if (u && u.nombre) return String(u.nombre).trim();
+    return em || "";
+  } catch (e) { return ""; }
+}
+
+/* FASE 8.62 (R3): ¿el usuario actual es el RESPONSABLE de la fila? (o Admin).
+   Devuelve {ok, esResp, esAdmin, responsable}. */
+function _puedeControlarTarea(cron, f) {
+  var respFila = String(cron.getRange(f, CRON_CFG.CR_COL_RESP).getValue() || "").trim().toUpperCase();
+  var miNombre = String(_nombreUsuarioActual() || "").trim().toUpperCase();
+  var esAdmin = false;
+  try {
+    var u = _obtenerUsuario(_usuarioActual());
+    esAdmin = u && String(u.rol || "").trim().toLowerCase() === "admin";
+  } catch (e) {}
+  var esResp = !!(miNombre && respFila && miNombre === respFila);
+  return { esResp: esResp, esAdmin: esAdmin, ok: (esResp || esAdmin), responsable: respFila };
+}
+
+/* FASE 8.59/8.62: PAUSAR un evento — vuelve a "Pendiente" para retomarlo luego.
+   R3: SOLO el responsable de la tarea (o Admin) puede pausar. */
 function dash_pausarEvento(filaCronograma) {
   var ss = _getSS();
   var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
   if (!cron) throw new Error("No se encontró " + CRON_CFG.HOJA_CRONOGRAMA);
   var f = parseInt(filaCronograma, 10);
   if (!f || f < CRON_CFG.CR_FILA_INI) throw new Error("Fila inválida.");
+  var ctrl = _puedeControlarTarea(cron, f);
+  if (!ctrl.ok) throw new Error("Solo el responsable de la tarea (" + (ctrl.responsable || "—") + ") o un Admin pueden pausar/reanudar este evento.");
   var est = String(cron.getRange(f, CRON_CFG.CR_COL_ESTADO).getValue() || "").toLowerCase();
   if (est.indexOf("entregado") !== -1) {
     throw new Error("El evento ya está Entregado; no se puede pausar.");
@@ -5121,6 +5253,113 @@ function dash_pausarEvento(filaCronograma) {
       "Evento pausado (vuelve a Pendiente)");
   } catch (eL) {}
   return { ok: true, estado: "Pendiente" };
+}
+
+/* FASE 8.62 (R3): REANUDAR (play) un evento pausado → "En Proceso".
+   SOLO el responsable de la tarea (o Admin). No pide responsable (ya lo tiene). */
+function dash_reanudarEvento(filaCronograma) {
+  var ss = _getSS();
+  var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
+  if (!cron) throw new Error("No se encontró " + CRON_CFG.HOJA_CRONOGRAMA);
+  var f = parseInt(filaCronograma, 10);
+  if (!f || f < CRON_CFG.CR_FILA_INI) throw new Error("Fila inválida.");
+  var est = String(cron.getRange(f, CRON_CFG.CR_COL_ESTADO).getValue() || "").toLowerCase();
+  if (est.indexOf("entregado") !== -1) throw new Error("El evento ya está Entregado.");
+  var ctrl = _puedeControlarTarea(cron, f);
+  // Si la fila NO tiene responsable aún, el usuario que reanuda pasa a serlo (autor).
+  if (!ctrl.responsable) {
+    var miNom = _nombreUsuarioActual();
+    if (miNom) { cron.getRange(f, CRON_CFG.CR_COL_RESP).setValue(String(miNom).toUpperCase()); ctrl.esResp = true; ctrl.ok = true; }
+  }
+  if (!ctrl.ok) throw new Error("Solo el responsable de la tarea (" + (ctrl.responsable || "—") + ") o un Admin pueden reanudar este evento.");
+  cron.getRange(f, CRON_CFG.CR_COL_ESTADO).setValue("En Proceso");
+  // Fecha de inicio si estaba vacía
+  if (!cron.getRange(f, CRON_CFG.CR_COL_FECHA).getValue()) {
+    cron.getRange(f, CRON_CFG.CR_COL_FECHA).setValue(_soloFecha(new Date())).setNumberFormat("dd/MM/yyyy");
+  }
+  try { _registrarActividad(_usuarioActual(), "reanudar", String(f), "Evento reanudado (En Proceso)"); } catch (eL) {}
+  return { ok: true, estado: "En Proceso" };
+}
+
+/* FASE 8.62 (R3): el RESPONSABLE (o Admin/Coordinador) agrega/quita APOYOS de un
+   evento YA CREADO. apoyosDeseados = lista de NOMBRES que deben quedar activos. */
+function gestionarApoyosEvento(filaEvento, apoyosDeseados) {
+  var ss = _getSS();
+  var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
+  if (!cron) throw new Error("No se encontró " + CRON_CFG.HOJA_CRONOGRAMA);
+  var f = parseInt(filaEvento, 10);
+  if (!f || f < CRON_CFG.CR_FILA_INI) throw new Error("Fila inválida.");
+
+  // Permiso: responsable de la tarea, Admin o Coordinador
+  var ctrl = _puedeControlarTarea(cron, f);
+  var esCoord = false;
+  try { var uu = _obtenerUsuario(_usuarioActual()); esCoord = uu && String(uu.rol||"").trim().toLowerCase() === "coordinador"; } catch(e){}
+  if (!ctrl.ok && !esCoord) {
+    throw new Error("Solo el responsable de la tarea (" + (ctrl.responsable || "—") + "), un Coordinador o un Admin pueden editar los apoyos.");
+  }
+
+  var cliente = String(cron.getRange(f, CRON_CFG.CR_COL_CLIENTE).getValue() || "");
+  var titulo  = String(cron.getRange(f, CRON_CFG.CR_COL_TITULO).getValue() || "");
+  var respFila = ctrl.responsable;
+
+  var deseados = {};
+  (apoyosDeseados || []).forEach(function(n){
+    var k = String(n || "").trim().toUpperCase();
+    if (k && k !== respFila) deseados[k] = true;   // el responsable no es "apoyo"
+  });
+
+  var sh = _asegurarHojaEquiposTarea();
+  var quien = _usuarioActual();
+  var ahora = new Date();
+  var actuales = {};   // NOMBRE -> {fila, estado}
+  if (sh.getLastRow() >= 2) {
+    var v = sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues();
+    for (var i = 0; i < v.length; i++) {
+      if (String(v[i][1]) !== String(f)) continue;
+      if (String(v[i][6] || "").toUpperCase() !== "APOYO") continue;
+      var nom = String(v[i][5] || "").trim().toUpperCase();
+      if (nom) actuales[nom] = { fila: i + 2, estado: String(v[i][7] || "").toUpperCase() };
+    }
+  }
+
+  // Mapa nombre->email (para altas)
+  var emailPorNombre = {};
+  try {
+    var shU = ss.getSheetByName(USR_CFG.HOJA);
+    if (shU && shU.getLastRow() > 1) {
+      var vu = shU.getRange(2, 1, shU.getLastRow() - 1, 2).getValues();
+      vu.forEach(function(r){ var nm = String(r[1]||"").trim().toUpperCase(); if (nm && !emailPorNombre[nm]) emailPorNombre[nm] = String(r[0]||"").trim(); });
+    }
+  } catch (eU) {}
+
+  var agregados = 0, quitados = 0, reactivados = 0;
+  // Altas / reactivaciones
+  Object.keys(deseados).forEach(function(nom){
+    if (actuales[nom]) {
+      if (actuales[nom].estado !== "ACTIVO") {
+        sh.getRange(actuales[nom].fila, 8).setValue("ACTIVO");
+        sh.getRange(actuales[nom].fila, 9).setValue(ahora);
+        reactivados++;
+      }
+    } else {
+      sh.appendRow([ahora, f, String(cliente).toUpperCase(), titulo, emailPorNombre[nom] || "", nom, "APOYO", "ACTIVO", "", quien]);
+      agregados++;
+    }
+  });
+  // Bajas (quitar = marcar RETIRADO)
+  Object.keys(actuales).forEach(function(nom){
+    if (!deseados[nom] && actuales[nom].estado === "ACTIVO") {
+      sh.getRange(actuales[nom].fila, 8).setValue("RETIRADO");
+      sh.getRange(actuales[nom].fila, 9).setValue(ahora);
+      quitados++;
+    }
+  });
+
+  try {
+    _registrarActividad(quien, "editar_apoyos", String(f),
+      "Apoyos evento " + f + ": +" + agregados + " / -" + quitados + " / react " + reactivados);
+  } catch (eL) {}
+  return { ok: true, agregados: agregados, quitados: quitados, reactivados: reactivados };
 }
 
 

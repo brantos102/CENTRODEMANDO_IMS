@@ -13,6 +13,23 @@ function $(id){ return document.getElementById(id); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmtNum(n){ if(n==null)return '—'; if(n>=1e6)return (n/1e6).toFixed(2)+'M'; if(n>=1e3)return (n/1e3).toFixed(1)+'k'; return Math.round(n).toString(); }
 
+/* ===== FASE 8.62 R2: TEMA DÍA / NOCHE ===== */
+function aplicarTema(t) {
+  var claro = (t === 'light');
+  document.documentElement.setAttribute('data-theme', claro ? 'light' : 'dark');
+  try { localStorage.setItem('ims_tema', claro ? 'light' : 'dark'); } catch(e){}
+  var b = document.getElementById('theme-toggle');
+  if (b) { b.innerText = claro ? '☀️' : '🌙'; b.title = claro ? 'Cambiar a modo noche' : 'Cambiar a modo día'; }
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', claro ? '#f1f5f9' : '#0b1220');
+}
+function toggleTema() {
+  var actual = document.documentElement.getAttribute('data-theme') || 'dark';
+  aplicarTema(actual === 'light' ? 'dark' : 'light');
+}
+// Aplicar de inmediato (antes del render) para evitar parpadeo.
+(function(){ try { aplicarTema(localStorage.getItem('ims_tema') || 'dark'); } catch(e){ aplicarTema('dark'); } })();
+
 /* ===== INIT ===== */
 window.onload = function() {
   // Header usuario
@@ -39,6 +56,7 @@ function aplicarPermisosBotones() {
     'b-syncQ': P.recordatorios,
     'b-cron-codigos': P.gestionUsuarios,   // FASE 8.56: solo Coordinador
     'b-cred-api': P.gestionUsuarios,       // FASE 8.57: solo Coordinador
+    'b-accesos': P.gestionUsuarios,        // FASE 8.62 R1: Admin/Coordinador
     'b-zip': P.exportar || P.verDashboard
   };
   Object.keys(map).forEach(function(id){
@@ -685,7 +703,12 @@ function filaCron(d) {
   } else if (P.iniciarFin) {
     var bInic = enProceso ? '<button class="mini-btn" disabled>▶ Iniciar</button>' : '<button class="mini-btn start" onclick="iniciarEvt('+d.fila+')">▶ Iniciar</button>';
     var bFin = '<button class="mini-btn end" onclick="finalizarEvt('+d.fila+')">✓ Fin</button>';
-    actions = bInic + bFin + accesos;
+    // FASE 8.62 (R3): editar apoyos — visible al responsable, Coordinador o Admin.
+    var _miNom = String((U&&U.nombre)||'').trim().toUpperCase();
+    var _resp = String(d.responsable||'').trim().toUpperCase();
+    var _puedeApoyos = (P.gestionUsuarios || P.admin || P.consolidar || (_miNom && _miNom === _resp));
+    var bApoyos = _puedeApoyos ? '<button class="icon-btn" title="Editar equipo de apoyo" onclick="gestionarApoyos('+d.fila+')">👥</button>' : '';
+    actions = bInic + bFin + bApoyos + accesos;
   } else {
     actions = accesos || '<span style="color:var(--muted);font-size:10px;">solo lectura</span>';
   }
@@ -852,10 +875,15 @@ function verCargaOperario(i) {
       if (P.abrirLibro) acc+='<button class="icon-btn" onclick="'+alerta+'" title="Excel (Sin archivo asignado)">📊</button>';
       acc+='<button class="icon-btn" onclick="'+alerta+'" title="WMS (Sin archivo asignado)">📦</button>';
     }
-    // FASE 8.60: pausar/retomar directo desde la carga del operario
-    if (P.iniciarFin) {
+    // FASE 8.62 (R3): pausar/reanudar SOLO el responsable de la tarea (o Admin).
+    // El botón se muestra únicamente cuando el operario visto es el responsable
+    // de ESE evento y coincide con el usuario actual (o es Admin).
+    var soyAdmin = !!(P && P.admin);
+    var puedeControlar = (d._rolEnTarea === 'RESPONSABLE' &&
+                          (nomUp === String((U && U.nombre) || '').trim().toUpperCase())) || soyAdmin;
+    if (puedeControlar) {
       if (enProc) acc = '<button class="mini-btn" title="Pausar (vuelve a Pendiente)" onclick="cargaAccion(\'pausar\','+d.fila+','+i+','+(incluirPend?'true':'false')+')">⏸</button>' + acc;
-      else acc = '<button class="mini-btn start" title="Retomar (pasa a En Proceso)" onclick="cargaAccion(\'retomar\','+d.fila+','+i+','+(incluirPend?'true':'false')+')">▶</button>' + acc;
+      else acc = '<button class="mini-btn start" title="Reanudar (pasa a En Proceso)" onclick="cargaAccion(\'reanudar\','+d.fila+','+i+','+(incluirPend?'true':'false')+')">▶</button>' + acc;
     }
     // FASE 8.61: TARJETA por tarea (legible y móvil) — reemplaza la grilla
     // apretada que encimaba avance/estado. Responsable = AZUL · Apoyo = TURQUESA.
@@ -917,10 +945,43 @@ function verCargaOperario(i) {
 var _cargaTok = 0;
 var _panTok = 0;
 
+/* FASE 8.62 (R3): el responsable (o Coordinador/Admin) agrega/quita apoyos de un
+   evento YA creado. Modal con el equipo; pre-marca los apoyos activos actuales. */
+function gestionarApoyos(fila) {
+  var ev = (estado.cronograma || []).find(function(d){ return d.fila === fila; });
+  var equipoArr = (estado && estado.equipo) ? estado.equipo : [];
+  var respUp = ev ? String(ev.responsable||'').trim().toUpperCase() : '';
+  toast('Cargando equipo…');
+  google.script.run.withSuccessHandler(function(eq){
+    eq = (eq || []).filter(function(m){ return String(m.estado).toUpperCase() === 'ACTIVO' && String(m.rol).toUpperCase() === 'APOYO'; });
+    var activos = {}; eq.forEach(function(m){ activos[String(m.nombre).trim().toUpperCase()] = true; });
+    var lista = equipoArr.filter(function(n){ return String(n).trim().toUpperCase() !== respUp; });
+    var chips = lista.length ? lista.map(function(n){
+        var mk = activos[String(n).trim().toUpperCase()];
+        return '<label style="display:flex;gap:6px;align-items:center;padding:5px 8px;font-size:12px;cursor:pointer;border:1px solid '+(mk?'#2dd4bf':'var(--border)')+';border-radius:6px;background:'+(mk?'rgba(45,212,191,0.12)':'transparent')+';">'+
+          '<input type="checkbox" class="ga-apoyo" value="'+escapeHtml(n)+'" '+(mk?'checked':'')+' style="accent-color:#2dd4bf;"> '+escapeHtml(n)+'</label>';
+      }).join('') : '<div style="color:var(--muted);font-size:11px;">Sin miembros disponibles.</div>';
+    modalCustom('👥 Equipo de apoyo — '+(ev?escapeHtml(ev.cliente):'evento fila '+fila),
+      'Responsable: <b style="color:#60a5fa;">'+escapeHtml(respUp||'—')+'</b>. Marca/desmarca los apoyos. Solo el responsable, un Coordinador o un Admin pueden guardar.',
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:220px;overflow-y:auto;">'+chips+'</div>',
+      'Guardar apoyos', function(){
+        var sel = [];
+        document.querySelectorAll('.ga-apoyo:checked').forEach(function(c){ sel.push(c.value); });
+        cerrarModal(); toast('Guardando apoyos…');
+        google.script.run.withSuccessHandler(function(r){
+          toast('✓ Apoyos: +'+r.agregados+' / -'+r.quitados+(r.reactivados?' / react '+r.reactivados:''),'success');
+          cargarDashboard(true);
+        }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+        .gestionarApoyosEvento(fila, sel);
+      });
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+  .obtenerEquipoTarea(fila);
+}
+
 /* FASE 8.60: pausar/retomar desde el drilldown de carga — actualiza el estado
    local para re-render inmediato y refresca el dashboard en silencio. */
 function cargaAccion(tipo, fila, idx, incluirPend) {
-  toast(tipo === 'pausar' ? 'Pausando…' : 'Retomando…');
+  toast(tipo === 'pausar' ? 'Pausando…' : 'Reanudando…');
   var runner = google.script.run.withSuccessHandler(function(){
     toast(tipo === 'pausar' ? '✓ Pausado (Pendiente)' : '✓ En Proceso','success');
     var ev = (estado.cronograma || []).find(function(d){ return d.fila === fila; });
@@ -928,8 +989,9 @@ function cargaAccion(tipo, fila, idx, incluirPend) {
     verCargaOperario(idx, incluirPend);   // re-render inmediato del modal
     cargarDashboard(true);                // refresco silencioso del resto
   }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); });
+  // FASE 8.62 (R3): reanudar usa dash_reanudarEvento (gate responsable/Admin)
   if (tipo === 'pausar') runner.dash_pausarEvento(fila);
-  else runner.iniciarEventoConOpciones(fila, {});
+  else runner.dash_reanudarEvento(fila);
 }
 
 function setF(el, f) {
@@ -1472,7 +1534,7 @@ function cargarUsuarios() {
   }).withFailureHandler(e=>$('usr-body').innerHTML='<div class="empty">Error: '+e.message+'</div>').listarUsuarios();
 }
 function filaUsuario(u) {
-  var rolCls = u.rol==='Coordinador'?'pill-info':(u.rol==='Auditor'?'pill-muted':'pill-ok');
+  var rolCls = u.rol==='Admin'?'pill-danger':(u.rol==='Coordinador'?'pill-info':(u.rol==='Auditor'?'pill-muted':'pill-ok'));
   var estPill = u.activo ? '<span class="pill pill-ok">Activo</span>' : '<span class="pill pill-danger">Inactivo</span>';
   var wmsBadge = u.rolWms ? ' <span class="pill pill-muted" style="font-size:9px;">WMS:'+escapeHtml(u.rolWms)+'</span>' : '';
   return '<div class="rw"><div><div style="font-weight:500;">'+escapeHtml(u.nombre)+'</div><div style="font-size:10px;color:var(--muted);">'+escapeHtml(u.email)+'</div></div>'+
@@ -1481,7 +1543,7 @@ function filaUsuario(u) {
     (u.activo?'<button class="mini-btn" onclick="desactUsuario('+u.fila+')">⊘</button>':'')+'</div></div>';
 }
 function abrirNuevoUsuario() {
-  var roles = ['Coordinador','Líder de Conteo','Auditor'].map(r=>'<option>'+r+'</option>').join('');
+  var roles = ['Admin','Coordinador','Líder de Conteo','Auditor'].map(r=>'<option>'+r+'</option>').join('');
   var rolesWms = ['ADMIN','OPERADOR','AUDITOR'].map(r=>'<option>'+r+'</option>').join('');
   modalCustom('＋ Nuevo usuario', 'Vale para Panel de Control y Terminal WMS (mismos usuarios y rangos):',
     '<div class="field"><label>Email *</label><input type="text" id="nu-email" placeholder="correo@itsanet.com"></div>'+
@@ -1499,7 +1561,7 @@ function abrirNuevoUsuario() {
     });
 }
 function editarUsuario(u) {
-  var roles = ['Coordinador','Líder de Conteo','Auditor'].map(r=>'<option'+(r===u.rol?' selected':'')+'>'+r+'</option>').join('');
+  var roles = ['Admin','Coordinador','Líder de Conteo','Auditor'].map(r=>'<option'+(r===u.rol?' selected':'')+'>'+r+'</option>').join('');
   var rolesWms = ['ADMIN','OPERADOR','AUDITOR'].map(r=>'<option'+(r===u.rolWms?' selected':'')+'>'+r+'</option>').join('');
   modalCustom('✎ Editar — '+escapeHtml(u.nombre), 'Mismo usuario para Panel y WMS:',
     '<div class="field"><label>Nombre</label><input type="text" id="eu-nombre" value="'+escapeHtml(u.nombre)+'"></div>'+
@@ -1617,7 +1679,7 @@ function accionTrabajo(tipo, fila) {
     cargarDashboard();
   }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); });
   if (tipo === 'pausar') runner.dash_pausarEvento(fila);
-  else runner.iniciarEventoConOpciones(fila, {});
+  else runner.dash_reanudarEvento(fila);   // FASE 8.62 (R3)
 }
 
 /* FASE 8.60: resaltar chip de apoyo al marcar + resumen en vivo */
@@ -1929,6 +1991,16 @@ function abrirCronCodigos() {
       });
   }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
   .obtenerResumenCronCodigos();
+}
+
+/* ===== FASE 8.62 R1: garantizar accesos del equipo a los archivos hijos ===== */
+function garantizarAccesos() {
+  if (!confirm('Garantizar accesos del equipo a TODOS los archivos hijos.\n\n· El equipo activo quedará como EDITOR de cada archivo.\n· ITSANET accede como LECTOR por link (auditor).\n· No se envían correos.\n\nPuede tardar según la cantidad de archivos. ¿Continuar?')) return;
+  toast('Aplicando accesos… no cierres el panel','info');
+  google.script.run.withSuccessHandler(function(r){
+    modalCustom('🔒 Accesos garantizados', '', '<div style="font-size:12px;white-space:pre-line;">'+escapeHtml(r.mensaje||'Listo')+'</div>', 'Cerrar', cerrarModal);
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+  .dash_garantizarAccesosTodos();
 }
 
 /* ===== FASE 8.57: CREDENCIALES API (solo Coordinador, claves fuera del libro) ===== */
