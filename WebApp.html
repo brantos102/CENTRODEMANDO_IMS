@@ -35,6 +35,31 @@
     /* Sombras/realces suaves en claro para conservar profundidad */
     :root[data-theme="light"] .card,
     :root[data-theme="light"] .kpi { box-shadow:0 1px 3px rgba(15,30,51,0.06); }
+
+    /* FASE 8.64 (R2): CONTRASTE del modo día — los pills y colores pensados
+       para fondo oscuro se re-mapean a tonos oscuros legibles sobre claro. */
+    :root[data-theme="light"] .pill-ok     { background:rgba(22,163,74,.14);  color:#166534; }
+    :root[data-theme="light"] .pill-danger { background:rgba(220,38,38,.12);  color:#b91c1c; }
+    :root[data-theme="light"] .pill-warn   { background:rgba(180,83,9,.14);   color:#92400e; }
+    :root[data-theme="light"] .pill-info   { background:rgba(37,99,235,.12);  color:#1d4ed8; }
+    :root[data-theme="light"] .pill-muted  { background:rgba(90,107,133,.14); color:#475569; }
+    /* Colores INLINE (texto claro sobre oscuro) → tonos oscuros. El !important
+       de hoja SÍ pisa el style inline (specificidad de importancia). */
+    :root[data-theme="light"] [style*="color:#60a5fa"] { color:#1d4ed8 !important; }  /* responsable azul */
+    :root[data-theme="light"] [style*="color:#2dd4bf"] { color:#0f766e !important; }  /* apoyo turquesa */
+    :root[data-theme="light"] [style*="color:#fbbf24"] { color:#92400e !important; }  /* ámbar (desde/avisos) */
+    :root[data-theme="light"] [style*="color:#fde047"] { color:#854d0e !important; }  /* amarillo avisos */
+    :root[data-theme="light"] [style*="color:#fca5a5"] { color:#b91c1c !important; }  /* rojo suave */
+    :root[data-theme="light"] [style*="color:#93c5fd"] { color:#1e40af !important; }  /* azul claro */
+    :root[data-theme="light"] [style*="color:#86efac"] { color:#15803d !important; }  /* verde suave */
+    :root[data-theme="light"] [style*="color:#a78bfa"] { color:#6d28d9 !important; }  /* violeta */
+    :root[data-theme="light"] [style*="color:#bfdbfe"] { color:#1e40af !important; }
+    :root[data-theme="light"] [style*="color:#fcd34d"] { color:#92400e !important; }
+    :root[data-theme="light"] [style*="color:#e8ecf3"] { color:#0f1e33 !important; }  /* texto claro fijo */
+    :root[data-theme="light"] [style*="color:#94a3b8"] { color:#5a6b85 !important; }
+    /* Fondos inline oscuros de botones pequeños → claros */
+    :root[data-theme="light"] [style*="background:#1c2740"],
+    :root[data-theme="light"] [style*="background:#1e293b"] { background:#e6ebf3 !important; color:#0f1e33 !important; }
     * { box-sizing:border-box; }
     body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text);
            margin:0; font-size:13px; }
@@ -322,7 +347,7 @@
         <div class="kpi warn" style="cursor:pointer;" title="Ver los de hoy" onclick="abrirKpiDetalle('hoy')"><div class="lbl">Hoy 🔍</div><div class="val" id="kpi-hoy">—</div><div class="sub">programados</div></div>
         <div class="kpi info" style="cursor:pointer;" title="Ver próximos 7 días" onclick="abrirKpiDetalle('prox7')"><div class="lbl">Próx. 7 días 🔍</div><div class="val" id="kpi-prox7">—</div><div class="sub">en agenda</div></div>
         <div class="kpi ok" style="cursor:pointer;" title="Ver entregados" onclick="abrirKpiDetalle('entreg')"><div class="lbl">Entregados año 🔍</div><div class="val" id="kpi-entr-anio">—</div><div class="sub">en panel</div></div>
-        <div class="kpi violet"><div class="lbl">Clientes activos</div><div class="val" id="kpi-cli-act">—</div><div class="sub">mes en curso</div></div>
+        <div class="kpi violet" style="cursor:pointer;" title="Ver clientes activos del mes" onclick="abrirKpiDetalle('clientes')"><div class="lbl">Clientes activos 🔍</div><div class="val" id="kpi-cli-act">—</div><div class="sub">mes en curso</div></div>
       </div>
       <div class="kpis">
         <div class="kpi"><div class="lbl">Unidades</div><div class="val" id="kpi-unid">—</div><div class="sub">año</div></div>

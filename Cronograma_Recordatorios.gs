@@ -509,30 +509,101 @@ function _garantizarAccesosLote(fileIds, deadlineMs) {
   return { aplicados: aplicados, fallos: fallos, completo: completo };
 }
 
-/* Botón de panel: garantiza accesos en TODOS los archivos del PANEL DE CONTROL.
-   Úsalo una vez tras deployar o cuando incorpores operarios. Silencioso. */
+/* FASE 8.64 (R1): garantía de accesos POR LOTES con CHECKPOINT y CONTINUACIÓN
+   AUTOMÁTICA (trigger .after 60s), igual que la consolidación. Ya NO se queda a
+   medias: cada corrida retoma donde quedó y se re-lanza sola hasta el 100%. */
 function dash_garantizarAccesosTodos() {
   _requiereRol(["Admin", "Coordinador"]);
+  return _garantiaAccesosNucleo();
+}
+
+function _garantiaAccesosNucleo() {
+  var p = _consolProps();
   var ss = _getSS();
   var pan = ss.getSheetByName(CRON_CFG.HOJA_PANEL);
-  if (!pan || pan.getLastRow() < 2) return { ok: false, mensaje: "Panel vacío." };
+  if (!pan || pan.getLastRow() < 2) {
+    p.setProperty("ACCESOS_STATUS", "COMPLETADO");
+    return { ok: false, mensaje: "Panel vacío." };
+  }
   var d = pan.getRange(2, 1, pan.getLastRow() - 1, 7).getValues();
   var ids = [];
   for (var i = 0; i < d.length; i++) {
     var fid = extractIdFromUrl(d[i][CRON_CFG.PA_COL_ID - 1]);
     if (fid) ids.push(fid);
   }
-  var res = _garantizarAccesosLote(ids, Date.now() + 320 * 1000);
-  // Marca el hash del equipo como aplicado (evita re-trabajo en la próxima consolidación)
-  try { _consolProps().setProperty("ACCESOS_TEAM_HASH", _equipoHashActivo()); } catch (e) {}
+  var total = ids.length;
+
+  // Reanudar desde el checkpoint si hay corrida EN_CURSO; si no, empezar de 0.
+  var start = 0;
+  if ((p.getProperty("ACCESOS_STATUS") || "") === "EN_CURSO") {
+    start = parseInt(p.getProperty("ACCESOS_NEXT_IDX") || "0", 10);
+    if (isNaN(start) || start < 0 || start >= total) start = (start >= total ? total : 0);
+  } else {
+    p.setProperties({ ACCESOS_STATUS: "EN_CURSO", ACCESOS_NEXT_IDX: "0",
+                      ACCESOS_OK: "0", ACCESOS_FAIL: "0" }, false);
+  }
+
+  var okAcum   = parseInt(p.getProperty("ACCESOS_OK")   || "0", 10);
+  var failAcum = parseInt(p.getProperty("ACCESOS_FAIL") || "0", 10);
+  var deadline = Date.now() + 270 * 1000;   // lote de ~4.5 min (bajo el límite web)
+
+  var i2 = start;
+  for (; i2 < total; i2++) {
+    if (Date.now() > deadline) break;
+    var r = _garantizarAccesoArchivo(ids[i2]);
+    if (r && r.dominio !== false && !r.error) okAcum++; else failAcum++;
+    if ((i2 % 10) === 0) {
+      p.setProperties({ ACCESOS_NEXT_IDX: String(i2 + 1),
+                        ACCESOS_OK: String(okAcum), ACCESOS_FAIL: String(failAcum) }, false);
+    }
+  }
+  p.setProperties({ ACCESOS_NEXT_IDX: String(i2),
+                    ACCESOS_OK: String(okAcum), ACCESOS_FAIL: String(failAcum) }, false);
+
+  if (i2 < total) {
+    _programarContinuacionAccesos();   // se re-lanza SOLA hasta terminar
+    return {
+      ok: true, enCurso: true, procesados: i2, total: total,
+      mensaje: "🔒 Accesos: " + i2 + " / " + total + " archivos procesados.\n\n" +
+               "CONTINÚA AUTOMÁTICAMENTE en segundo plano (un lote cada ~1 min) " +
+               "hasta cubrir el 100%. No necesitas volver a ejecutar ni dejar la " +
+               "ventana abierta. Vuelve a abrir este botón para ver el avance."
+    };
+  }
+
+  // COMPLETADO
+  p.setProperty("ACCESOS_STATUS", "COMPLETADO");
+  try { p.setProperty("ACCESOS_TEAM_HASH", _equipoHashActivo()); } catch (e) {}
+  _borrarTriggersAccesos();
   return {
-    ok: true,
-    aplicados: res.aplicados, fallos: res.fallos, total: ids.length, completo: res.completo,
-    mensaje: "🔒 Accesos garantizados en " + res.aplicados + " de " + ids.length + " archivos" +
-             (res.fallos ? " (" + res.fallos + " sin acceso del dueño — revisar)" : "") +
-             (res.completo ? "." : " · faltaron algunos por tiempo, vuelve a ejecutar.") +
-             "\nEquipo = editores · ITSANET = lector por link (auditor). Sin correos."
+    ok: true, aplicados: okAcum, fallos: failAcum, total: total, completo: true,
+    mensaje: "🔒 COMPLETADO: accesos garantizados en " + okAcum + " de " + total + " archivos" +
+             (failAcum ? " (" + failAcum + " sin acceso del dueño — revisar ARCHIVOS_INACCESIBLES)" : "") +
+             ".\nEquipo = editores · ITSANET = lector por link (auditor). Sin correos."
   };
+}
+
+function _programarContinuacionAccesos() {
+  _borrarTriggersAccesos();
+  ScriptApp.newTrigger("_continuarGarantiaAccesos").timeBased().after(60 * 1000).create();
+}
+function _borrarTriggersAccesos() {
+  try {
+    ScriptApp.getProjectTriggers().forEach(function(t){
+      if (t.getHandlerFunction() === "_continuarGarantiaAccesos") ScriptApp.deleteTrigger(t);
+    });
+  } catch (e) {}
+}
+function _continuarGarantiaAccesos() {
+  _borrarTriggersAccesos();
+  var p = _consolProps();
+  if ((p.getProperty("ACCESOS_STATUS") || "") !== "EN_CURSO") return;
+  try {
+    _garantiaAccesosNucleo();   // reprograma sola si aún quedan pendientes
+  } catch (e) {
+    Logger.log("FASE 8.64 _continuarGarantiaAccesos error: " + e.message);
+    try { _programarContinuacionAccesos(); } catch (e2) {}  // reintentar
+  }
 }
 
 /* ==========================================================================

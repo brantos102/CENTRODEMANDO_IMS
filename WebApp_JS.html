@@ -980,9 +980,48 @@ function abrirKpiDetalle(tipo) {
   if (!estado || !estado.cronograma) { toast('Datos no cargados aún','info'); return; }
   var hoy = new Date(); hoy.setHours(0,0,0,0);
   var titulos = { venc:'⛔ Vencidos', hoy:'📅 Para hoy', prox7:'🗓 Próximos 7 días',
-                  entreg:'✓ Entregados (año)', proceso:'⏳ En proceso' };
+                  entreg:'✓ Entregados (año)', proceso:'⏳ En proceso',
+                  clientes:'🏢 Clientes activos del mes' };
   function esEntregado(d){ return String(d.estado||'').toLowerCase().indexOf('entregado')!==-1; }
   function enProceso(d){ var e=String(d.estado||'').toLowerCase(); return e.indexOf('proceso')!==-1||e.indexOf('curso')!==-1; }
+
+  // FASE 8.64 (R3): detalle de CLIENTES ACTIVOS del mes en curso, agrupado.
+  if (tipo === 'clientes') {
+    var mesAct = hoy.getMonth(), anioAct = hoy.getFullYear();
+    var porCli = {};
+    (estado.cronograma||[]).forEach(function(d){
+      var enMes = false;
+      if (d.fechaInicio) { var f0=new Date(d.fechaInicio); enMes = (f0.getMonth()===mesAct && f0.getFullYear()===anioAct); }
+      if (!enMes && d.fechaEntrega) { var f1=new Date(d.fechaEntrega); enMes = (f1.getMonth()===mesAct && f1.getFullYear()===anioAct); }
+      if (!enMes && enProceso(d)) enMes = true;   // en proceso cuenta como activo
+      if (!enMes) return;
+      var c = String(d.cliente||'—').toUpperCase();
+      if (!porCli[c]) porCli[c] = { cliente:c, total:0, entregados:0, enProceso:0, pendientes:0 };
+      porCli[c].total++;
+      if (esEntregado(d)) porCli[c].entregados++;
+      else if (enProceso(d)) porCli[c].enProceso++;
+      else porCli[c].pendientes++;
+    });
+    var arrCli = Object.keys(porCli).map(function(k){ return porCli[k]; })
+                  .sort(function(a,b){ return b.total-a.total; });
+    var filasCli = arrCli.map(function(c){
+      return '<div class="rw" style="grid-template-columns:minmax(0,1.6fr) 70px 90px 90px 90px;gap:8px;align-items:center;">'+
+        '<div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(c.cliente)+'</div>'+
+        '<div><b>'+c.total+'</b> <span style="color:var(--muted);font-size:10px;">evt</span></div>'+
+        '<div><span class="pill pill-ok">'+c.entregados+' entr.</span></div>'+
+        '<div><span class="pill pill-info">'+c.enProceso+' proc.</span></div>'+
+        '<div><span class="pill pill-muted">'+c.pendientes+' pend.</span></div></div>';
+    }).join('');
+    var hdrCli = '<div class="rw" style="grid-template-columns:minmax(0,1.6fr) 70px 90px 90px 90px;gap:8px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--border);padding-bottom:4px;">'+
+      '<div>Cliente</div><div>Eventos</div><div>Entregados</div><div>En proceso</div><div>Pendientes</div></div>';
+    modalCustom(titulos.clientes + ' ('+arrCli.length+')', '',
+      arrCli.length ? '<div class="tbl" style="font-size:12px;">'+hdrCli+'<div class="scroll" style="max-height:55vh;">'+filasCli+'</div></div>'
+                    : '<div class="empty">Sin clientes con actividad este mes.</div>',
+      'Cerrar', cerrarModal);
+    var mi = document.getElementById('modal-inner'); if (mi) mi.classList.add('wide');  // R4
+    return;
+  }
+
   var lista = (estado.cronograma||[]).filter(function(d){
     var ent = esEntregado(d);
     var dr = d.diasRestantes;
@@ -1019,13 +1058,15 @@ function _pintarKpiModal(titulo, lista, tipo) {
                         : '<button class="mini-btn start" onclick="iniciarEvt('+d.fila+')">▶ Iniciar</button>';
     }
     if (d.urlArchivo) acc += '<button class="icon-btn" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="Abrir archivo">↗</button>';
-    return '<div class="rw" style="grid-template-columns:52px 1.4fr 1fr 90px auto;gap:6px;align-items:center;">'+
+    // FASE 8.64 (R4): minmax(0,…) evita que el texto se sobreponga a los pills;
+    // cada celda controla su desborde con ellipsis.
+    return '<div class="rw" style="grid-template-columns:52px minmax(0,1.5fr) minmax(0,1.1fr) 104px auto;gap:8px;align-items:center;">'+
       '<div style="color:var(--muted);font-size:11px;">'+fStr+'</div>'+
-      '<div><div style="font-weight:500;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente||'—')+'</div>'+
+      '<div style="min-width:0;"><div style="font-weight:500;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente||'—')+'</div>'+
         '<div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo||'')+'</div></div>'+
-      '<div style="font-size:11px;color:#60a5fa;overflow:hidden;">'+escapeHtml(d.responsable||'—')+apoyos+'</div>'+
-      '<div><span class="pill '+pill+'">'+escapeHtml(estTxt)+'</span></div>'+
-      '<div class="act-grp">'+acc+'</div></div>';
+      '<div style="min-width:0;font-size:11px;color:#60a5fa;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.responsable||'—')+'</div>'+apoyos+'</div>'+
+      '<div><span class="pill '+pill+'" style="white-space:nowrap;">'+escapeHtml(estTxt)+'</span></div>'+
+      '<div class="act-grp" style="flex-shrink:0;">'+acc+'</div></div>';
   }).join('');
   var body =
     '<div style="margin-bottom:8px;"><input type="text" id="kpi-filtro" placeholder="🔎 Filtrar por cliente, tarea o responsable…" '+
@@ -1041,6 +1082,9 @@ function _pintarKpiModal(titulo, lista, tipo) {
   } else {
     modalCustom(titulo, '', body, 'Cerrar', cerrarModal);
   }
+  // FASE 8.64 (R4): modal ANCHO para que nada se sobreponga (se limpia al cerrar)
+  var miK = document.getElementById('modal-inner');
+  if (miK) miK.classList.add('wide');
 }
 function esKpiEntregado(d){ return String(d.estado||'').toLowerCase().indexOf('entregado')!==-1; }
 function enProc2(d){ var e=String(d.estado||'').toLowerCase(); return e.indexOf('proceso')!==-1||e.indexOf('curso')!==-1; }
@@ -2184,6 +2228,9 @@ function cerrarModal(){
   // y se cerró con Escape/X, restaurarlo para el siguiente modal.
   var bcanc = document.querySelector('#modal .actions button:first-child');
   if (bcanc) bcanc.style.display = 'inline-block';
+  // FASE 8.64 (R4): limpiar el modo ANCHO del modal (lo usan los KPIs)
+  var miC = document.getElementById('modal-inner');
+  if (miC) miC.classList.remove('wide');
 }
 
 function toast(msg, type) {
