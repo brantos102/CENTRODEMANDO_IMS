@@ -317,10 +317,11 @@
     <!-- ===== SECCIÓN DASHBOARD ===== -->
     <div class="section active" id="sec-dashboard">
       <div class="kpis">
-        <div class="kpi danger"><div class="lbl">Vencidos</div><div class="val" id="kpi-venc">—</div><div class="sub">cronograma</div></div>
-        <div class="kpi warn"><div class="lbl">Hoy</div><div class="val" id="kpi-hoy">—</div><div class="sub">programados</div></div>
-        <div class="kpi info"><div class="lbl">Próx. 7 días</div><div class="val" id="kpi-prox7">—</div><div class="sub">en agenda</div></div>
-        <div class="kpi ok"><div class="lbl">Entregados año</div><div class="val" id="kpi-entr-anio">—</div><div class="sub">en panel</div></div>
+        <!-- FASE 8.63 R7: KPIs clicables → modal con detalle filtrable -->
+        <div class="kpi danger" style="cursor:pointer;" title="Ver vencidos" onclick="abrirKpiDetalle('venc')"><div class="lbl">Vencidos 🔍</div><div class="val" id="kpi-venc">—</div><div class="sub">cronograma</div></div>
+        <div class="kpi warn" style="cursor:pointer;" title="Ver los de hoy" onclick="abrirKpiDetalle('hoy')"><div class="lbl">Hoy 🔍</div><div class="val" id="kpi-hoy">—</div><div class="sub">programados</div></div>
+        <div class="kpi info" style="cursor:pointer;" title="Ver próximos 7 días" onclick="abrirKpiDetalle('prox7')"><div class="lbl">Próx. 7 días 🔍</div><div class="val" id="kpi-prox7">—</div><div class="sub">en agenda</div></div>
+        <div class="kpi ok" style="cursor:pointer;" title="Ver entregados" onclick="abrirKpiDetalle('entreg')"><div class="lbl">Entregados año 🔍</div><div class="val" id="kpi-entr-anio">—</div><div class="sub">en panel</div></div>
         <div class="kpi violet"><div class="lbl">Clientes activos</div><div class="val" id="kpi-cli-act">—</div><div class="sub">mes en curso</div></div>
       </div>
       <div class="kpis">

@@ -47,21 +47,33 @@ window.onload = function() {
 };
 
 function aplicarPermisosBotones() {
+  // FASE 8.63 (R6): permisos por MÓDULO.
+  //  · Operación: crear/evento/métricas (crearInventario) · libro (abrirLibro) · WMS (todos)
+  //  · Base de datos: consolidar/pre-validar/limpiar/cron-códigos/cred-api/accesos → baseDatos
+  //  · Reportes y notif.: exportar/record/sinc/syncQ/zip → exportar||recordatorios
   var map = {
     'b-crear': P.crearInventario, 'b-evento': P.crearInventario,
     'b-metricas': P.crearInventario, 'b-libro': P.abrirLibro,
-    'b-consolidar': P.consolidar, 'b-prevalidar': P.consolidar,
-    'b-limpiar': P.limpiar, 'b-exportar': P.exportar,
-    'b-record': P.recordatorios, 'b-sinc': P.recordatorios,
-    'b-syncQ': P.recordatorios,
-    'b-cron-codigos': P.gestionUsuarios,   // FASE 8.56: solo Coordinador
-    'b-cred-api': P.gestionUsuarios,       // FASE 8.57: solo Coordinador
-    'b-accesos': P.gestionUsuarios,        // FASE 8.62 R1: Admin/Coordinador
-    'b-zip': P.exportar || P.verDashboard
+    'b-consolidar': P.baseDatos, 'b-prevalidar': P.baseDatos,
+    'b-limpiar': P.baseDatos,
+    'b-cron-codigos': P.baseDatos, 'b-cred-api': P.baseDatos, 'b-accesos': P.baseDatos,
+    'b-exportar': P.exportar,
+    'b-record': P.recordatorios, 'b-sinc': P.recordatorios, 'b-syncQ': P.recordatorios,
+    'b-zip': P.exportar
   };
+  // Oculta (no solo deshabilita) lo que el rol no puede usar → panel limpio por rango.
   Object.keys(map).forEach(function(id){
     var el = $(id);
-    if (el && !map[id]) { el.disabled = true; el.title = 'Tu rol no permite esta acción'; }
+    if (el) el.style.display = map[id] ? '' : 'none';
+  });
+  // Poda: oculta cada "actbox" (módulo) que quede sin botones visibles.
+  document.querySelectorAll('.actbox').forEach(function(box){
+    var btns = box.querySelectorAll('.btn');
+    var algunoVisible = false;
+    btns.forEach(function(b){ if (b.style.display !== 'none') algunoVisible = true; });
+    // No ocultar el bloque "Carga por operario" (no tiene .btn, tiene lista)
+    if (btns.length > 0 && !algunoVisible) box.style.display = 'none';
+    else box.style.display = '';
   });
 }
 
@@ -697,18 +709,23 @@ function filaCron(d) {
     accesos += '<button class="icon-btn" style="position:relative;" onclick="window.open(\''+wmsUrl+'\',\'_blank\')" title="'+tooltipWMS+'">📦'+marcaPanel+'</button>';
   }
 
+  // FASE 8.63 (R4): eliminar evento — solo responsable o Admin (o Coord/Líder si
+  // no hay responsable). El backend lo vuelve a validar.
+  var _miNom = String((U&&U.nombre)||'').trim().toUpperCase();
+  var _resp = String(d.responsable||'').trim().toUpperCase();
+  var _puedeBorrar = P.admin || (_resp && _miNom === _resp) || (!_resp && P.crearInventario);
+  var bDel = _puedeBorrar ? '<button class="icon-btn" title="Eliminar evento" onclick="eliminarEvt('+d.fila+')">🗑</button>' : '';
+
   var actions = '';
   if (entregado) {
-    actions = accesos || '<button class="icon-btn" disabled>·</button>';
+    actions = (accesos || '') + bDel || '<button class="icon-btn" disabled>·</button>';
   } else if (P.iniciarFin) {
     var bInic = enProceso ? '<button class="mini-btn" disabled>▶ Iniciar</button>' : '<button class="mini-btn start" onclick="iniciarEvt('+d.fila+')">▶ Iniciar</button>';
     var bFin = '<button class="mini-btn end" onclick="finalizarEvt('+d.fila+')">✓ Fin</button>';
     // FASE 8.62 (R3): editar apoyos — visible al responsable, Coordinador o Admin.
-    var _miNom = String((U&&U.nombre)||'').trim().toUpperCase();
-    var _resp = String(d.responsable||'').trim().toUpperCase();
-    var _puedeApoyos = (P.gestionUsuarios || P.admin || P.consolidar || (_miNom && _miNom === _resp));
+    var _puedeApoyos = (P.gestionUsuarios || P.admin || (_miNom && _miNom === _resp));
     var bApoyos = _puedeApoyos ? '<button class="icon-btn" title="Editar equipo de apoyo" onclick="gestionarApoyos('+d.fila+')">👥</button>' : '';
-    actions = bInic + bFin + bApoyos + accesos;
+    actions = bInic + bFin + bApoyos + accesos + bDel;
   } else {
     actions = accesos || '<span style="color:var(--muted);font-size:10px;">solo lectura</span>';
   }
@@ -944,6 +961,89 @@ function verCargaOperario(i) {
 }
 var _cargaTok = 0;
 var _panTok = 0;
+
+/* FASE 8.63 (R4): eliminar evento (backend valida responsable/Admin). */
+function eliminarEvt(fila) {
+  var ev = (estado.cronograma || []).find(function(d){ return d.fila === fila; });
+  var etiqueta = ev ? (ev.cliente + ' · ' + (ev.titulo||'')) : ('fila ' + fila);
+  if (!confirm('¿Eliminar el evento?\n\n' + etiqueta + '\n\nSe borra la fila del cronograma (NO borra el archivo de Drive). Solo el responsable o un Admin pueden hacerlo.')) return;
+  toast('Eliminando…');
+  google.script.run.withSuccessHandler(function(r){
+    toast('🗑 ' + (r && r.mensaje ? r.mensaje : 'Evento eliminado'),'success');
+    cargarDashboard(true);
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+  .dash_eliminarEvento(fila);
+}
+
+/* ===== FASE 8.63 (R7): KPI clicable → modal con el detalle filtrable ===== */
+function abrirKpiDetalle(tipo) {
+  if (!estado || !estado.cronograma) { toast('Datos no cargados aún','info'); return; }
+  var hoy = new Date(); hoy.setHours(0,0,0,0);
+  var titulos = { venc:'⛔ Vencidos', hoy:'📅 Para hoy', prox7:'🗓 Próximos 7 días',
+                  entreg:'✓ Entregados (año)', proceso:'⏳ En proceso' };
+  function esEntregado(d){ return String(d.estado||'').toLowerCase().indexOf('entregado')!==-1; }
+  function enProceso(d){ var e=String(d.estado||'').toLowerCase(); return e.indexOf('proceso')!==-1||e.indexOf('curso')!==-1; }
+  var lista = (estado.cronograma||[]).filter(function(d){
+    var ent = esEntregado(d);
+    var dr = d.diasRestantes;
+    switch(tipo){
+      case 'venc':   return !ent && dr!==null && dr<0;
+      case 'hoy':    return !ent && dr===0;
+      case 'prox7':  return !ent && dr!==null && dr>0 && dr<=7;
+      case 'entreg': return ent;
+      case 'proceso':return enProceso(d);
+      default: return !ent;
+    }
+  });
+  lista.sort(function(a,b){ return (a.diasRestantes||0)-(b.diasRestantes||0); });
+  window._kpiLista = lista; window._kpiTipo = tipo;
+  _pintarKpiModal(titulos[tipo] || 'Detalle', lista, tipo);
+}
+
+function _pintarKpiModal(titulo, lista, tipo) {
+  var filtro = (document.getElementById('kpi-filtro') ? $('kpi-filtro').value : '').toLowerCase().trim();
+  var rows = lista.filter(function(d){
+    if (!filtro) return true;
+    return (String(d.cliente||'')+' '+String(d.titulo||'')+' '+String(d.responsable||'')).toLowerCase().indexOf(filtro)!==-1;
+  });
+  var meses=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  var cuerpo = rows.map(function(d){
+    var fStr='—'; if(d.fechaInicio){var dt=new Date(d.fechaInicio);fStr=String(dt.getDate()).padStart(2,'0')+' '+meses[dt.getMonth()];}
+    var est=String(d.estado||'').toLowerCase();
+    var pill = est.indexOf('entregado')!==-1?'pill-ok':(est.indexOf('proceso')!==-1||est.indexOf('curso')!==-1?'pill-info':(d.diasRestantes!==null&&d.diasRestantes<0?'pill-danger':'pill-muted'));
+    var estTxt = d.estado || (d.diasRestantes!==null && d.diasRestantes<0 ? 'Vencido '+Math.abs(d.diasRestantes)+'d' : 'Pendiente');
+    var apoyos = (d.apoyos&&d.apoyos.length)?'<div style="font-size:9px;color:#2dd4bf;">👥 '+escapeHtml(d.apoyos.join(', '))+'</div>':'';
+    var acc='';
+    if (!esKpiEntregado(d) && P.iniciarFin) {
+      acc += enProc2(d) ? '<button class="mini-btn end" onclick="finalizarEvt('+d.fila+')">✓ Fin</button>'
+                        : '<button class="mini-btn start" onclick="iniciarEvt('+d.fila+')">▶ Iniciar</button>';
+    }
+    if (d.urlArchivo) acc += '<button class="icon-btn" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="Abrir archivo">↗</button>';
+    return '<div class="rw" style="grid-template-columns:52px 1.4fr 1fr 90px auto;gap:6px;align-items:center;">'+
+      '<div style="color:var(--muted);font-size:11px;">'+fStr+'</div>'+
+      '<div><div style="font-weight:500;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente||'—')+'</div>'+
+        '<div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.titulo||'')+'</div></div>'+
+      '<div style="font-size:11px;color:#60a5fa;overflow:hidden;">'+escapeHtml(d.responsable||'—')+apoyos+'</div>'+
+      '<div><span class="pill '+pill+'">'+escapeHtml(estTxt)+'</span></div>'+
+      '<div class="act-grp">'+acc+'</div></div>';
+  }).join('');
+  var body =
+    '<div style="margin-bottom:8px;"><input type="text" id="kpi-filtro" placeholder="🔎 Filtrar por cliente, tarea o responsable…" '+
+      'oninput="_pintarKpiModal(\''+titulo.replace(/'/g,"")+'\', window._kpiLista, window._kpiTipo)" '+
+      'value="'+escapeHtml(filtro)+'" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--panel-2);color:var(--text);font-size:12px;"></div>'+
+    '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">'+rows.length+' de '+lista.length+' evento(s)</div>'+
+    (rows.length ? '<div class="tbl" style="font-size:12px;"><div class="scroll" style="max-height:52vh;">'+cuerpo+'</div></div>'
+                 : '<div class="empty">Sin eventos.</div>');
+  // Reusa el modal genérico (si ya está abierto, solo refresca el cuerpo)
+  if ($('modal').classList.contains('show') && document.getElementById('kpi-filtro')) {
+    $('modal-body').innerHTML = body;
+    var inp=document.getElementById('kpi-filtro'); if(inp){inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length);}
+  } else {
+    modalCustom(titulo, '', body, 'Cerrar', cerrarModal);
+  }
+}
+function esKpiEntregado(d){ return String(d.estado||'').toLowerCase().indexOf('entregado')!==-1; }
+function enProc2(d){ var e=String(d.estado||'').toLowerCase(); return e.indexOf('proceso')!==-1||e.indexOf('curso')!==-1; }
 
 /* FASE 8.62 (R3): el responsable (o Coordinador/Admin) agrega/quita apoyos de un
    evento YA creado. Modal con el equipo; pre-marca los apoyos activos actuales. */
@@ -1877,7 +1977,12 @@ function abrirFormEvento(skipCheck) {
 function _renderFormEvento() {
   // Equipo: TODOS los miembros activos (Operarios/Líderes/Coordinadores)
   var equipoArr = (estado && estado.equipo) ? estado.equipo : [];
-  var roles = equipoArr.map(function(n){ return '<option value="'+escapeHtml(n)+'">'+escapeHtml(n)+'</option>'; }).join('');
+  // FASE 8.63 (R5): pre-seleccionar al usuario logeado como responsable.
+  var _miNombreUp = String((U && U.nombre) || '').trim().toUpperCase();
+  var roles = equipoArr.map(function(n){
+    var sel = (String(n).trim().toUpperCase() === _miNombreUp) ? ' selected' : '';
+    return '<option value="'+escapeHtml(n)+'"'+sel+'>'+escapeHtml(n)+'</option>';
+  }).join('');
 
   // Clientes para datalist (autocomplete)
   var clientesArr = (estado && estado.clientes) ? estado.clientes : [];

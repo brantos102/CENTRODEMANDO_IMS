@@ -190,28 +190,63 @@ function _cargarEquipoMap() {
 /* FIX FASE 7.6: Listar responsables del cronograma combinando 3 fuentes:
    USUARIOS (excluyendo Auditores) + EQUIPO_OPERATIVO + USUARIOS_BASE_WMS
    Como pidió Bryan: "los responsables deben ser todos los usuarios menos auditores". */
+/* FASE 8.63 (R3): clave canónica de un nombre = tokens en MAYÚSCULA ordenados.
+   Así "ALMACHI DANILO" y "DANILO ALMACHI" comparten clave y NO se duplican. */
+function _claveNombre(nombre) {
+  return String(nombre || "").trim().toUpperCase()
+    .replace(/\s+/g, " ").split(" ").filter(Boolean).sort().join(" ");
+}
+
+/* FASE 8.63 (R3): mapa clave-canónica → nombre oficial (el de la hoja USUARIOS).
+   Cacheado por invocación de request (ligero). */
+var _CANON_CACHE = null;
+function _mapaCanonNombres() {
+  if (_CANON_CACHE) return _CANON_CACHE;
+  var mapa = {};
+  try {
+    var shU = _getSS().getSheetByName(USR_CFG.HOJA);
+    if (shU && shU.getLastRow() >= 2) {
+      var vu = shU.getRange(2, 2, shU.getLastRow() - 1, 1).getValues(); // col B (Nombre)
+      vu.forEach(function(r){
+        var nom = String(r[0] || "").trim();
+        if (nom) mapa[_claveNombre(nom)] = nom; // la hoja manda como nombre oficial
+      });
+    }
+  } catch (e) {}
+  _CANON_CACHE = mapa;
+  return mapa;
+}
+/* Devuelve el nombre oficial (hoja USUARIOS) para cualquier variante de orden. */
+function _canonNombre(nombre) {
+  if (!nombre) return "";
+  var m = _mapaCanonNombres();
+  return m[_claveNombre(nombre)] || String(nombre).trim();
+}
+
 function _listarEquipoActivo() {
   var ss = _getSS();
-  var mapa = {};   // nombre normalizado → nombre original (para deduplicar)
+  var mapa = {};        // claveNombre → nombre oficial (dedup por orden de tokens)
+  var emailsHoja = {};  // emails ya registrados en la hoja USUARIOS (dedup por identidad)
 
-  // 1. Hoja USUARIOS (todos los activos menos Auditores)
+  // 1. Hoja USUARIOS (todos los activos menos Auditores) — fuente CANÓNICA
   try {
     var shU = ss.getSheetByName(USR_CFG.HOJA);
     if (shU && shU.getLastRow() >= 2) {
       var vu = shU.getRange(2, 1, shU.getLastRow() - 1, 5).getValues();
       vu.forEach(function(r){
-        var email = String(r[0] || "").trim();
+        var email = String(r[0] || "").trim().toLowerCase();
         var nombre = String(r[1] || "").trim();
         var rol = String(r[2] || "").trim().toLowerCase();
         var activo = (r[4] === "" || r[4] === true || String(r[4]).toUpperCase() === "TRUE");
+        if (email) emailsHoja[email] = true;
         if (activo && nombre && rol !== "auditor") {
-          mapa[nombre.toUpperCase()] = nombre;
+          mapa[_claveNombre(nombre)] = nombre;
         }
       });
     }
   } catch (e) {}
 
-  // 2. Hoja EQUIPO_OPERATIVO (legacy)
+  // 2. Hoja EQUIPO_OPERATIVO (legacy) — solo si no está ya por clave de nombre
   try {
     var sh = ss.getSheetByName(CRON_CFG.HOJA_EQUIPO);
     if (sh && sh.getLastRow() >= 2) {
@@ -219,18 +254,20 @@ function _listarEquipoActivo() {
       v.forEach(function(r){
         var nombre = String(r[0] || "").trim();
         var activo = (r[4] === "" || r[4] === true || String(r[4]).toUpperCase() === "TRUE");
-        if (activo && nombre) mapa[nombre.toUpperCase()] = nombre;
+        if (activo && nombre && !mapa[_claveNombre(nombre)]) mapa[_claveNombre(nombre)] = nombre;
       });
     }
   } catch (e) {}
 
-  // 3. USUARIOS_BASE_WMS (excluyendo Auditores)
+  // 3. USUARIOS_BASE_WMS — SOLO si su EMAIL no está ya en la hoja (evita el
+  //    duplicado tipo "ALMACHI DANILO" (hoja) vs "Danilo Almachi" (base WMS)).
   try {
     for (var em in USUARIOS_BASE_WMS) {
+      if (emailsHoja[String(em).trim().toLowerCase()]) continue; // ya está por identidad
       var info = USUARIOS_BASE_WMS[em];
       var rolW = String(info.rol || "").toUpperCase();
       if (rolW !== "AUDITOR" && info.nombre) {
-        var k = String(info.nombre).trim().toUpperCase();
+        var k = _claveNombre(info.nombre);
         if (!mapa[k]) mapa[k] = info.nombre;
       }
     }
@@ -1545,8 +1582,13 @@ function _proximoNumeroCronograma(cron) {
 }
 
 function crearEventoCronograma(datos) {
+  datos = datos || {};
+  // FASE 8.63 (R5): si no se indica responsable, se registra el USUARIO LOGEADO
+  // que crea el evento (autor). Se canoniza el nombre (R3).
+  if (!datos.responsable) datos.responsable = _nombreUsuarioActual();
+  if (datos.responsable) datos.responsable = _canonNombre(datos.responsable);
   // Validación dura: campos obligatorios
-  if (!datos || !datos.cliente || !datos.titulo || !datos.responsable || !datos.fechaInicio) {
+  if (!datos.cliente || !datos.titulo || !datos.responsable || !datos.fechaInicio) {
     throw new Error("Campos obligatorios faltantes: Cliente, Título, Responsable, Fecha Inicio.");
   }
   var ss = _getSS();
@@ -1871,9 +1913,11 @@ function obtenerEstadoIntegralDashboard() {
       vEqD.forEach(function(rq){
         var fe = String(rq[1] || "").trim();
         if (!fe) return;
-        if (String(rq[7] || "").toUpperCase() === "EXCLUIDO") return;
+        // FASE 8.63 (R2): SOLO apoyos ACTIVOS aparecen en los módulos; los
+        // RETIRADO/EXCLUIDO quedan en la hoja para trazabilidad pero se ocultan.
+        if (String(rq[7] || "").toUpperCase() !== "ACTIVO") return;
         if (String(rq[6] || "").toUpperCase() !== "APOYO") return;
-        var nomAp = String(rq[5] || "").trim();
+        var nomAp = _canonNombre(String(rq[5] || "").trim());  // FASE 8.63 R3
         if (!nomAp) return;
         if (!apoyosPorFila[fe]) apoyosPorFila[fe] = [];
         if (apoyosPorFila[fe].indexOf(nomAp) === -1) apoyosPorFila[fe].push(nomAp);
@@ -2056,15 +2100,16 @@ function obtenerEstadoIntegralDashboard() {
       var respUp = String(responsable).toUpperCase().trim();
       var esResponsableReal = responsable && FREC_BLOCK.indexOf(respUp) === -1;
       if (!entregado && esResponsableReal) {
-        cargaResp[responsable] = (cargaResp[responsable] || 0) + 1;
+        cargaResp[_canonNombre(responsable)] = (cargaResp[_canonNombre(responsable)] || 0) + 1;  // FASE 8.63 R3
       }
       // FASE 8.59: los APOYOS activos también suman en la carga por operario
       // (los jefes ven dónde está cada usuario, sea responsable o apoyo).
       if (!entregado) {
         var apsC = apoyosPorFila[String(CRON_CFG.CR_FILA_INI + i)] || [];
+        var respCanonUp = _canonNombre(responsable).toUpperCase();
         for (var ac = 0; ac < apsC.length; ac++) {
-          var apn = apsC[ac];
-          if (apn && apn.toUpperCase() !== respUp) {
+          var apn = apsC[ac];   // ya viene canónico
+          if (apn && apn.toUpperCase() !== respCanonUp) {
             cargaResp[apn] = (cargaResp[apn] || 0) + 1;
           }
         }
@@ -4069,6 +4114,45 @@ function _consolEstadoIniciar(o) {
     CONSOL_ACC: JSON.stringify({ filas:0, cant:0, criticos:0, dups:0, erroresDet:0,
       excAud:0, leidas:0, regIncl:0, regDup:0, regVacias:0, reparados:0, maxColsReg:0 })
   }, false);
+  // FASE 8.63 (R1): watchdog recurrente — garantiza el 100% aunque un trigger
+  // one-time se pierda. Se autodestruye al COMPLETAR/CANCELAR.
+  try { _programarWatchdogConsolidacion(); } catch (e) {}
+}
+
+/* FASE 8.63 (R1): red de seguridad. Cada 5 min revisa la corrida; si sigue
+   EN_CURSO con pendientes y el heartbeat está frío (>4 min sin avanzar), relanza
+   la continuación. Si ya no está EN_CURSO, borra los watchdogs. */
+function _programarWatchdogConsolidacion() {
+  try {
+    ScriptApp.getProjectTriggers().forEach(function(t){
+      if (t.getHandlerFunction() === "_watchdogConsolidacion") ScriptApp.deleteTrigger(t);
+    });
+  } catch (e) {}
+  ScriptApp.newTrigger("_watchdogConsolidacion").timeBased().everyMinutes(5).create();
+}
+function _borrarWatchdogConsolidacion() {
+  try {
+    ScriptApp.getProjectTriggers().forEach(function(t){
+      if (t.getHandlerFunction() === "_watchdogConsolidacion") ScriptApp.deleteTrigger(t);
+    });
+  } catch (e) {}
+}
+function _watchdogConsolidacion() {
+  var st = _consolEstadoLeer();
+  if (st.STATUS !== "EN_CURSO") { _borrarWatchdogConsolidacion(); return; }
+  if (st.NEXT_IDX >= st.TOTAL) return; // el ciclo COMPLETADO lo cerrará
+  // ¿heartbeat frío? (nadie avanzó en >4 min → el trigger one-time se perdió)
+  if ((Date.now() - st.TS) < (4 * 60 * 1000)) return;
+  var yaProg = false;
+  try {
+    ScriptApp.getProjectTriggers().forEach(function(t){
+      if (t.getHandlerFunction() === "_continuarConsolidacion") yaProg = true;
+    });
+  } catch (e) {}
+  if (!yaProg) {
+    try { _programarContinuacionConsolidacion(); } catch (e) {}
+    Logger.log("FASE 8.63 R1 watchdog: relanzó la continuación (heartbeat frío).");
+  }
 }
 
 function _consolEstadoCheckpoint(nextIdx) {
@@ -4089,6 +4173,7 @@ function _consolEstadoFinalizar(status) {
     CONSOL_NEXT_IDX:  String(tot),
     CONSOL_TS:        String(Date.now())
   }, false);
+  try { _borrarWatchdogConsolidacion(); } catch (e) {}   // FASE 8.63 (R1)
 }
 
 function _consolEstadoReset() {
@@ -4472,6 +4557,10 @@ function finalizarEventoConOpciones(filaCronograma, opciones) {
   cron.getRange(f, CRON_CFG.CR_COL_ESTADO).setValue("Entregado");
   cron.getRange(f, CRON_CFG.CR_COL_FECHA_ENT).setValue(fechaCulm).setNumberFormat("dd/MM/yyyy");
   cron.getRange(f, CRON_CFG.CR_COL_PCT).setValue(1);
+
+  // FASE 8.63 (R2): cerrar (fin) los apoyos que quedaron hasta el final del
+  // evento — quedan como FINALIZADO con inicio+fin para trazabilidad.
+  try { _cerrarApoyosDeEvento(f, "FINALIZADO"); } catch (eCA) {}
 
   // FIX FASE 8.36: fecha de inicio (col L) coordinada y SOLO FECHA.
   //  • Si falta: usar la fecha de creación del archivo asociado; si no hay archivo, la entrega.
@@ -4939,37 +5028,53 @@ function _permisosDeRol(rol) {
   // FIX FASE 7.2: Sanitizar rol para no caer en default por espacios o mayúsculas.
   var rolN = String(rol || "").trim().toLowerCase();
 
-  // FASE 8.62 (R4): Admin — dueño de todos los poderes (todo en true + flag admin).
+  // FASE 8.63 (R6): flag nuevo `baseDatos` = acceso al MÓDULO Base de datos
+  // (Consolidar, Cronograma de códigos, Credenciales API, Garantizar accesos).
+  // Se separa de gestionUsuarios (pestaña Usuarios) para poder darlos aparte.
+
+  // Admin — dueño de todos los poderes.
   if (rolN === "admin") {
     return { verDashboard:true, crearInventario:true, iniciarFin:true,
              consolidar:true, limpiar:true, recordatorios:true, exportar:true,
-             abrirLibro:true, gestionUsuarios:true, verAnalytics:true, admin:true };
+             abrirLibro:true, gestionUsuarios:true, verAnalytics:true,
+             baseDatos:true, admin:true };
   }
 
+  // Coordinador — Operación COMPLETA + Reportes/notif COMPLETO. Base de datos NO.
+  // Demás módulos (Dashboard, Usuarios, Analytics, Perfil) libres.
   if (rolN === "coordinador") {
     return { verDashboard:true, crearInventario:true, iniciarFin:true,
-             consolidar:true, limpiar:true, recordatorios:true, exportar:true,
-             abrirLibro:true, gestionUsuarios:true, verAnalytics:true };
+             consolidar:false, limpiar:false, recordatorios:true, exportar:true,
+             abrirLibro:true, gestionUsuarios:true, verAnalytics:true,
+             baseDatos:false };
   }
+
+  // Líder de Conteo — SOLO crear archivo, crear evento, WMS y actualizar métricas.
+  // Base de datos y Reportes/notif NO. Demás módulos libres.
   if (rolN === "líder de conteo" || rolN === "lider de conteo") {
-    // FIX FASE 8.32: Líder de Conteo también puede consolidar (cualquier miembro
-    // del equipo con rango debería poder mantener INVENTARIOS actualizado).
     return { verDashboard:true, crearInventario:true, iniciarFin:true,
-             consolidar:true, limpiar:false, recordatorios:true, exportar:true,
-             abrirLibro:true, gestionUsuarios:false, verAnalytics:true };
+             consolidar:false, limpiar:false, recordatorios:false, exportar:false,
+             abrirLibro:false, gestionUsuarios:false, verAnalytics:true,
+             baseDatos:false };
   }
+
+  // Auditor — SOLO abrir Terminal WMS + usar filtros del dashboard.
   if (rolN === "auditor") {
     return { verDashboard:true, crearInventario:false, iniciarFin:false,
-             consolidar:false, limpiar:false, recordatorios:false, exportar:true,
-             abrirLibro:false, gestionUsuarios:false, verAnalytics:true };
+             consolidar:false, limpiar:false, recordatorios:false, exportar:false,
+             abrirLibro:false, gestionUsuarios:false, verAnalytics:false,
+             baseDatos:false };
   }
+
+  // Operario — ejecuta trabajos (iniciar/finalizar) pero sin módulos de gestión.
   if (rolN === "operario") {
     return { verDashboard:true, crearInventario:false, iniciarFin:true,
              consolidar:false, limpiar:false, recordatorios:false, exportar:false,
-             abrirLibro:false, gestionUsuarios:false, verAnalytics:false };
+             abrirLibro:false, gestionUsuarios:false, verAnalytics:false,
+             baseDatos:false };
   }
   // Por defecto, mínimo acceso de vista
-  return { verDashboard:true };
+  return { verDashboard:true, baseDatos:false };
 }
 
 
@@ -5006,6 +5111,20 @@ function crearUsuario(datos) {
   if (_obtenerUsuario(datos.email)) {
     throw new Error("Ya existe un usuario con ese email.");
   }
+  // FASE 8.63 (R3): bloquear NOMBRE duplicado (aunque esté en otro orden) para
+  // evitar "ALMACHI DANILO" vs "DANILO ALMACHI" como dos personas distintas.
+  try {
+    var _claveNueva = _claveNombre(datos.nombre);
+    var _dupNom = false;
+    var _shDup = _getSS().getSheetByName(USR_CFG.HOJA);
+    if (_shDup && _shDup.getLastRow() > 1) {
+      var _vDup = _shDup.getRange(2, 2, _shDup.getLastRow() - 1, 1).getValues();
+      for (var _iD = 0; _iD < _vDup.length; _iD++) {
+        if (_claveNombre(_vDup[_iD][0]) === _claveNueva) { _dupNom = true; break; }
+      }
+    }
+    if (_dupNom) throw new Error("Ya existe un usuario con ese nombre (aunque el orden difiera). Usa un nombre distinto o edita el existente.");
+  } catch (eDup) { if (String(eDup.message).indexOf("Ya existe un usuario con ese nombre") !== -1) throw eDup; }
   var ss = _getSS();
   var sh = ss.getSheetByName(USR_CFG.HOJA);
   // FIX FASE 8.37: garantizar encabezados de Rol WMS (H) y Contraseña (I)
@@ -5168,6 +5287,26 @@ function registrarEquipoTarea(filaEvento, cliente, titulo, responsable, apoyos) 
   return { ok: true, registrados: filas.length };
 }
 
+/* FASE 8.63 (R2): cierra los apoyos ACTIVOS de un evento fijando su fin
+   (col Fecha Cambio) y estado (FINALIZADO por defecto). Para trazabilidad:
+   deja registrado inicio (Fecha Registro) y fin, sin borrar la fila. */
+function _cerrarApoyosDeEvento(filaEvento, estadoFin) {
+  var ss = _getSS();
+  var sh = ss.getSheetByName(EQT_CFG.HOJA);
+  if (!sh || sh.getLastRow() < 2) return { cerrados: 0 };
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues();
+  var ahora = new Date(), n = 0;
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][1]) !== String(filaEvento)) continue;
+    if (String(v[i][6] || "").toUpperCase() !== "APOYO") continue;
+    if (String(v[i][7] || "").toUpperCase() !== "ACTIVO") continue;
+    sh.getRange(i + 2, 8).setValue(estadoFin || "FINALIZADO");
+    sh.getRange(i + 2, 9).setValue(ahora);
+    n++;
+  }
+  return { cerrados: n };
+}
+
 /* Equipo registrado de un evento (para el modal de finalización). */
 function obtenerEquipoTarea(filaEvento) {
   var ss = _getSS();
@@ -5226,7 +5365,8 @@ function _puedeControlarTarea(cron, f) {
     var u = _obtenerUsuario(_usuarioActual());
     esAdmin = u && String(u.rol || "").trim().toLowerCase() === "admin";
   } catch (e) {}
-  var esResp = !!(miNombre && respFila && miNombre === respFila);
+  // FASE 8.63 (R3): comparación insensible al ORDEN de nombres (tokens ordenados)
+  var esResp = !!(miNombre && respFila && _claveNombre(miNombre) === _claveNombre(respFila));
   return { esResp: esResp, esAdmin: esAdmin, ok: (esResp || esAdmin), responsable: respFila };
 }
 
@@ -5279,6 +5419,42 @@ function dash_reanudarEvento(filaCronograma) {
   }
   try { _registrarActividad(_usuarioActual(), "reanudar", String(f), "Evento reanudado (En Proceso)"); } catch (eL) {}
   return { ok: true, estado: "En Proceso" };
+}
+
+/* FASE 8.63 (R4): ELIMINAR un evento del cronograma.
+   Solo el RESPONSABLE registrado o un Admin pueden borrarlo. Si la fila NO tiene
+   responsable, cualquier miembro con permiso de crear (Coordinador/Líder) puede
+   limpiarla. NO borra el archivo físico de Drive — solo la fila del cronograma. */
+function dash_eliminarEvento(filaCronograma) {
+  var ss = _getSS();
+  var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
+  if (!cron) throw new Error("No se encontró " + CRON_CFG.HOJA_CRONOGRAMA);
+  var f = parseInt(filaCronograma, 10);
+  if (!f || f < CRON_CFG.CR_FILA_INI) throw new Error("Fila inválida.");
+
+  var ctrl = _puedeControlarTarea(cron, f);
+  if (ctrl.responsable) {
+    // Con responsable: SOLO responsable o Admin
+    if (!ctrl.ok) throw new Error("Solo el responsable (" + ctrl.responsable + ") o un Admin pueden eliminar este evento.");
+  } else {
+    // Sin responsable: requiere permiso de crear (Coordinador/Líder) o Admin
+    var u = _obtenerUsuario(_usuarioActual());
+    var rol = u ? String(u.rol || "").trim().toLowerCase() : "";
+    if (["admin","coordinador","líder de conteo","lider de conteo"].indexOf(rol) === -1) {
+      throw new Error("No tienes permiso para eliminar eventos.");
+    }
+  }
+
+  var titulo = String(cron.getRange(f, CRON_CFG.CR_COL_TITULO).getValue() || "");
+  var cliente = String(cron.getRange(f, CRON_CFG.CR_COL_CLIENTE).getValue() || "");
+  // Cerrar apoyos (trazabilidad) antes de borrar la fila
+  try { _cerrarApoyosDeEvento(f, "EVENTO_ELIMINADO"); } catch (eCA) {}
+  cron.deleteRow(f);
+  try {
+    _registrarActividad(_usuarioActual(), "eliminar_evento", String(f),
+      "Eliminó evento: " + cliente + " · " + titulo);
+  } catch (eL) {}
+  return { ok: true, mensaje: "Evento eliminado: " + cliente + " · " + titulo };
 }
 
 /* FASE 8.62 (R3): el RESPONSABLE (o Admin/Coordinador) agrega/quita APOYOS de un
