@@ -619,7 +619,7 @@
             } catch (e) { _err('Render dashboard: ' + e.message); }
           })
           .withFailureHandler(function(e){ _err('Backend (clientes/equipo): ' + (e.message || e)); })
-          .obtenerEstadoIntegralDashboard();
+          .obtenerClientesEquipoWizard();
       } catch (e) { _err('Init dashboard: ' + e.message); }
 
       _stat('Cargando estructura de carpetas Drive...');

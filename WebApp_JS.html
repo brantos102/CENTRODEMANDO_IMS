@@ -2038,6 +2038,10 @@ function abrirWizardComoModal() {
 
   // Usar URL CANÓNICA (script.google.com), no window.location.href
   var urlBase = window.__WEBAPP_URL__ || window.location.href.split('?')[0].split('#')[0];
+  // HOTFIX 8.66.5: forzar la forma GENÉRICA /macros/s/ (frameable). La forma de
+  // dominio /a/macros/DOMINIO/s/ NO se puede embeber en iframe (Google la
+  // bloquea) → causaba "script.google.com ha rechazado la conexión".
+  urlBase = urlBase.replace(/\/a\/macros\/[^/]+\/s\//, '/macros/s/');
   var urlWizard = urlBase + (urlBase.indexOf('?') === -1 ? '?' : '&') + 'vista=wizard';
 
   var modal = document.createElement('div');

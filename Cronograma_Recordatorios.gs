@@ -1968,6 +1968,33 @@ function procesarCreacionArchivoIntegral(datos) {
    9. DASHBOARD INTEGRAL — todo en una sola llamada
    ========================================================================== */
 
+/* HOTFIX 8.66.5: función LIGERA para el wizard — solo clientes + equipo.
+   El wizard llamaba a obtenerEstadoIntegralDashboard() (pesada: lee cronograma,
+   panel, apoyos, presencia, chart…) solo para poblar 2 listas → se colgaba y
+   mostraba "El wizard está tardando demasiado". Esto es rápido (2 columnas). */
+function obtenerClientesEquipoWizard() {
+  var ss = _getSS();
+  var clientesSet = {};
+  try {
+    var pan = ss.getSheetByName(CRON_CFG.HOJA_PANEL);
+    if (pan && pan.getLastRow() >= 2) {
+      pan.getRange(2, 1, pan.getLastRow() - 1, 1).getValues()
+        .forEach(function(r){ if (r[0]) clientesSet[String(r[0]).trim().toUpperCase()] = true; });
+    }
+  } catch (e) {}
+  try {
+    var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
+    if (cron && cron.getLastRow() >= CRON_CFG.CR_FILA_INI) {
+      var n = cron.getLastRow() - CRON_CFG.CR_FILA_INI + 1;
+      cron.getRange(CRON_CFG.CR_FILA_INI, CRON_CFG.CR_COL_CLIENTE, n, 1).getValues()
+        .forEach(function(r){ if (r[0]) clientesSet[String(r[0]).trim().toUpperCase()] = true; });
+    }
+  } catch (e) {}
+  var equipo = [];
+  try { equipo = _listarEquipoActivo(); } catch (e) {}
+  return { clientes: Object.keys(clientesSet).sort(), equipo: equipo };
+}
+
 function obtenerEstadoIntegralDashboard() {
   try { _marcarPresencia(); } catch (e) {}   // FASE 8.65 (R5): presencia "activo ahora"
   var ss = _getSS();
