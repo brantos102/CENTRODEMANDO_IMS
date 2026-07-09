@@ -2006,31 +2006,77 @@ function abrirWizard(skipCheck) {
     verificarTrabajosAntesDeCrear(function(){ abrirWizard(true); });
     return;
   }
-  // HOTFIX 8.66.3: el wizard vuelve a abrirse como MODAL (iframe) dentro de la
-  // pantalla, como pidió el operador. El fix real del "rechazó la conexión" fue
-  // 8.66.1 (permiso crearInventario + ALLOWALL en las pantallas de denegado);
-  // requiere crear NUEVA VERSIÓN del deploy para que aplique.
-  abrirWizardComoModal();
+  // HOTFIX 8.66.6: Google BLOQUEA embeber una web app de Apps Script en un
+  // iframe dentro de otra (por eso el modal-iframe daba "rechazó la conexión"
+  // pero la pestaña SÍ carga). Solución que funciona y se siente como modal:
+  // VENTANA FLOTANTE centrada sobre el panel (oscurecido). No es iframe → no hay
+  // bloqueo; no es pestaña de fondo → se ve encima del panel.
+  _abrirWizardVentana();
 }
 
-/* Respaldo: abre el asistente en pestaña nueva (solo si el modal no cargara). */
-function _abrirWizardPestana() {
-  var base = window.location.href.split('?')[0].split('#')[0];
-  // Si la URL canónica del deploy existe y es de script.google.com, preferirla.
-  if (window.__WEBAPP_URL__ && String(window.__WEBAPP_URL__).indexOf('script.google') !== -1) {
-    base = String(window.__WEBAPP_URL__).split('?')[0].split('#')[0];
-  }
+/* HOTFIX 8.66.6: abre el asistente en una ventana emergente centrada + oscurece
+   el panel; al cerrarla, refresca el dashboard. Confiable (sin iframe). */
+function _abrirWizardVentana() {
+  var base = window.__WEBAPP_URL__ || window.location.href.split('?')[0].split('#')[0];
   var url = base + (base.indexOf('?') === -1 ? '?' : '&') + 'vista=wizard';
-  var w = window.open(url, '_blank');
-  if (!w) {
-    // Popups bloqueados → ofrecer enlace manual en un modal.
-    modalCustom('📦 Asistente de Creación', 'Tu navegador bloqueó la ventana emergente. Abre el asistente con este botón:',
-      '<div style="text-align:center;padding:8px 0;"><a href="'+url+'" target="_blank" style="background:var(--accent);color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;display:inline-block;">▶ Abrir Asistente de Creación</a></div>',
+  var w = Math.min(1150, (screen.availWidth || 1200) - 40);
+  var h = Math.min(860, (screen.availHeight || 800) - 60);
+  var left = Math.max(0, ((screen.availWidth || 1200) - w) / 2);
+  var top = Math.max(0, ((screen.availHeight || 800) - h) / 2);
+  var win = window.open(url, 'ims_wizard',
+    'width='+w+',height='+h+',left='+left+',top='+top+',resizable=yes,scrollbars=yes');
+  if (!win) {
+    // Popups bloqueados → modal con enlace directo.
+    modalCustom('📦 Asistente de Creación', 'Tu navegador bloqueó la ventana. Ábrelo con este botón (permite ventanas emergentes para no repetirlo):',
+      '<div style="text-align:center;padding:8px 0;"><a href="'+url+'" target="_blank" onclick="cerrarModal();_mostrarOverlayWizard(null);" style="background:var(--accent);color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;display:inline-block;">▶ Abrir Asistente de Creación</a></div>',
       'Cerrar', cerrarModal);
     return;
   }
-  toast('📦 Asistente abierto en una pestaña nueva. Al terminar de crear el archivo, vuelve aquí (el panel se actualiza solo).','info');
+  try { win.focus(); } catch(e){}
+  _mostrarOverlayWizard(win);
 }
+
+/* Oscurece el panel mientras el asistente está abierto; al cerrarse, refresca. */
+function _mostrarOverlayWizard(win) {
+  var ov = document.getElementById('wizard-overlay-dim');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'wizard-overlay-dim';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99990;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
+    ov.innerHTML =
+      '<div style="background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:24px 28px;text-align:center;max-width:420px;color:var(--text);box-shadow:0 12px 40px rgba(0,0,0,0.5);">'+
+        '<div style="font-size:34px;margin-bottom:8px;">📦</div>'+
+        '<div style="font-size:15px;font-weight:600;margin-bottom:6px;">Asistente de Creación abierto</div>'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:16px;">Se abrió en una ventana flotante. Crea el archivo ahí; al cerrarla, este panel se actualizará solo.</div>'+
+        '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">'+
+          '<button onclick="_focoWizard()" style="background:var(--accent);color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Traer la ventana al frente</button>'+
+          '<button onclick="_cerrarOverlayWizard(true)" style="background:var(--panel-2);color:var(--text);border:1px solid var(--border);padding:9px 16px;border-radius:8px;font-size:12px;cursor:pointer;">Ya terminé</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+  }
+  ov.style.display = 'flex';
+  window._wizWin = win || null;
+  // Poll: si la ventana se cierra, quitar overlay y refrescar.
+  if (window._wizPoll) clearInterval(window._wizPoll);
+  if (win) {
+    window._wizPoll = setInterval(function(){
+      try { if (win.closed) { _cerrarOverlayWizard(true); } } catch(e){}
+    }, 1000);
+  }
+}
+function _focoWizard(){ try { if (window._wizWin && !window._wizWin.closed) window._wizWin.focus(); } catch(e){} }
+function _cerrarOverlayWizard(refrescar) {
+  if (window._wizPoll) { clearInterval(window._wizPoll); window._wizPoll = null; }
+  var ov = document.getElementById('wizard-overlay-dim');
+  if (ov) ov.style.display = 'none';
+  try { if (window._wizWin && !window._wizWin.closed) window._wizWin.close(); } catch(e){}
+  window._wizWin = null;
+  if (refrescar) { try { cargarDashboard(true); } catch(e){} toast('✓ Panel actualizado','success'); }
+}
+
+/* compat: por si algo aún llama al viejo nombre */
+function _abrirWizardPestana() { _abrirWizardVentana(); }
 
 function abrirWizardComoModal() {
   // Si ya existe el modal, no duplicar
