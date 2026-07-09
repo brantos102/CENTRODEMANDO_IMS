@@ -1708,6 +1708,13 @@ function crearEventoCronograma(datos) {
     registrarEquipoTarea(fila, datos.cliente, datos.titulo, datos.responsable, datos.apoyos || []);
   } catch (eEq) {}
 
+  // FASE 8.65 (A): sincronizar AUTOMÁTICAMENTE con Google Calendar (best-effort).
+  try {
+    _calUpsertEvento({ fila: fila, cliente: datos.cliente, titulo: datos.titulo,
+      responsable: datos.responsable, categoria: datos.categoria,
+      fechaInicioMs: fechaIni.getTime(), fileUrl: "" });
+  } catch (eCal) {}
+
   return { ok: true, fila: fila };
 }
 
@@ -5787,6 +5794,11 @@ function dash_eliminarEvento(filaCronograma) {
 
   var titulo = String(cron.getRange(f, CRON_CFG.CR_COL_TITULO).getValue() || "");
   var cliente = String(cron.getRange(f, CRON_CFG.CR_COL_CLIENTE).getValue() || "");
+  // FASE 8.65 (A): borrar también de Google Calendar (antes de perder la fila).
+  try {
+    var fIniDel = cron.getRange(f, CRON_CFG.CR_COL_FECHA).getValue();
+    if (fIniDel instanceof Date) _calBorrarEvento(cliente, fIniDel.getTime(), titulo);
+  } catch (eCalDel) {}
   // Cerrar apoyos (trazabilidad) antes de borrar la fila
   try { _cerrarApoyosDeEvento(f, "EVENTO_ELIMINADO"); } catch (eCA) {}
   cron.deleteRow(f);
@@ -6252,10 +6264,125 @@ function _sincronizarCronogramaCalendar() {
     _registrarActividad(_usuarioActual(), "sync_calendar", "",
       "Creados " + creados + " · actualizados " + actualizados);
   } catch (e) {}
-  return { ok:true, creados:creados, actualizados:actualizados, revisados:revisados,
+  var calId = ""; try { calId = cal.getId(); } catch(e){}
+  return { ok:true, creados:creados, actualizados:actualizados, revisados:revisados, calId: calId,
     mensaje: "📅 Calendar sincronizado: " + creados + " nuevos, " + actualizados +
              " actualizados (de " + revisados + " eventos de la semana/vencidos).\n" +
-             "Tendrás recordatorio (popup 10h antes + email 1 día antes)." };
+             "El responsable y los apoyos reciben invitación con recordatorio (popup 10 h + email 1 día antes).\n\n" +
+             "👥 Para que TODO el equipo vea los eventos: cada uno se suscribe UNA vez al calendario\n" +
+             "\"Inventarios Itsanet\" (Google Calendar → Otros calendarios → Suscribirse → pega este ID):\n" +
+             calId };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FASE 8.65 (A): SINCRONIZACIÓN AUTOMÁTICA POR EVENTO (crear / borrar).
+   · Un evento del cronograma ⇄ un evento en el calendario "Inventarios Itsanet".
+   · Invitados = responsable + apoyos (reciben el evento en SU calendario y sus
+     recordatorios). El equipo completo puede SUSCRIBIRSE al calendario una vez
+     (ver dash_infoCalendario) para ver TODO sin invitación.
+   · Mapa estable en ScriptProperties CALMAP::<clave> = eventId (no depende de la
+     fila, así sobrevive a borrados/reordenamientos).
+   ══════════════════════════════════════════════════════════════════════════ */
+function _calClaveEvento(cliente, fechaInicioMs, titulo) {
+  var f = fechaInicioMs ? Utilities.formatDate(new Date(fechaInicioMs), "GMT-5", "yyyyMMdd") : "nofecha";
+  return "CALMAP::" + String(cliente || "").trim().toUpperCase() + "|" + f + "|" + _normTitulo(titulo);
+}
+function _emailsResponsableYApoyos(nombreResp, filaEvento) {
+  var set = {};
+  // Mapa nombre(clave)→email desde USUARIOS
+  var nom2mail = {};
+  try {
+    var shU = _getSS().getSheetByName(USR_CFG.HOJA);
+    if (shU && shU.getLastRow() > 1) {
+      var vu = shU.getRange(2, 1, shU.getLastRow() - 1, 2).getValues();
+      vu.forEach(function(r){ var k=_claveNombre(r[1]); if(k) nom2mail[k]=String(r[0]||"").trim(); });
+    }
+  } catch (e) {}
+  var em = nom2mail[_claveNombre(nombreResp)];
+  if (em && em.indexOf("@") !== -1) set[em.toLowerCase()] = true;
+  // Apoyos activos del evento
+  try {
+    var shE = _getSS().getSheetByName(EQT_CFG.HOJA);
+    if (shE && shE.getLastRow() >= 2) {
+      var ve = shE.getRange(2, 1, shE.getLastRow() - 1, 10).getValues();
+      ve.forEach(function(r){
+        if (String(r[1]) !== String(filaEvento)) return;
+        if (String(r[6]||"").toUpperCase() !== "APOYO") return;
+        if (String(r[7]||"").toUpperCase() !== "ACTIVO") return;
+        var e2 = String(r[4]||"").trim() || nom2mail[_claveNombre(r[5])] || "";
+        if (e2 && e2.indexOf("@") !== -1) set[e2.toLowerCase()] = true;
+      });
+    }
+  } catch (e) {}
+  return Object.keys(set);
+}
+
+/* Upsert de UN evento del cronograma en Calendar (crear o actualizar). */
+function _calUpsertEvento(datos) {
+  try {
+    var cal = _obtenerCalendarioIMS();
+    if (!cal) return { ok:false };
+    var fIniMs = datos.fechaInicioMs;
+    if (!fIniMs) return { ok:false };
+    var dIni = new Date(fIniMs); dIni.setHours(0,0,0,0);
+    var clave = _calClaveEvento(datos.cliente, fIniMs, datos.titulo);
+    var props = PropertiesService.getScriptProperties();
+    var evId = props.getProperty(clave);
+    var titulo = "📦 " + String(datos.cliente||"") + " — " + String(datos.titulo||"Inventario");
+    var invitados = _emailsResponsableYApoyos(datos.responsable, datos.fila);
+    var desc = "Responsable: " + (datos.responsable||"") +
+               "\nCliente: " + (datos.cliente||"") +
+               "\nCategoría: " + (datos.categoria||"") +
+               (datos.fileUrl ? "\nArchivo: " + datos.fileUrl : "") +
+               "\n(Sincronizado desde el Centro de Mando Itsanet)";
+    var ev = null;
+    if (evId) { try { ev = cal.getEventById(evId); } catch(e){} }
+    if (ev) {
+      ev.setTitle(titulo); ev.setDescription(desc);
+      try { ev.setAllDayDate(dIni); } catch(e){}
+    } else {
+      ev = cal.createAllDayEvent(titulo, dIni, { description: desc, guests: invitados.join(","), sendInvites: true });
+      try { ev.addPopupReminder(600); } catch(e){}
+      try { ev.addEmailReminder(1440); } catch(e){}
+      props.setProperty(clave, ev.getId());
+    }
+    // Añadir invitados nuevos (no quita a nadie)
+    try {
+      var yaInv = {}; ev.getGuestList().forEach(function(g){ yaInv[String(g.getEmail()).toLowerCase()]=true; });
+      invitados.forEach(function(e2){ if(!yaInv[e2]) try{ ev.addGuest(e2); }catch(_){} });
+    } catch(e){}
+    return { ok:true, id: ev.getId() };
+  } catch (e) {
+    Logger.log("FASE 8.65 _calUpsertEvento: " + e.message);
+    return { ok:false, error:String(e.message||e) };
+  }
+}
+
+/* Borra de Calendar el evento asociado (al eliminar del cronograma). */
+function _calBorrarEvento(cliente, fechaInicioMs, titulo) {
+  try {
+    var clave = _calClaveEvento(cliente, fechaInicioMs, titulo);
+    var props = PropertiesService.getScriptProperties();
+    var evId = props.getProperty(clave);
+    if (!evId) return { ok:true, sinMapa:true };
+    var cal = _obtenerCalendarioIMS();
+    var ev = cal ? cal.getEventById(evId) : null;
+    if (ev) ev.deleteEvent();
+    props.deleteProperty(clave);
+    return { ok:true };
+  } catch (e) { return { ok:false, error:String(e.message||e) }; }
+}
+
+/* Info para que el equipo se SUSCRIBA una vez al calendario compartido. */
+function dash_infoCalendario() {
+  _requiereRol(["Admin", "Coordinador"]);
+  var cal = _obtenerCalendarioIMS();
+  if (!cal) return { ok:false, mensaje:"No se pudo acceder al calendario." };
+  return { ok:true, id: cal.getId(), nombre: cal.getName(),
+    mensaje: "Calendario compartido: \"" + cal.getName() + "\"\nID: " + cal.getId() +
+      "\n\nCADA miembro del equipo (una sola vez): en Google Calendar → 'Otros calendarios' → " +
+      "'Suscribirse a un calendario' → pega este ID. A partir de ahí verá TODOS los eventos, " +
+      "actualizaciones y borrados automáticamente. Además, el responsable y apoyos reciben invitación directa." };
 }
 
 /* Calendario dedicado "Inventarios Itsanet" (se crea 1 vez); fallback al default. */

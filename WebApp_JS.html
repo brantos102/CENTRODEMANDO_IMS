@@ -44,7 +44,10 @@ window.onload = function() {
   if (!P.verAnalytics)    $('nav-analytics').classList.add('hidden');
   aplicarPermisosBotones();
 
-  cargarDashboard();
+  // FASE 8.65 (perf): pintar al instante desde caché local (si hay) → sin
+  // "1 minuto de módulos vacíos"; luego se refresca con datos frescos.
+  var _huboCache = _pintarDesdeCache();
+  cargarDashboard(_huboCache ? true : false);  // si ya pinté, la 1ª carga es silenciosa
   iniciarAutoRefresh();
 };
 
@@ -97,24 +100,66 @@ function nav(sec) {
 var AUTO_REFRESH_MS = 30000; // FASE 8.61: 30s — auditoría en vivo necesita datos frescos
 var _autoTimer = null;
 
+var _dashCargando = false;
 function cargarDashboard(silencioso) {
   var scrollY = window.scrollY;
   var qActual = $('f-cliente') ? $('f-cliente').value : '';
+  // FASE 8.65 (perf): indicador visible SOLO en carga no silenciosa sin datos.
+  if (!silencioso && !estado) _mostrarCargandoDashboard(true);
+  if (_dashCargando && silencioso) return;   // no encimar refrescos
+  _dashCargando = true;
   google.script.run
     .withSuccessHandler(d => {
+      _dashCargando = false;
       estado = d;
       // FIX FASE 8.23: timestamp para invalidar cache del calendario
       estado._cronoStamp = Date.now();
       _calCacheKey = ''; // forzar repintado
+      _mostrarCargandoDashboard(false);
       pintarDashboard();
+      // FASE 8.65 (perf): cachear el último estado para pintado INSTANTÁNEO
+      // en la próxima carga (evita 1 min con módulos vacíos).
+      try { localStorage.setItem('ims_estado_cache', JSON.stringify({ t: Date.now(), d: d })); } catch(e){}
       if (silencioso) {
         if ($('f-cliente') && qActual) { $('f-cliente').value = qActual; pintarCron(); }
         window.scrollTo(0, scrollY);
         mostrarIndicadorRefresh();
       }
     })
-    .withFailureHandler(err => { if (!silencioso) toast('Error: ' + err.message, 'error'); })
+    .withFailureHandler(err => { _dashCargando = false; _mostrarCargandoDashboard(false); if (!silencioso) toast('Error: ' + err.message, 'error'); })
     .obtenerEstadoIntegralDashboard();
+}
+
+/* FASE 8.65 (perf): overlay ligero de "cargando" mientras llega el 1er lote. */
+function _mostrarCargandoDashboard(on) {
+  var el = document.getElementById('dash-cargando');
+  if (on) {
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'dash-cargando';
+      el.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:70;background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:8px 16px;font-size:12px;color:var(--text);box-shadow:0 4px 14px rgba(0,0,0,.2);display:flex;align-items:center;gap:8px;';
+      el.innerHTML = '<span style="width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:imsspin .8s linear infinite;"></span> Cargando datos del panel…';
+      var st = document.createElement('style'); st.textContent='@keyframes imsspin{to{transform:rotate(360deg)}}'; el.appendChild(st);
+      document.body.appendChild(el);
+    }
+    el.style.display = 'flex';
+  } else if (el) { el.style.display = 'none'; }
+}
+
+/* FASE 8.65 (perf): pinta al instante el último estado cacheado (si existe y es
+   reciente) para que NO se vea el panel vacío mientras llega el fresco. */
+function _pintarDesdeCache() {
+  try {
+    var raw = localStorage.getItem('ims_estado_cache');
+    if (!raw) return false;
+    var o = JSON.parse(raw);
+    if (!o || !o.d) return false;
+    // Solo si es de las últimas 12 h (evita datos rancios)
+    if (Date.now() - (o.t||0) > 12*3600*1000) return false;
+    estado = o.d; estado._cronoStamp = Date.now(); _calCacheKey='';
+    pintarDashboard();
+    return true;
+  } catch(e){ return false; }
 }
 
 function iniciarAutoRefresh() {
@@ -1792,7 +1837,10 @@ function desactUsuario(fila) {
 
 /* ===== ANALYTICS ===== */
 function cargarAnalytics() {
-  $('analytics-body').innerHTML = '<div class="empty">Cargando…</div>';
+  // FASE 8.65 (estabilidad): solo mostrar "Cargando…" si está vacío; en los
+  // auto-refresh se reescribe en su lugar SIN parpadear ni desaparecer.
+  var ab = $('analytics-body');
+  if (ab && (!ab.querySelector('.rw'))) ab.innerHTML = '<div class="empty">Cargando…</div>';
   google.script.run.withSuccessHandler(res => {
     if (!res.porUsuario.length) { $('analytics-body').innerHTML = '<div class="empty">Sin actividad registrada aún.</div>'; return; }
     // FASE 8.58: NOMBRE visible (email debajo, pequeño) + apoyos + exclusiones
@@ -1937,6 +1985,18 @@ function feApoyoToggle(chk) {
   if (box) box.innerHTML = sel.length
     ? '✓ <b>'+sel.length+'</b> apoyo(s): '+sel.map(escapeHtml).join(', ')
     : 'Sin apoyos seleccionados.';
+}
+
+/* FASE 8.65: el equipo de apoyo NO debe mostrar al responsable (evita confusión).
+   Se re-aplica al cambiar el responsable en el selector. */
+function _feFiltrarApoyos() {
+  var resp = String(($('fe-resp') && $('fe-resp').value) || '').trim().toUpperCase();
+  document.querySelectorAll('.fe-apoyo').forEach(function(c){
+    var lbl = c.closest('label');
+    var esResp = String(c.value || '').trim().toUpperCase() === resp && resp !== '';
+    if (lbl) lbl.style.display = esResp ? 'none' : 'flex';
+    if (esResp && c.checked) { c.checked = false; feApoyoToggle(c); }
+  });
 }
 
 function abrirWizard(skipCheck) {
@@ -2147,7 +2207,7 @@ function _renderFormEvento() {
       '<input type="text" id="fe-cliente" list="dl-clientes-evt" placeholder="Ej. SAINT GOBAIN" autocomplete="off"></div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
       '<div class="field"><label>Responsable * <small style="color:var(--muted);">(' + equipoArr.length + ' disp.)</small></label>' +
-        '<select id="fe-resp"><option value="">— Seleccione —</option>' + roles + '</select></div>' +
+        '<select id="fe-resp" onchange="_feFiltrarApoyos()"><option value="">— Seleccione —</option>' + roles + '</select></div>' +
       '<div class="field"><label>Prioridad</label>' +
         '<select id="fe-prio"><option>Alta</option><option selected>Media</option><option>Baja</option></select></div>' +
     '</div>' +
@@ -2163,7 +2223,7 @@ function _renderFormEvento() {
       '<div class="field"><label>Fecha fin tentativa <small style="color:var(--muted);">(opcional — vacío = inicio + 1 día)</small></label>' +
         '<input type="date" id="fe-fent"></div>' +
       '<div class="field"><label>Categoría</label>' +
-        '<select id="fe-cat"><option>Inventario Programado</option><option>Trabajo Slotting</option><option>Inventario No Programado</option><option>Movimientos</option></select></div>' +
+        '<select id="fe-cat"><option>Inventario Programado</option><option>Trabajo Slotting</option><option>Inventario No Programado</option></select></div>' +
     '</div>' +
     // FASE 8.58/8.60: equipo de apoyo — chips claros (resaltado al marcar) +
     // resumen EN VIVO de seleccionados para no perder de vista a quién se marcó.
@@ -2210,6 +2270,8 @@ function _renderFormEvento() {
       .buscarEventosSimilares(datos.cliente, datos.titulo);
       return false; // no cerrar aún; lo maneja el callback
     });
+  // FASE 8.65 (C): ocultar del equipo de apoyo al responsable pre-seleccionado.
+  setTimeout(_feFiltrarApoyos, 0);
 }
 
 /* FASE 8.65 (R8): aviso de evento duplicado → unirse como apoyo o crear igual. */
@@ -2357,6 +2419,13 @@ function modalCustom(titulo, msg, bodyHtml, okText, callback, danger) {
   $('modal-ok').className = 'b confirm' + (danger ? ' danger' : '');
   _modalCb = callback;
   $('modal-ok').onclick = function(){ if (_modalCb) { var r = _modalCb(); /* si devuelve false no cierra */ } };
+  // FASE 8.65 (D): si el botón principal ya es "Cerrar"/"Aceptar" (modal solo
+  // informativo), ocultar el "Cancelar" para no duplicar la misma acción.
+  var _bcanc = document.querySelector('#modal .actions button:first-child');
+  if (_bcanc) {
+    var soloInfo = /^(cerrar|aceptar|entendido|ok)$/i.test(String(okText || '').trim());
+    _bcanc.style.display = soloInfo ? 'none' : 'inline-block';
+  }
   $('modal').classList.add('show');
 }
 function cerrarModal(){
