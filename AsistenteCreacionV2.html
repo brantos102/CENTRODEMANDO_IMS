@@ -2072,21 +2072,25 @@
       try { if (window._postCierreT) clearInterval(window._postCierreT); } catch(e) {} // FASE 8.61
       var m = document.getElementById('post-modal-bg');
       if (m) m.remove();
-      // Avisar al panel padre que se creó archivo
+      // HOTFIX 8.66.7: VENTANA FLOTANTE (abierta con window.open desde la PWA).
+      // Avisar al opener (la app) para que refresque y CERRAR esta ventana sola.
+      try {
+        if (window.opener && !window.opener.closed && window.opener !== window) {
+          try { window.opener.postMessage({ tipo:'inventarioCreado', payload: window._postRes || null }, '*'); } catch(e) {}
+          window.close();
+          return;
+        }
+      } catch(e) {}
+      // Caso IFRAME (legacy): avisar al parent y pedir cierre.
       try {
         if (window.parent !== window) {
           window.parent.postMessage({ tipo:'inventarioCreado', payload: window._postRes || null }, '*');
-        }
-      } catch(e) {}
-      // Cerrar el wizard (estamos en iframe)
-      try {
-        if (window.parent !== window) {
           window.parent.postMessage({ tipo:'cerrarWizard' }, '*');
-        } else {
-          // Standalone: redirigir al panel
-          window.location.href = (window.__WEBAPP_URL__ || '');
+          return;
         }
       } catch(e) {}
+      // Caso pestaña sin opener: redirigir al panel.
+      try { window.location.href = (window.__WEBAPP_URL__ || ''); } catch(e) {}
     }
 
     function copyLink(inputId, btnId) {

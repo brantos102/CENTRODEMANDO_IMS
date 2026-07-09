@@ -2023,8 +2023,10 @@ function _abrirWizardVentana() {
   var h = Math.min(860, (screen.availHeight || 800) - 60);
   var left = Math.max(0, ((screen.availWidth || 1200) - w) / 2);
   var top = Math.max(0, ((screen.availHeight || 800) - h) / 2);
+  // popup=yes fuerza VENTANA EMERGENTE (no pestaña) — clave cuando el Centro de
+  // Mando corre como app instalada (PWA) en el escritorio.
   var win = window.open(url, 'ims_wizard',
-    'width='+w+',height='+h+',left='+left+',top='+top+',resizable=yes,scrollbars=yes');
+    'popup=yes,width='+w+',height='+h+',left='+left+',top='+top+',resizable=yes,scrollbars=yes');
   if (!win) {
     // Popups bloqueados → modal con enlace directo.
     modalCustom('📦 Asistente de Creación', 'Tu navegador bloqueó la ventana. Ábrelo con este botón (permite ventanas emergentes para no repetirlo):',
@@ -2207,8 +2209,9 @@ window.addEventListener('message', function(ev) {
   if (tipo === 'CERRAR_WIZARD' || tipo === 'cerrarWizard') {
     cerrarWizardModal();
   } else if (tipo === 'inventarioCreado') {
-    // Refresca dashboard porque se agregó archivo nuevo a PANEL DE CONTROL
-    setTimeout(function(){ cerrarWizardModal(); }, 200);
+    // HOTFIX 8.66.7: quitar el overlay de la ventana flotante + refrescar.
+    try { _cerrarOverlayWizard(false); } catch(e){}
+    setTimeout(function(){ try { cerrarWizardModal(); } catch(e){} }, 200); // legacy iframe
     setTimeout(function(){
       cargarDashboard(false);
       toast('✓ Panel actualizado con el nuevo archivo','success');
