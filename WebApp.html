@@ -60,6 +60,22 @@
     /* Fondos inline oscuros de botones pequeños → claros */
     :root[data-theme="light"] [style*="background:#1c2740"],
     :root[data-theme="light"] [style*="background:#1e293b"] { background:#e6ebf3 !important; color:#0f1e33 !important; }
+
+    /* FASE 8.65 (R3): calendario en modo día — barras más sólidas y leyenda con
+       texto oscuro legible (antes texto claro sobre chip claro = ilegible). */
+    :root[data-theme="light"] .cal-bar-prog  { background:rgba(37,99,235,.85); }
+    :root[data-theme="light"] .cal-bar-curso { background:rgba(202,138,4,.9); }
+    :root[data-theme="light"] .cal-bar-ent   { background:rgba(22,163,74,.9); }
+    :root[data-theme="light"] .cal-bar-venc  { background:rgba(220,38,38,.9); }
+    :root[data-theme="light"] .cal-lg-prog  { background:rgba(37,99,235,.14);  color:#1d4ed8; border-color:#93c5fd; }
+    :root[data-theme="light"] .cal-lg-curso { background:rgba(202,138,4,.16);  color:#92400e; border-color:#fcd34d; }
+    :root[data-theme="light"] .cal-lg-ent   { background:rgba(22,163,74,.14);  color:#166534; border-color:#86efac; }
+    :root[data-theme="light"] .cal-lg-venc  { background:rgba(220,38,38,.14);  color:#b91c1c; border-color:#fca5a5; }
+    :root[data-theme="light"] .cal-weekend  { background:rgba(15,30,51,.03); }
+    :root[data-theme="light"] .cal-today    { outline:1px solid #2563eb; }
+    /* Chips de filtro del cronograma (Todos/Urgentes/…) y períodos legibles */
+    :root[data-theme="light"] .chip { color:#334155; }
+    :root[data-theme="light"] .chip.active { color:#fff; }
     * { box-sizing:border-box; }
     body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text);
            margin:0; font-size:13px; }
@@ -318,6 +334,12 @@
       </div>
     </div>
     <div class="user-box">
+      <!-- FASE 8.65 R5: usuarios activos ahora mismo (hover = nombres) -->
+      <div id="activos-box" title="Cargando…"
+           style="display:flex;align-items:center;gap:5px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;cursor:default;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e;"></span>
+        <b id="activos-num">—</b><span style="color:var(--muted);">activos</span>
+      </div>
       <!-- FASE 8.62 R2: interruptor de tema día/noche -->
       <button id="theme-toggle" onclick="toggleTema()" title="Cambiar tema día / noche"
               style="background:var(--panel-2);border:1px solid var(--border);color:var(--text);width:34px;height:34px;border-radius:8px;font-size:16px;cursor:pointer;">🌙</button>
@@ -462,6 +484,8 @@
             <button class="btn" id="b-record" onclick="ejecutar('Enviando…','enviarRecordatoriosCronograma')"><span>📨</span> Enviar recordatorios</button>
             <button class="btn" id="b-sinc" onclick="ejecutar('Sincronizando…','sincronizarEstadoCronogramaConPanel')"><span>⇄</span> Sincronizar c/Panel</button>
             <button class="btn" id="b-syncQ" onclick="ejecutarSyncQ()"><span>🔗</span> Vincular archivos a Q</button>
+            <!-- FASE 8.65 R10: sincronizar cronograma con Google Calendar -->
+            <button class="btn" id="b-cal" onclick="sincronizarCalendario()"><span>📅</span> Sincronizar Calendar</button>
             <button class="btn" id="b-zip" onclick="abrirSelectorDescargarZip()"><span>📦</span> Descargar ZIP</button>
           </div>
           <div class="actbox">
@@ -482,7 +506,12 @@
             <div class="field"><label>Rol (asignado por coordinador)</label><input type="text" id="p-rol" disabled></div>
             <div class="field"><label>Nombre</label><input type="text" id="p-nombre"></div>
             <div class="field"><label>Teléfono</label><input type="text" id="p-telefono"></div>
-            <button class="btn btn-primary" style="width:auto;" onclick="guardarPerfil()">Guardar cambios</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-primary" style="width:auto;" onclick="guardarPerfil()">Guardar cambios</button>
+              <!-- FASE 8.65 R7: cambiar contraseña + foto -->
+              <button class="btn" style="width:auto;" onclick="abrirCambioPassword()">🔑 Cambiar contraseña</button>
+              <button class="btn" style="width:auto;" onclick="abrirCambioFoto()">🖼 Foto de perfil</button>
+            </div>
           </div>
           <div>
             <div class="field"><label>Mi actividad</label></div>
@@ -501,7 +530,7 @@
       <div class="card">
         <div class="ttl">
           <span>👥 Gestión de usuarios</span>
-          <button class="btn btn-primary" style="width:auto;margin:0;" onclick="abrirNuevoUsuario()">＋ Nuevo usuario</button>
+          <button class="btn btn-primary" id="b-nuevo-usr" style="width:auto;margin:0;" onclick="abrirNuevoUsuario()">＋ Nuevo usuario</button>
         </div>
         <div class="tbl tbl-usr">
           <div class="hd"><div>Nombre / Email</div><div>Rol</div><div>Teléfono</div><div>Estado</div><div></div></div>

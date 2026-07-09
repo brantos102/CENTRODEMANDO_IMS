@@ -1866,8 +1866,25 @@
         })
         .withFailureHandler(err => {
           window.isProcessingFile = false; // Liberamos la bandera si hay error
-          // Detectar el error tipificado "CLIENTE_NO_MATCHEA"
           const msg = String(err.message || err);
+          // FASE 8.65 (R9): archivo con NOMBRE DUPLICADO en la carpeta destino.
+          if (msg.indexOf('NOMBRE_DUPLICADO||') !== -1) {
+            const detNom = msg.split('NOMBRE_DUPLICADO||')[1];
+            if (confirm(detNom)) {
+              setStatus('Creando de todas formas…', 'info');
+              const reintentoNom = Object.assign({}, payload, { ignorarNombreDup: true });
+              window.isProcessingFile = true;
+              google.script.run
+                .withSuccessHandler(res => mostrarModalPostCreacion(res))
+                .withFailureHandler(err3 => { window.isProcessingFile = false; setStatus('❌ ' + err3.message, 'err'); alert('Error: ' + err3.message); btn.disabled = false; })
+                .procesarCreacionArchivoConValidacion(reintentoNom);
+            } else {
+              setStatus('Cancelado: cambia el nombre del archivo para no duplicar.', 'err');
+              btn.disabled = false;
+            }
+            return;
+          }
+          // Detectar el error tipificado "CLIENTE_NO_MATCHEA"
           if (msg.indexOf('CLIENTE_NO_MATCHEA||') !== -1) {
             const detalle = msg.split('CLIENTE_NO_MATCHEA||')[1];
             if (confirm(detalle)) {

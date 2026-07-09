@@ -1962,6 +1962,7 @@ function procesarCreacionArchivoIntegral(datos) {
    ========================================================================== */
 
 function obtenerEstadoIntegralDashboard() {
+  try { _marcarPresencia(); } catch (e) {}   // FASE 8.65 (R5): presencia "activo ahora"
   var ss = _getSS();
   var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
   var pan  = ss.getSheetByName(CRON_CFG.HOJA_PANEL);
@@ -2326,6 +2327,7 @@ function obtenerEstadoIntegralDashboard() {
     cronograma: cronograma,
     panelUltimos: panelUltimos,
     cargaResp: cargaResp,
+    usuariosActivos: (function(){ try { return obtenerUsuariosActivos(); } catch(e){ return {count:0,nombres:[]}; } })(),  // FASE 8.65 R5
     equipo: _listarEquipoActivo(),
     clientes: clientesLista,
     // FIX FASE 8.33: estado de la consolidación por lotes (para el indicador del
@@ -4435,6 +4437,14 @@ function dash_cancelarConsolidacion() {
 
 function procesarCreacionArchivoConValidacion(datos) {
   _requiereRol(["Coordinador", "Líder de Conteo"]);
+  // FASE 8.65 (R9): evitar archivos DUPLICADOS por nombre en la carpeta destino.
+  if (!datos.ignorarNombreDup && datos.folderId && datos.fileName) {
+    var dup = verificarNombreArchivo(datos.folderId, datos.fileName);
+    if (dup.existe) {
+      throw new Error("NOMBRE_DUPLICADO||Ya existe un archivo llamado \"" + datos.fileName +
+        "\" en esa carpeta.\nSi continúas se creará OTRO con el mismo nombre (puede confundir al equipo).\n\n¿Crear de todas formas?");
+    }
+  }
   var resultadoFinal;
   if (datos.dataSource === "CSV") {
     // Si el frontend pidió omitir filtro cliente (tras confirmar), pasamos "" como cliente.
@@ -5065,6 +5075,7 @@ function obtenerContextoUsuario() {
              permisos: _permisosDeRol("Coordinador") };
   }
   u.permisos = _permisosDeRol(u.rol);
+  u.foto = _obtenerFotoUsuario(email);   // FASE 8.65 (R7)
   return u;
 }
 
@@ -5103,55 +5114,86 @@ function _permisosDeRol(rol) {
   // (Consolidar, Cronograma de códigos, Credenciales API, Garantizar accesos).
   // Se separa de gestionUsuarios (pestaña Usuarios) para poder darlos aparte.
 
+  // FASE 8.65: flags nuevos:
+  //  · verArchivoHijo → ver/abrir el archivo hijo (Drive controla lectura/edición)
+  //  · crearUsuarios  → puede dar de alta usuarios (rango < al propio)
+  //  · editarUsuarios → puede editar/desactivar usuarios existentes (solo Admin)
+
   // Admin — dueño de todos los poderes.
   if (rolN === "admin") {
     return { verDashboard:true, crearInventario:true, iniciarFin:true,
              consolidar:true, limpiar:true, recordatorios:true, exportar:true,
              abrirLibro:true, gestionUsuarios:true, verAnalytics:true,
-             baseDatos:true, admin:true };
+             baseDatos:true, verArchivoHijo:true, crearUsuarios:true,
+             editarUsuarios:true, admin:true };
   }
 
   // Coordinador — Operación COMPLETA + Reportes/notif COMPLETO. Base de datos NO.
-  // Demás módulos (Dashboard, Usuarios, Analytics, Perfil) libres.
+  // Puede CREAR usuarios (rango inferior) pero NO editar existentes.
   if (rolN === "coordinador") {
     return { verDashboard:true, crearInventario:true, iniciarFin:true,
              consolidar:false, limpiar:false, recordatorios:true, exportar:true,
              abrirLibro:true, gestionUsuarios:true, verAnalytics:true,
-             baseDatos:false };
+             baseDatos:false, verArchivoHijo:true, crearUsuarios:true,
+             editarUsuarios:false };
   }
 
-  // Líder de Conteo — SOLO crear archivo, crear evento, WMS y actualizar métricas.
-  // Base de datos y Reportes/notif NO. Demás módulos libres.
+  // Líder de Conteo — crear archivo/evento, WMS, métricas. Base de datos y
+  // Reportes NO. Gestiona SUS eventos (apoyos/pausa/borrar) por ser responsable.
+  // Puede CREAR usuarios (solo Operario/Auditor) pero NO editar.
   if (rolN === "líder de conteo" || rolN === "lider de conteo") {
     return { verDashboard:true, crearInventario:true, iniciarFin:true,
              consolidar:false, limpiar:false, recordatorios:false, exportar:false,
-             abrirLibro:false, gestionUsuarios:false, verAnalytics:true,
-             baseDatos:false };
+             abrirLibro:false, gestionUsuarios:true, verAnalytics:true,
+             baseDatos:false, verArchivoHijo:true, crearUsuarios:true,
+             editarUsuarios:false };
   }
 
-  // Auditor — SOLO abrir Terminal WMS + usar filtros del dashboard.
+  // Auditor — Abrir Terminal WMS + filtros del dashboard + LECTURA del archivo hijo.
   if (rolN === "auditor") {
     return { verDashboard:true, crearInventario:false, iniciarFin:false,
              consolidar:false, limpiar:false, recordatorios:false, exportar:false,
              abrirLibro:false, gestionUsuarios:false, verAnalytics:false,
-             baseDatos:false };
+             baseDatos:false, verArchivoHijo:true, crearUsuarios:false,
+             editarUsuarios:false };
   }
 
-  // Operario — ejecuta trabajos (iniciar/finalizar) pero sin módulos de gestión.
+  // Operario — ejecuta trabajos y tiene el MISMO acceso a archivos hijos que un
+  // Coordinador (editor). Sin módulos de gestión.
   if (rolN === "operario") {
     return { verDashboard:true, crearInventario:false, iniciarFin:true,
              consolidar:false, limpiar:false, recordatorios:false, exportar:false,
              abrirLibro:false, gestionUsuarios:false, verAnalytics:false,
-             baseDatos:false };
+             baseDatos:false, verArchivoHijo:true, crearUsuarios:false,
+             editarUsuarios:false };
   }
   // Por defecto, mínimo acceso de vista
-  return { verDashboard:true, baseDatos:false };
+  return { verDashboard:true, baseDatos:false, verArchivoHijo:true };
+}
+
+/* FASE 8.65 (R4): jerarquía de roles. Un usuario solo puede CREAR cuentas con
+   nivel ESTRICTAMENTE inferior al suyo. */
+function _nivelRol(rol) {
+  var r = String(rol || "").trim().toLowerCase();
+  if (r === "admin") return 4;
+  if (r === "coordinador") return 3;
+  if (r === "líder de conteo" || r === "lider de conteo") return 2;
+  if (r === "operario") return 1;
+  if (r === "auditor") return 1;
+  return 0;
+}
+/* Roles que el usuario ACTUAL puede asignar al crear (nivel < el suyo). */
+function rolesAsignables() {
+  var u = _obtenerUsuario(_usuarioActual());
+  var miNivel = u ? _nivelRol(u.rol) : 0;
+  if (u && String(u.rol).toLowerCase() === "admin") miNivel = 99; // Admin asigna cualquiera
+  return USR_CFG.ROLES.filter(function(r){ return _nivelRol(r) < miNivel; });
 }
 
 
 /* ---------- CRUD Usuarios (solo Coordinador) ---------- */
 function listarUsuarios() {
-  _requiereRol(["Coordinador"]);
+  _requiereRol(["Admin", "Coordinador", "Líder de Conteo"]);  // FASE 8.65 (R4)
   var ss = _getSS();
   var sh = ss.getSheetByName(USR_CFG.HOJA);
   if (!sh || sh.getLastRow() < 2) return [];
@@ -5172,12 +5214,18 @@ function listarUsuarios() {
 }
 
 function crearUsuario(datos) {
-  _requiereRol(["Coordinador"]);
+  // FASE 8.65 (R4): Admin, Coordinador y Líder pueden CREAR; el rol asignado
+  // debe ser de nivel inferior al del creador.
+  var creador = _requiereRol(["Admin", "Coordinador", "Líder de Conteo"]);
   if (!datos.email || !datos.nombre || !datos.rol) {
     throw new Error("Email, Nombre y Rol son obligatorios.");
   }
   if (USR_CFG.ROLES.indexOf(datos.rol) === -1) {
     throw new Error("Rol inválido. Debe ser: " + USR_CFG.ROLES.join(", "));
+  }
+  var nivelCreador = String(creador.rol).toLowerCase() === "admin" ? 99 : _nivelRol(creador.rol);
+  if (_nivelRol(datos.rol) >= nivelCreador) {
+    throw new Error("Solo puedes crear usuarios con un rango INFERIOR al tuyo (" + creador.rol + ").");
   }
   if (_obtenerUsuario(datos.email)) {
     throw new Error("Ya existe un usuario con ese email.");
@@ -5217,7 +5265,7 @@ function crearUsuario(datos) {
 }
 
 function actualizarUsuario(fila, datos) {
-  _requiereRol(["Coordinador"]);
+  _requiereRol(["Admin"]);   // FASE 8.65 (R4): editar usuarios = SOLO Admin
   var ss = _getSS();
   var sh = ss.getSheetByName(USR_CFG.HOJA);
   if (datos.nombre  !== undefined) sh.getRange(fila, 2).setValue(datos.nombre);
@@ -5238,7 +5286,7 @@ function actualizarUsuario(fila, datos) {
 }
 
 function desactivarUsuario(fila) {
-  _requiereRol(["Coordinador"]);
+  _requiereRol(["Admin"]);   // FASE 8.65 (R4): desactivar = SOLO Admin
   var ss = _getSS();
   var sh = ss.getSheetByName(USR_CFG.HOJA);
   sh.getRange(fila, 5).setValue(false);
@@ -5268,6 +5316,227 @@ function actualizarMiPerfil(datos) {
   if (datos.telefono !== undefined) sh.getRange(u.fila, 4).setValue(datos.telefono);
   _registrarActividad(email, "editar_perfil", "", "Actualizó su perfil");
   return { ok: true };
+}
+
+/* FASE 8.65 (R7): cambiar la propia CONTRASEÑA (col I — la misma del WMS). */
+function cambiarMiPassword(passActual, passNueva) {
+  var email = _usuarioActual();
+  var u = _obtenerUsuario(email);
+  if (!u) throw new Error("Tu usuario no está registrado.");
+  var sh = _getSS().getSheetByName(USR_CFG.HOJA);
+  if (!sh || sh.getLastColumn() < 9) {
+    if (sh.getLastColumn() < 9) { sh.getRange(1,8).setValue("Rol WMS"); sh.getRange(1,9).setValue("Contraseña"); }
+  }
+  var actualGuardada = String(sh.getRange(u.fila, 9).getValue() || "").trim();
+  var nueva = String(passNueva || "").trim();
+  if (nueva.length < 4) throw new Error("La nueva contraseña debe tener al menos 4 caracteres.");
+  // Si ya había contraseña, validar la actual (los que tienen "1234" por defecto igual la validan)
+  if (actualGuardada && actualGuardada !== String(passActual || "").trim()) {
+    throw new Error("La contraseña actual no coincide.");
+  }
+  sh.getRange(u.fila, 9).setValue(nueva);
+  // Invalidar caché del WMS para que tome la nueva de inmediato
+  try { CacheService.getScriptCache().remove('WMS_USUARIOS_HOJA'); } catch (e) {}
+  _registrarActividad(email, "cambiar_password", "", "Cambió su contraseña");
+  return { ok: true };
+}
+
+/* FASE 8.65 (R7): foto de perfil (opcional). Se guarda como URL o data-uri
+   ligero en ScriptProperties por email. No afecta nada si no se usa. */
+function guardarMiFoto(urlOrData) {
+  var email = _usuarioActual();
+  if (!email) throw new Error("Sesión no identificada.");
+  var v = String(urlOrData || "").trim();
+  if (v && v.length > 200000) throw new Error("La imagen es muy grande (usa una URL o una foto pequeña).");
+  var key = "FOTO::" + email.toLowerCase();
+  if (v) PropertiesService.getScriptProperties().setProperty(key, v);
+  else PropertiesService.getScriptProperties().deleteProperty(key);
+  return { ok: true };
+}
+function _obtenerFotoUsuario(email) {
+  try { return PropertiesService.getScriptProperties().getProperty("FOTO::" + String(email).toLowerCase()) || ""; }
+  catch (e) { return ""; }
+}
+
+/* ==========================================================================
+   FASE 8.65 (R5): PRESENCIA — usuarios activos ahora mismo.
+   Cada carga del dashboard marca "visto" al usuario; activo = visto < 5 min.
+   ========================================================================== */
+function _marcarPresencia() {
+  try {
+    var email = _usuarioActual();
+    if (!email) return;
+    PropertiesService.getScriptProperties().setProperty("PRES::" + email.toLowerCase(), String(Date.now()));
+  } catch (e) {}
+}
+function obtenerUsuariosActivos() {
+  var out = { count: 0, nombres: [] };
+  try {
+    var props = PropertiesService.getScriptProperties().getProperties();
+    var ahora = Date.now(), lim = 5 * 60 * 1000;
+    var emails = [];
+    for (var k in props) {
+      if (k.indexOf("PRES::") !== 0) continue;
+      var ts = parseInt(props[k] || "0", 10);
+      if (ahora - ts <= lim) emails.push(k.substring(6));
+    }
+    var nombres = emails.map(function(em){
+      var u = _obtenerUsuario(em);
+      return (u && u.nombre) ? u.nombre : em;
+    }).sort();
+    out.count = nombres.length; out.nombres = nombres;
+  } catch (e) {}
+  return out;
+}
+
+/* ==========================================================================
+   FASE 8.65 (R8): eventos SIMILARES (mismo cliente + título parecido) NO
+   entregados — para ofrecer "unirme como apoyo" en vez de inflar filas.
+   ========================================================================== */
+function _normTitulo(s) {
+  return String(s || "").toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")   // sin tildes
+    .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+}
+function buscarEventosSimilares(cliente, titulo) {
+  var ss = _getSS();
+  var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
+  if (!cron || cron.getLastRow() < CRON_CFG.CR_FILA_INI) return [];
+  var n = cron.getLastRow() - CRON_CFG.CR_FILA_INI + 1;
+  if (n <= 0) return [];
+  var dat = cron.getRange(CRON_CFG.CR_FILA_INI, 1, n, CRON_CFG.CR_COL_RESP).getValues();
+  var cliN = String(cliente || "").trim().toUpperCase();
+  var titN = _normTitulo(titulo);
+  var titTokens = titN.split(" ").filter(function(w){ return w.length >= 4; });
+  var out = [];
+  for (var i = 0; i < dat.length; i++) {
+    var r = dat[i];
+    var estado = String(r[CRON_CFG.CR_COL_ESTADO - 1] || "").toLowerCase();
+    if (estado.indexOf("entregado") !== -1) continue;
+    var cli = String(r[CRON_CFG.CR_COL_CLIENTE - 1] || "").trim().toUpperCase();
+    if (cliN && cli !== cliN) continue;
+    var tit = _normTitulo(r[CRON_CFG.CR_COL_TITULO - 1]);
+    // Similar si comparte ≥2 tokens largos o el título normalizado coincide.
+    var comparte = (tit === titN);
+    if (!comparte && titTokens.length) {
+      var hits = 0;
+      titTokens.forEach(function(w){ if (tit.indexOf(w) !== -1) hits++; });
+      comparte = hits >= Math.min(2, titTokens.length);
+    }
+    if (comparte) {
+      out.push({
+        fila: CRON_CFG.CR_FILA_INI + i,
+        cliente: r[CRON_CFG.CR_COL_CLIENTE - 1],
+        titulo: r[CRON_CFG.CR_COL_TITULO - 1],
+        responsable: r[CRON_CFG.CR_COL_RESP - 1],
+        estado: r[CRON_CFG.CR_COL_ESTADO - 1]
+      });
+    }
+  }
+  return out;
+}
+
+/* FASE 8.65 (R8): unirse como APOYO a un evento existente (desde el aviso). */
+function unirmeComoApoyo(filaEvento) {
+  var nombre = _nombreUsuarioActual();
+  if (!nombre) throw new Error("Usuario no identificado.");
+  var ss = _getSS();
+  var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
+  var cliente = String(cron.getRange(filaEvento, CRON_CFG.CR_COL_CLIENTE).getValue() || "");
+  var titulo  = String(cron.getRange(filaEvento, CRON_CFG.CR_COL_TITULO).getValue() || "");
+  var respFila = String(cron.getRange(filaEvento, CRON_CFG.CR_COL_RESP).getValue() || "").trim().toUpperCase();
+  if (_claveNombre(nombre) === _claveNombre(respFila)) {
+    return { ok: true, yaEra: true, mensaje: "Ya eres el responsable de ese evento." };
+  }
+  // ¿ya está como apoyo activo?
+  var sh = _asegurarHojaEquiposTarea();
+  if (sh.getLastRow() >= 2) {
+    var v = sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues();
+    for (var i = 0; i < v.length; i++) {
+      if (String(v[i][1]) === String(filaEvento) &&
+          _claveNombre(v[i][5]) === _claveNombre(nombre) &&
+          String(v[i][6]).toUpperCase() === "APOYO" &&
+          String(v[i][7]).toUpperCase() === "ACTIVO") {
+        return { ok: true, yaEra: true, mensaje: "Ya estás como apoyo de ese evento." };
+      }
+    }
+  }
+  var em = _usuarioActual();
+  sh.appendRow([new Date(), filaEvento, String(cliente).toUpperCase(), titulo,
+                em, _canonNombre(nombre), "APOYO", "ACTIVO", "", em]);
+  _registrarActividad(em, "unirse_apoyo", String(filaEvento), "Se unió como apoyo");
+  return { ok: true, mensaje: "Te uniste como apoyo del evento (" + cliente + ")." };
+}
+
+/* ==========================================================================
+   FASE 8.65 (R9): validar NOMBRE de archivo duplicado en la carpeta destino.
+   ========================================================================== */
+function verificarNombreArchivo(folderId, nombre) {
+  try {
+    if (!folderId || !nombre) return { existe: false };
+    var folder = DriveApp.getFolderById(folderId);
+    var it = folder.getFilesByName(String(nombre).trim());
+    if (it.hasNext()) {
+      var f = it.next();
+      return { existe: true, url: f.getUrl(), id: f.getId() };
+    }
+  } catch (e) {}
+  return { existe: false };
+}
+
+/* ==========================================================================
+   FASE 8.65 (R6): DETALLE de Analytics — eventos/archivos de un usuario según
+   la métrica elegida (iniciados/finalizados/creados/apoyos/pausados/excluidos).
+   ========================================================================== */
+function detalleAnalyticsUsuario(email, tipo) {
+  var ss = _getSS();
+  var emailN = String(email || "").trim().toLowerCase();
+  var res = [];
+
+  if (tipo === "apoyos" || tipo === "excluidos") {
+    var shE = ss.getSheetByName(EQT_CFG.HOJA);
+    if (shE && shE.getLastRow() >= 2) {
+      var ve = shE.getRange(2, 1, shE.getLastRow() - 1, 10).getValues();
+      // Resolver nombre del email para comparar (EQUIPOS_TAREA guarda nombre)
+      var uu = _obtenerUsuario(emailN);
+      var claveNom = uu ? _claveNombre(uu.nombre) : "";
+      ve.forEach(function(r){
+        var okEmail = String(r[4] || "").trim().toLowerCase() === emailN;
+        var okNombre = claveNom && _claveNombre(r[5]) === claveNom;
+        if (!okEmail && !okNombre) return;
+        if (String(r[6] || "").toUpperCase() !== "APOYO") return;
+        var est = String(r[7] || "").toUpperCase();
+        if (tipo === "excluidos" && est !== "EXCLUIDO") return;
+        if (tipo === "apoyos" && est === "EXCLUIDO") return;
+        var ini = (r[0] instanceof Date) ? r[0] : null;
+        var fin = (r[8] instanceof Date) ? r[8] : null;
+        var mins = (ini && fin) ? Math.round((fin.getTime() - ini.getTime()) / 60000) : null;
+        res.push({
+          cliente: r[2], titulo: r[3], estado: est,
+          inicio: ini ? ini.getTime() : null, fin: fin ? fin.getTime() : null,
+          minutos: mins, filaEvento: r[1]
+        });
+      });
+    }
+    return res;
+  }
+
+  // iniciados / finalizados / creados / pausados → desde LOG_ACTIVIDAD
+  var accMap = { iniciados:["iniciar"], finalizados:["finalizar"], creados:["crear_archivo"],
+                 pausados:["pausar"], reanudados:["reanudar"] };
+  var accs = accMap[tipo] || [];
+  var shL = ss.getSheetByName(USR_CFG.HOJA_LOG);
+  if (shL && shL.getLastRow() >= 2 && accs.length) {
+    var vl = shL.getRange(2, 1, shL.getLastRow() - 1, 5).getValues();
+    vl.forEach(function(r){
+      if (String(r[1] || "").trim().toLowerCase() !== emailN) return;
+      if (accs.indexOf(String(r[2])) === -1) return;
+      res.push({ fecha: (r[0] instanceof Date) ? r[0].getTime() : null,
+                 accion: r[2], detalle: r[4] });
+    });
+  }
+  res.sort(function(a,b){ return (b.fecha||b.inicio||0) - (a.fecha||a.inicio||0); });
+  return res;
 }
 
 
@@ -5911,6 +6180,110 @@ function _extraerIdDesdeUrl(url) {
   if (!url) return "";
   var m = String(url).match(/[-\w]{25,50}/);
   return m ? m[0] : "";
+}
+
+/* ==========================================================================
+   FASE 8.65 (R10): SINCRONIZAR CRONOGRAMA ↔ GOOGLE CALENDAR
+   Crea/actualiza eventos de Calendar (con recordatorios popup + email) para
+   los eventos NO entregados de esta semana + los VENCIDOS. Idempotente: usa
+   una etiqueta [IMS#fila] en la descripción para no duplicar. Requiere los
+   scopes de Calendar (ya presentes en appsscript.json).
+   ========================================================================== */
+function dash_sincronizarCalendario() {
+  _requiereRol(["Admin", "Coordinador"]);
+  return _sincronizarCronogramaCalendar();
+}
+
+function _sincronizarCronogramaCalendar() {
+  var ss = _getSS();
+  var cron = ss.getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
+  if (!cron || cron.getLastRow() < CRON_CFG.CR_FILA_INI) return { ok:false, mensaje:"Cronograma vacío." };
+  var cal = _obtenerCalendarioIMS();
+  if (!cal) return { ok:false, mensaje:"No se pudo acceder a Google Calendar." };
+
+  var hoy = new Date(); hoy.setHours(0,0,0,0);
+  var finSemana = new Date(hoy.getTime() + 8 * 86400000);
+  var n = cron.getLastRow() - CRON_CFG.CR_FILA_INI + 1;
+  var dat = cron.getRange(CRON_CFG.CR_FILA_INI, 1, n, CRON_CFG.CR_COL_FECHA_ENT).getValues();
+
+  var creados = 0, actualizados = 0, revisados = 0;
+  var deadline = Date.now() + 250 * 1000;
+  for (var i = 0; i < dat.length; i++) {
+    if (Date.now() > deadline) break;
+    var r = dat[i];
+    var estado = String(r[CRON_CFG.CR_COL_ESTADO - 1] || "").toLowerCase();
+    if (estado.indexOf("entregado") !== -1) continue;
+    var fIni = r[CRON_CFG.CR_COL_FECHA - 1];
+    if (!(fIni instanceof Date)) continue;
+    var dIni = new Date(fIni.getFullYear(), fIni.getMonth(), fIni.getDate());
+    var vencido = dIni < hoy;
+    // Solo esta semana o vencidos (no futuros lejanos)
+    if (!vencido && dIni > finSemana) continue;
+    revisados++;
+
+    var filaReal = CRON_CFG.CR_FILA_INI + i;
+    var cliente = String(r[CRON_CFG.CR_COL_CLIENTE - 1] || "");
+    var titulo = String(r[CRON_CFG.CR_COL_TITULO - 1] || "Inventario");
+    var resp = String(r[CRON_CFG.CR_COL_RESP - 1] || "");
+    var tag = "[IMS#" + filaReal + "]";
+    var tituloCal = (vencido ? "⚠ VENCIDO · " : "📦 ") + cliente + " — " + titulo;
+    var desc = "Responsable: " + resp + "\nEstado: " + (r[CRON_CFG.CR_COL_ESTADO-1]||"Pendiente") +
+               "\nCliente: " + cliente + "\n" + tag +
+               "\n(Sincronizado desde el Centro de Mando Itsanet)";
+
+    // Buscar evento existente ese día con la etiqueta
+    var existentes = cal.getEventsForDay(dIni);
+    var found = null;
+    for (var k = 0; k < existentes.length; k++) {
+      if (String(existentes[k].getDescription() || "").indexOf(tag) !== -1) { found = existentes[k]; break; }
+    }
+    if (found) {
+      if (found.getTitle() !== tituloCal) found.setTitle(tituloCal);
+      found.setDescription(desc);
+      actualizados++;
+    } else {
+      var ev = cal.createAllDayEvent(tituloCal, dIni, { description: desc });
+      try { ev.addPopupReminder(600); } catch (e) {}     // 10 h antes (all-day)
+      try { ev.addEmailReminder(1440); } catch (e) {}     // 1 día antes
+      creados++;
+    }
+  }
+  try {
+    _registrarActividad(_usuarioActual(), "sync_calendar", "",
+      "Creados " + creados + " · actualizados " + actualizados);
+  } catch (e) {}
+  return { ok:true, creados:creados, actualizados:actualizados, revisados:revisados,
+    mensaje: "📅 Calendar sincronizado: " + creados + " nuevos, " + actualizados +
+             " actualizados (de " + revisados + " eventos de la semana/vencidos).\n" +
+             "Tendrás recordatorio (popup 10h antes + email 1 día antes)." };
+}
+
+/* Calendario dedicado "Inventarios Itsanet" (se crea 1 vez); fallback al default. */
+function _obtenerCalendarioIMS() {
+  try {
+    var id = PropertiesService.getScriptProperties().getProperty("IMS_CALENDAR_ID");
+    if (id) { var c = CalendarApp.getCalendarById(id); if (c) return c; }
+    var existentes = CalendarApp.getCalendarsByName("Inventarios Itsanet");
+    if (existentes && existentes.length) {
+      PropertiesService.getScriptProperties().setProperty("IMS_CALENDAR_ID", existentes[0].getId());
+      return existentes[0];
+    }
+    var nuevo = CalendarApp.createCalendar("Inventarios Itsanet", { color: CalendarApp.Color.BLUE });
+    PropertiesService.getScriptProperties().setProperty("IMS_CALENDAR_ID", nuevo.getId());
+    return nuevo;
+  } catch (e) {
+    try { return CalendarApp.getDefaultCalendar(); } catch (e2) { return null; }
+  }
+}
+
+/* Trigger diario opcional para mantener Calendar al día (7:00 AM). */
+function instalarTriggerCalendarioDiario() {
+  _requiereRol(["Admin", "Coordinador"]);
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    if (t.getHandlerFunction() === "_sincronizarCronogramaCalendar") ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger("_sincronizarCronogramaCalendar").timeBased().atHour(7).everyDays(1).create();
+  return { ok:true, mensaje:"Sincronización diaria de Calendar instalada (7:00 AM)." };
 }
 
 function _construirHtmlReporteSemanal(eventos, lunes, domingo) {

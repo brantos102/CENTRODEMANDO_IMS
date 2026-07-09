@@ -36,6 +36,8 @@ window.onload = function() {
   $('u-nombre').innerText = U.nombre || U.email;
   $('u-rol').innerText = U.rol;
   $('u-avatar').innerText = (U.nombre || U.email || '?').charAt(0).toUpperCase();
+  // FASE 8.65 (R7): foto de perfil si el usuario configuró una.
+  if (U.foto) { var _av=$('u-avatar'); if(_av){ _av.style.background='center/cover url('+U.foto+')'; _av.innerText=''; } }
 
   // Aplicar permisos: ocultar nav/botones según rol
   if (!P.gestionUsuarios) $('nav-usuarios').classList.add('hidden');
@@ -59,7 +61,9 @@ function aplicarPermisosBotones() {
     'b-cron-codigos': P.baseDatos, 'b-cred-api': P.baseDatos, 'b-accesos': P.baseDatos,
     'b-exportar': P.exportar,
     'b-record': P.recordatorios, 'b-sinc': P.recordatorios, 'b-syncQ': P.recordatorios,
-    'b-zip': P.exportar
+    'b-zip': P.exportar,
+    'b-cal': P.recordatorios,   // FASE 8.65 R10: sincronizar Calendar (Reportes)
+    'b-nuevo-usr': P.crearUsuarios   // FASE 8.65 R4: crear usuarios
   };
   // Oculta (no solo deshabilita) lo que el rol no puede usar → panel limpio por rango.
   Object.keys(map).forEach(function(id){
@@ -162,6 +166,17 @@ function pintarDashboard() {
   // FIX FASE 8.35: el resumen del cronograma lo gestiona pintarCron (refleja el filtro/período).
   pintarChart(); pintarCron(); pintarPan(); pintarCarga();
   pintarConsolidacion();
+  pintarActivos();   // FASE 8.65 R5
+}
+
+/* FASE 8.65 (R5): widget de usuarios activos ahora mismo (hover = nombres). */
+function pintarActivos() {
+  var a = (estado && estado.usuariosActivos) ? estado.usuariosActivos : { count:0, nombres:[] };
+  var num = $('activos-num'); var box = $('activos-box');
+  if (num) num.innerText = a.count;
+  if (box) box.title = a.count
+    ? ('Activos ahora (' + a.count + '):\n' + (a.nombres || []).join('\n'))
+    : 'Sin usuarios activos en los últimos 5 min';
 }
 
 /* FIX FASE 8.33: indicador flotante del progreso de la consolidación por lotes.
@@ -694,8 +709,11 @@ function filaCron(d) {
       ? 'Abrir Terminal WMS (archivo vinculado vía PANEL DE CONTROL)'
       : 'Abrir Terminal WMS';
 
-    if (P.abrirLibro) {
-      accesos += '<button class="icon-btn" style="position:relative;" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="'+tooltipExcel+'">📊'+marcaPanel+'</button>';
+    // FASE 8.65 (R1): abrir el ARCHIVO HIJO — visible para TODOS los roles con
+    // verArchivoHijo (Drive controla si es lectura -auditor- o edición -equipo-).
+    if (P.verArchivoHijo || P.abrirLibro) {
+      var tipTxt = P.abrirLibro ? tooltipExcel : 'Abrir archivo del inventario (lectura)';
+      accesos += '<button class="icon-btn" style="position:relative;" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="'+tipTxt+'">📊'+marcaPanel+'</button>';
     }
     // Todos los roles: link al WMS deep-link
     var wmsUrl = (d.wmsUrl ? d.wmsUrl : window.location.href.split('?')[0]) + '?vista=wms&fileId=' + encodeURIComponent(d.fileId || '') + '&cliente=' + encodeURIComponent(d.cliente || '');
@@ -756,7 +774,7 @@ function pintarPan() {
     // FIX FASE 8.34: botón de acceso al archivo (Excel para quien pueda; WMS para todos)
     var acc = '';
     if (d.urlArchivo) {
-      if (P.abrirLibro) acc += '<button class="icon-btn" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="Abrir Excel del inventario">📊</button>';
+      if (P.verArchivoHijo || P.abrirLibro) acc += '<button class="icon-btn" onclick="window.open(\''+d.urlArchivo+'\',\'_blank\')" title="Abrir archivo del inventario">📊</button>';
       var wu = (d.wmsUrl ? d.wmsUrl : window.location.href.split('?')[0]) + '?vista=wms&fileId=' + encodeURIComponent(d.fileId||'') + '&cliente=' + encodeURIComponent(d.cliente||'') + (P.iniciarFin||P.abrirLibro?'&modo=op':'&modo=auditor');
       acc += '<button class="icon-btn" onclick="window.open(\''+wu+'\',\'_blank\')" title="Abrir Terminal WMS">📦</button>';
     } else { acc = '<span style="color:var(--muted);font-size:10px;">—</span>'; }
@@ -1669,6 +1687,36 @@ function guardarPerfil() {
     .withFailureHandler(e=>toast('Error: '+e.message,'error')).actualizarMiPerfil(datos);
 }
 
+/* FASE 8.65 (R7): cambiar contraseña (misma del WMS). */
+function abrirCambioPassword() {
+  modalCustom('🔑 Cambiar contraseña', 'Esta es la misma contraseña que usas en el Terminal WMS.',
+    '<div class="field"><label>Contraseña actual</label><input type="password" id="cp-act" autocomplete="off"></div>'+
+    '<div class="field"><label>Nueva contraseña (mín. 4)</label><input type="password" id="cp-new" autocomplete="new-password"></div>'+
+    '<div class="field"><label>Repetir nueva</label><input type="password" id="cp-new2" autocomplete="new-password"></div>',
+    'Cambiar', function(){
+      var a=$('cp-act').value, n=$('cp-new').value, n2=$('cp-new2').value;
+      if ((n||'').length<4){ toast('La nueva debe tener 4+ caracteres','error'); return false; }
+      if (n!==n2){ toast('Las contraseñas no coinciden','error'); return false; }
+      cerrarModal(); toast('Cambiando…');
+      google.script.run.withSuccessHandler(function(){ toast('✓ Contraseña cambiada','success'); })
+        .withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+        .cambiarMiPassword(a, n);
+    });
+}
+
+/* FASE 8.65 (R7): foto de perfil por URL (opcional; no afecta nada si no se usa). */
+function abrirCambioFoto() {
+  modalCustom('🖼 Foto de perfil', 'Pega la URL de una imagen (o deja vacío para quitarla). Nota: la foto de Gmail no se puede traer automáticamente por seguridad de Google.',
+    '<div class="field"><label>URL de la imagen</label><input type="text" id="pf-url" placeholder="https://…"></div>',
+    'Guardar', function(){
+      var u=$('pf-url').value.trim();
+      cerrarModal(); toast('Guardando…');
+      google.script.run.withSuccessHandler(function(){ toast('✓ Foto actualizada','success'); if(u){var av=$('u-avatar'); if(av){av.style.background='center/cover url('+u+')'; av.innerText='';}} })
+        .withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+        .guardarMiFoto(u);
+    });
+}
+
 /* ===== USUARIOS ===== */
 function cargarUsuarios() {
   $('usr-body').innerHTML = '<div class="empty">Cargando…</div>';
@@ -1677,17 +1725,30 @@ function cargarUsuarios() {
     $('usr-body').innerHTML = lista.map(filaUsuario).join('');
   }).withFailureHandler(e=>$('usr-body').innerHTML='<div class="empty">Error: '+e.message+'</div>').listarUsuarios();
 }
+// FASE 8.65 (R4): jerarquía de roles en el cliente (refleja _nivelRol del servidor).
+function _nivelRolJS(rol){ var r=String(rol||'').toLowerCase(); if(r==='admin')return 4; if(r==='coordinador')return 3; if(r==='líder de conteo'||r==='lider de conteo')return 2; if(r==='operario'||r==='auditor')return 1; return 0; }
+function _rolesAsignablesJS(){
+  var mi = (U.rol||'').toLowerCase()==='admin' ? 99 : _nivelRolJS(U.rol);
+  return ['Admin','Coordinador','Líder de Conteo','Auditor','Operario'].filter(function(r){ return _nivelRolJS(r) < mi; });
+}
 function filaUsuario(u) {
   var rolCls = u.rol==='Admin'?'pill-danger':(u.rol==='Coordinador'?'pill-info':(u.rol==='Auditor'?'pill-muted':'pill-ok'));
   var estPill = u.activo ? '<span class="pill pill-ok">Activo</span>' : '<span class="pill pill-danger">Inactivo</span>';
   var wmsBadge = u.rolWms ? ' <span class="pill pill-muted" style="font-size:9px;">WMS:'+escapeHtml(u.rolWms)+'</span>' : '';
+  // FASE 8.65 (R4): editar/desactivar SOLO Admin (los demás solo ven la lista).
+  var acciones = P.editarUsuarios
+    ? '<button class="mini-btn" onclick=\'editarUsuario('+JSON.stringify(u)+')\'>✎</button>'+
+      (u.activo?'<button class="mini-btn" onclick="desactUsuario('+u.fila+')">⊘</button>':'')
+    : '<span style="color:var(--muted);font-size:10px;">solo Admin</span>';
   return '<div class="rw"><div><div style="font-weight:500;">'+escapeHtml(u.nombre)+'</div><div style="font-size:10px;color:var(--muted);">'+escapeHtml(u.email)+'</div></div>'+
     '<div><span class="pill '+rolCls+'">'+escapeHtml(u.rol)+'</span>'+wmsBadge+'</div><div style="font-size:11px;">'+escapeHtml(u.telefono||'—')+'</div>'+
-    '<div>'+estPill+'</div><div class="act-grp"><button class="mini-btn" onclick=\'editarUsuario('+JSON.stringify(u)+')\'>✎</button>'+
-    (u.activo?'<button class="mini-btn" onclick="desactUsuario('+u.fila+')">⊘</button>':'')+'</div></div>';
+    '<div>'+estPill+'</div><div class="act-grp">'+acciones+'</div></div>';
 }
 function abrirNuevoUsuario() {
-  var roles = ['Admin','Coordinador','Líder de Conteo','Auditor'].map(r=>'<option>'+r+'</option>').join('');
+  if (!P.crearUsuarios) return toast('Tu rol no permite crear usuarios','error');
+  var asignables = _rolesAsignablesJS();
+  if (!asignables.length) return toast('Tu rol no puede asignar ningún rango','error');
+  var roles = asignables.map(r=>'<option>'+r+'</option>').join('');
   var rolesWms = ['ADMIN','OPERADOR','AUDITOR'].map(r=>'<option>'+r+'</option>').join('');
   modalCustom('＋ Nuevo usuario', 'Vale para Panel de Control y Terminal WMS (mismos usuarios y rangos):',
     '<div class="field"><label>Email *</label><input type="text" id="nu-email" placeholder="correo@itsanet.com"></div>'+
@@ -1739,15 +1800,52 @@ function cargarAnalytics() {
       var nom = u.nombre ? escapeHtml(u.nombre) : escapeHtml(u.email || '—');
       var sub = (u.nombre && u.email) ? '<div style="font-size:9px;color:var(--muted);">'+escapeHtml(u.email)+'</div>' : '';
       var ap  = (u.apoyos || 0), ex = (u.exclusiones || 0);
+      // FASE 8.65 (R6): cada valor es CLICABLE → detalle de eventos/archivos.
+      var em = escapeHtml(u.email||'');
+      function cel(val, tipo, color){
+        if (!val) return '<div style="color:var(--muted);">0</div>';
+        return '<div style="color:'+color+';cursor:pointer;text-decoration:underline dotted;" title="Ver detalle" '+
+               'onclick="verDetalleAnalytics(\''+em+'\',\''+tipo+'\',\''+escapeHtml((u.nombre||u.email||'').replace(/\x27/g,""))+'\')">'+val+'</div>';
+      }
       return '<div class="rw" style="grid-template-columns:2fr repeat(6,minmax(52px,1fr));">'+
         '<div><div style="font-weight:500;font-size:11px;">'+nom+'</div>'+sub+'</div>'+
-        '<div style="color:var(--accent);">'+u.iniciados+'</div><div style="color:var(--ok);">'+u.finalizados+'</div>'+
-        '<div style="color:var(--info);">'+u.creados+'</div>'+
-        '<div style="color:#2dd4bf;">'+ap+'</div>'+
-        '<div style="color:'+(ex>0?'var(--danger)':'var(--muted)')+';">'+ex+'</div>'+
+        cel(u.iniciados,'iniciados','var(--accent)')+cel(u.finalizados,'finalizados','var(--ok)')+
+        cel(u.creados,'creados','var(--info)')+
+        cel(ap,'apoyos','#2dd4bf')+
+        cel(ex,'excluidos',(ex>0?'var(--danger)':'var(--muted)'))+
         '<div><b>'+u.total+'</b></div></div>';
     }).join('');
   }).withFailureHandler(e=>$('analytics-body').innerHTML='<div class="empty">Error: '+e.message+'</div>').obtenerAnalyticsGlobal();
+}
+
+/* FASE 8.65 (R6): drilldown de una métrica de un operario → eventos/archivos. */
+function verDetalleAnalytics(email, tipo, nombre) {
+  var titulos={iniciados:'▶ Iniciados',finalizados:'✓ Finalizados',creados:'📦 Archivos creados',apoyos:'👥 Apoyos',excluidos:'⚠ Exclusiones'};
+  toast('Cargando detalle…');
+  google.script.run.withSuccessHandler(function(lista){
+    lista = lista||[];
+    var body;
+    if (!lista.length) body='<div class="empty">Sin registros.</div>';
+    else if (tipo==='apoyos'||tipo==='excluidos'){
+      body='<div class="tbl" style="font-size:12px;"><div class="rw" style="grid-template-columns:1.4fr 1fr 90px 84px;gap:8px;color:var(--muted);font-size:10px;border-bottom:1px solid var(--border);padding-bottom:4px;"><div>Cliente / Tarea</div><div>Estado</div><div>Duración</div><div>Fin</div></div>'+
+        '<div class="scroll" style="max-height:52vh;">'+lista.map(function(r){
+          var dur = r.minutos!=null ? (r.minutos>=60?(Math.floor(r.minutos/60)+'h '+(r.minutos%60)+'m'):(r.minutos+'m')) : '—';
+          var fin = r.fin ? new Date(r.fin).toLocaleDateString('es-ES',{day:'2-digit',month:'short'}) : (r.estado==='ACTIVO'?'en curso':'—');
+          return '<div class="rw" style="grid-template-columns:1.4fr 1fr 90px 84px;gap:8px;align-items:center;">'+
+            '<div style="min-width:0;"><div style="font-weight:500;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(r.cliente||'—')+'</div><div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(r.titulo||'')+'</div></div>'+
+            '<div><span class="pill '+(r.estado==='EXCLUIDO'?'pill-danger':(r.estado==='ACTIVO'?'pill-info':'pill-muted'))+'">'+escapeHtml(r.estado||'')+'</span></div>'+
+            '<div style="font-size:11px;">'+dur+'</div><div style="font-size:11px;color:var(--muted);">'+fin+'</div></div>';
+        }).join('')+'</div></div>';
+    } else {
+      body='<div class="tbl" style="font-size:12px;"><div class="scroll" style="max-height:52vh;">'+lista.map(function(r){
+        var f = r.fecha ? new Date(r.fecha).toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+        return '<div class="rw" style="grid-template-columns:120px 1fr;gap:8px;"><div style="color:var(--muted);font-size:11px;">'+f+'</div><div style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(r.detalle||r.accion||'')+'</div></div>';
+      }).join('')+'</div></div>';
+    }
+    modalCustom((titulos[tipo]||'Detalle')+' — '+escapeHtml(nombre)+' ('+lista.length+')', '', body, 'Cerrar', cerrarModal);
+    var mi=document.getElementById('modal-inner'); if(mi) mi.classList.add('wide');
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+  .detalleAnalyticsUsuario(email, tipo);
 }
 
 /* ===== WIZARD / FORM EVENTO (overlays) ===== */
@@ -2102,16 +2200,45 @@ function _renderFormEvento() {
       if (!datos.fechaInicio) faltantes.push('Fecha inicio');
       if (faltantes.length > 0) { toast('Falta: ' + faltantes.join(', '),'error'); return false; }
 
-      cerrarModal();
-      toast('Creando evento…','info');
-      google.script.run
-        .withSuccessHandler(function(r){
-          toast('✓ Evento creado (fila ' + r.fila + ')','success');
-          cargarDashboard();
-        })
-        .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
-        .crearEventoCronograma(datos);
+      // FASE 8.65 (R8): antes de crear, buscar eventos SIMILARES no entregados.
+      toast('Verificando duplicados…','info');
+      google.script.run.withSuccessHandler(function(similares){
+        cerrarModal();
+        if (similares && similares.length) _modalEventoSimilar(similares, datos);
+        else _crearEventoFinal(datos);
+      }).withFailureHandler(function(){ cerrarModal(); _crearEventoFinal(datos); })
+      .buscarEventosSimilares(datos.cliente, datos.titulo);
+      return false; // no cerrar aún; lo maneja el callback
     });
+}
+
+/* FASE 8.65 (R8): aviso de evento duplicado → unirse como apoyo o crear igual. */
+function _modalEventoSimilar(similares, datos) {
+  var filas = similares.slice(0,6).map(function(s){
+    return '<div class="rw" style="grid-template-columns:1fr 110px auto;gap:8px;align-items:center;border:1px solid var(--border);border-radius:6px;padding:6px 8px;margin-bottom:5px;">'+
+      '<div style="min-width:0;"><div style="font-weight:600;font-size:12px;">'+escapeHtml(s.cliente||'')+'</div><div style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(s.titulo||'')+'</div></div>'+
+      '<div style="font-size:11px;color:#60a5fa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(s.responsable||'—')+'</div>'+
+      '<button class="mini-btn start" onclick="_unirmeApoyo('+s.fila+')">👥 Unirme</button></div>';
+  }).join('');
+  modalCustom('⚠ Ya existe un evento parecido',
+    'Para no <b>inflar la hoja</b> con filas repetidas (Sheets acumula datos y se vuelve lento), revisa si es el MISMO trabajo. Puedes <b>unirte como apoyo</b> a uno existente, o crear el tuyo igual si es distinto.',
+    filas + '<div style="font-size:11px;color:var(--muted);margin-top:6px;">Si de verdad es un trabajo diferente, crea el nuevo evento:</div>',
+    '➕ Crear igual de todas formas', function(){ cerrarModal(); _crearEventoFinal(datos); });
+}
+function _unirmeApoyo(fila) {
+  cerrarModal(); toast('Uniéndote como apoyo…');
+  google.script.run.withSuccessHandler(function(r){
+    toast('✓ '+(r && r.mensaje ? r.mensaje : 'Te uniste como apoyo'),'success');
+    cargarDashboard();
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+  .unirmeComoApoyo(fila);
+}
+function _crearEventoFinal(datos) {
+  toast('Creando evento…','info');
+  google.script.run
+    .withSuccessHandler(function(r){ toast('✓ Evento creado (fila ' + r.fila + ')','success'); cargarDashboard(); })
+    .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
+    .crearEventoCronograma(datos);
 }
 
 /* ===== FASE 8.56: CRONOGRAMA DE CÓDIGOS POR CLIENTE (solo Coordinador) ===== */
@@ -2140,6 +2267,16 @@ function abrirCronCodigos() {
       });
   }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
   .obtenerResumenCronCodigos();
+}
+
+/* ===== FASE 8.65 R10: sincronizar cronograma con Google Calendar ===== */
+function sincronizarCalendario() {
+  if (!confirm('Sincronizar con Google Calendar los eventos de esta semana + vencidos (no entregados).\n\nCrea recordatorios (popup 10 h antes + email 1 día antes) en el calendario "Inventarios Itsanet". ¿Continuar?')) return;
+  toast('Sincronizando Calendar…','info');
+  google.script.run.withSuccessHandler(function(r){
+    modalCustom('📅 Google Calendar', '', '<div style="font-size:12px;white-space:pre-line;">'+escapeHtml(r.mensaje||'Listo')+'</div>', 'Cerrar', cerrarModal);
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+  .dash_sincronizarCalendario();
 }
 
 /* ===== FASE 8.62 R1: garantizar accesos del equipo a los archivos hijos ===== */
