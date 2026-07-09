@@ -349,7 +349,31 @@ function calSetVista(v) {
   _calCacheKey = ''; pintarCalendario();
 }
 
-function calSetEstado(v) { calEstadoFiltro = v || 'all'; _calCacheKey = ''; pintarCalendario(); }
+function calSetEstado(v) { calEstadoFiltro = v || 'all'; _calSyncEstadoUI(); _calCacheKey = ''; pintarCalendario(); }
+
+/* FASE 8.68: los chips de la leyenda (Programado/En curso/Entregado/Vencido)
+   ahora FILTRAN el calendario. Clic = aplicar ese estado; clic de nuevo en el
+   mismo = quitar el filtro (volver a "Todos"). Se sincroniza con el <select>. */
+function calToggleEstado(v) {
+  calEstadoFiltro = (calEstadoFiltro === v) ? 'all' : v;
+  _calSyncEstadoUI();
+  _calCacheKey = '';
+  pintarCalendario();
+}
+
+/* Mantiene el <select> y el resaltado de los chips en sincronía con el filtro. */
+function _calSyncEstadoUI() {
+  var sel = document.getElementById('cal-estado');
+  if (sel && sel.value !== calEstadoFiltro) sel.value = calEstadoFiltro;
+  var ley = document.getElementById('cal-leyenda');
+  if (ley) {
+    ley.classList.toggle('tiene-activo', calEstadoFiltro !== 'all');
+    var chips = ley.querySelectorAll('.cal-lg');
+    for (var i = 0; i < chips.length; i++) {
+      chips[i].classList.toggle('cal-lg-active', chips[i].getAttribute('data-est') === calEstadoFiltro);
+    }
+  }
+}
 /* Función supercargada para el botón "Hoy" del calendario */
 function calHoy() { 
   // 1. Establecer la referencia de tiempo a hoy
@@ -639,7 +663,12 @@ function pintarCalendario() {
 
     var clienteCorto = (ev.cliente || '—').toString().substring(0, 15);
     var titCorto = (ev.titulo || '').toString().substring(0, 18);
-    var dur = ev.duracion ? ' · ' + ev.duracion + 'd' : '';
+    // FASE 8.68: el tooltip muestra el LAPSO REAL que pinta la barra (inicio →
+    // fin, inclusive) para que el auditor vea todos los días trabajados.
+    var _fmtDia = function(d){ return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0'); };
+    var _diasSpan = Math.round((finE.getTime() - iniE.getTime()) / 86400000) + 1;
+    if (!(_diasSpan >= 1)) _diasSpan = 1;
+    var dur = ' · ' + _diasSpan + (_diasSpan === 1 ? ' día' : ' días') + ' (' + _fmtDia(iniE) + '→' + _fmtDia(finE) + ')';
     var tooltip = (ev.cliente || '') + ' · ' + (ev.titulo || '') + dur + ' · ' +
                   (ev.estado || 'Pendiente') + ' · ' + (ev.responsable || 'Sin responsable');
 

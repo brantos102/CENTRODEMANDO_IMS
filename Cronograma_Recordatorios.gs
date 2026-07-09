@@ -2173,18 +2173,29 @@ function obtenerEstadoIntegralDashboard() {
 
       
 
-      // FIX FASE 8.23: Calcular fechaFin a partir de la duración (col O).
-      // El calendario operativo necesita pintar el rango completo desde
-      // fechaInicio hasta fechaFin. La duración viene en días (puede ser número
-      // o texto). Si no hay duración → fechaFin = fechaInicio (evento de 1 día).
+      // FIX FASE 8.68: el calendario operativo debe pintar TODO el lapso del
+      // evento (los auditores necesitan ver TODOS los días trabajados, no solo
+      // el inicio). El fin del rango = el MÁS TARDÍO de estas señales:
+      //   · FECHA DE ENTREGA (col N) — la que fija el usuario (ej. 1→31 jul)
+      //   · fechaInicio + (duración col O − 1) — plazo por duración
+      //   · fechaInicio — mínimo (evento de 1 día)
+      // ANTES sólo usaba la duración (col O); si estaba vacía marcaba 1 solo día,
+      // por eso Telefónica (inicio 1/jul, entrega 31/jul, sin duración) sólo
+      // mostraba el 1 de julio.
       var duracionRaw = r[CRON_CFG.CR_COL_DURAC - 1];
       var duracionNum = parseInt(duracionRaw, 10);
       if (isNaN(duracionNum) || duracionNum < 1) duracionNum = 1;
       var fechaFinTs = null;
       if (ts) {
-        // fechaInicio + (duracion - 1) días = último día inclusive
-        // Ej: inicio 1/Jun, duración 3 → cubre 1, 2, 3 (fin = 3/Jun)
+        // Base: plazo por duración (inicio + duración − 1, último día inclusive).
         fechaFinTs = new Date(ts).getTime() + (duracionNum - 1) * 86400000;
+        // Si la FECHA DE ENTREGA (col N) es válida y POSTERIOR, ella manda:
+        // define el fin real del lapso (inicio → entrega), inclusive.
+        var fEntCol = r[CRON_CFG.CR_COL_FECHA_ENT - 1];
+        if (fEntCol instanceof Date) {
+          var fEntMid = new Date(fEntCol.getFullYear(), fEntCol.getMonth(), fEntCol.getDate()).getTime();
+          if (fEntMid > fechaFinTs) fechaFinTs = fEntMid;
+        }
       }
 
       cronograma.push({

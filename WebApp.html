@@ -266,12 +266,18 @@
     .cal-sel { background:var(--panel-2); border:1px solid var(--border); color:var(--text);
                font-size:10px; padding:3px 6px; border-radius:5px; }
     .cal-leyenda { display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
+    /* FASE 8.68: los chips de la leyenda son FILTROS clicables (toggle). */
     .cal-lg { font-size:9px; padding:2px 6px; border-radius:8px; font-weight:500;
-              border:1px solid var(--border); }
+              border:1px solid var(--border); cursor:pointer; user-select:none;
+              transition:transform .1s, box-shadow .15s, opacity .15s; }
+    .cal-lg:hover { transform:translateY(-1px); }
     .cal-lg-prog { background:rgba(59,130,246,0.15); color:#93c5fd; border-color:#3b82f6; }
     .cal-lg-curso { background:rgba(250,204,21,0.15); color:#fde047; border-color:#facc15; }
     .cal-lg-ent { background:rgba(34,197,94,0.15); color:#86efac; border-color:#22c55e; }
     .cal-lg-venc { background:rgba(239,68,68,0.15); color:#fca5a5; border-color:#ef4444; }
+    /* Chip ACTIVO = filtro aplicado (resalte). Si hay uno activo, los demás se atenúan. */
+    .cal-leyenda.tiene-activo .cal-lg { opacity:0.4; }
+    .cal-leyenda .cal-lg.cal-lg-active { opacity:1; box-shadow:0 0 0 2px currentColor inset, 0 2px 8px rgba(0,0,0,0.35); font-weight:700; }
 
     .cal-wrap { max-height:320px; overflow-y:auto; overflow-x:auto; }
     .cal-grid { display:grid; gap:2px; min-width:100%; }
@@ -417,11 +423,11 @@
                   <option value="ent">Entregado</option>
                   <option value="venc">Vencido</option>
                 </select>
-                <div class="cal-leyenda">
-                  <span class="cal-lg cal-lg-prog">Programado</span>
-                  <span class="cal-lg cal-lg-curso">En curso</span>
-                  <span class="cal-lg cal-lg-ent">Entregado</span>
-                  <span class="cal-lg cal-lg-venc">Vencido</span>
+                <div class="cal-leyenda" id="cal-leyenda">
+                  <span class="cal-lg cal-lg-prog" data-est="prog" role="button" tabindex="0" onclick="calToggleEstado('prog')" title="Filtrar sólo PROGRAMADOS (clic de nuevo para quitar)">Programado</span>
+                  <span class="cal-lg cal-lg-curso" data-est="curso" role="button" tabindex="0" onclick="calToggleEstado('curso')" title="Filtrar sólo EN CURSO (clic de nuevo para quitar)">En curso</span>
+                  <span class="cal-lg cal-lg-ent" data-est="ent" role="button" tabindex="0" onclick="calToggleEstado('ent')" title="Filtrar sólo ENTREGADOS (clic de nuevo para quitar)">Entregado</span>
+                  <span class="cal-lg cal-lg-venc" data-est="venc" role="button" tabindex="0" onclick="calToggleEstado('venc')" title="Filtrar sólo VENCIDOS (clic de nuevo para quitar)">Vencido</span>
                 </div>
               </div>
               <div id="cal-body" class="cal-wrap">

@@ -2065,7 +2065,7 @@
               </div>
             </div>
             <div id="post-autoclose" style="text-align:center;font-size:11px;color:#94a3b8;margin-top:10px;">
-              ⏱ Volviendo al panel automáticamente en <b id="post-count" style="color:#60a5fa;">12</b>s ·
+              ⏱ Esta ventana se cierra sola en <b id="post-count" style="color:#60a5fa;">8</b>s ·
               <a href="#" onclick="cancelarAutoCierre();return false;" style="color:#60a5fa;">mantener abierta</a>
             </div>
           </div>
@@ -2077,7 +2077,7 @@
       // el modal se cierra solo y se vuelve al panel (cerrarPostModal ya avisa
       // al padre, que cierra el wizard y recarga el dashboard). Cualquier
       // interacción de teclado/clic dentro del modal cancela el conteo.
-      window._postCierreSeg = 12;
+      window._postCierreSeg = 8;
       if (window._postCierreT) clearInterval(window._postCierreT);
       window._postCierreT = setInterval(function(){
         window._postCierreSeg--;
@@ -2103,25 +2103,31 @@
       try { if (window._postCierreT) clearInterval(window._postCierreT); } catch(e) {} // FASE 8.61
       var m = document.getElementById('post-modal-bg');
       if (m) m.remove();
-      // HOTFIX 8.66.7: VENTANA FLOTANTE (abierta con window.open desde la PWA).
-      // Avisar al opener (la app) para que refresque y CERRAR esta ventana sola.
-      try {
-        if (window.opener && !window.opener.closed && window.opener !== window) {
-          try { window.opener.postMessage({ tipo:'inventarioCreado', payload: window._postRes || null }, '*'); } catch(e) {}
-          window.close();
-          return;
-        }
-      } catch(e) {}
-      // Caso IFRAME (legacy): avisar al parent y pedir cierre.
-      try {
-        if (window.parent !== window) {
-          window.parent.postMessage({ tipo:'inventarioCreado', payload: window._postRes || null }, '*');
-          window.parent.postMessage({ tipo:'cerrarWizard' }, '*');
-          return;
-        }
-      } catch(e) {}
-      // Caso pestaña sin opener: redirigir al panel.
-      try { window.location.href = (window.__WEBAPP_URL__ || ''); } catch(e) {}
+
+      // 1) AVISAR al panel (por TODOS los canales posibles; el que llegue,
+      //    refresca el dashboard con el archivo nuevo). Best-effort.
+      var msg = { tipo:'inventarioCreado', payload: window._postRes || null };
+      try { if (window.opener && !window.opener.closed && window.opener !== window) window.opener.postMessage(msg, '*'); } catch(e) {}
+      try { if (window.parent && window.parent !== window) { window.parent.postMessage(msg, '*'); window.parent.postMessage({ tipo:'cerrarWizard' }, '*'); } } catch(e) {}
+
+      // 2) CERRAR la ventana flotante del asistente.
+      //    FASE 8.68 (fix clave): un web app de Apps Script sirve el HTML dentro
+      //    de un IFRAME sandbox, por eso window.close() NO cierra la ventana
+      //    superior (por eso "no se cerraba sola"). google.script.host.close()
+      //    SÍ cierra la ventana/pestaña del web app desde dentro del sandbox.
+      //    Además el panel padre poll-ea win.closed (cada 1s) y al detectar el
+      //    cierre refresca el dashboard automáticamente.
+      var cerrada = false;
+      try { google.script.host.close(); cerrada = true; } catch(e) {}
+      // Fallbacks para contextos no-sandbox (pestaña abierta con opener, etc.).
+      if (!cerrada) {
+        try { if (window.opener && !window.opener.closed && window.opener !== window) { window.close(); cerrada = true; } } catch(e) {}
+      }
+      try { window.close(); } catch(e) {}
+      // Último recurso (pestaña normal sin opener): volver al panel.
+      if (!window.opener && window.parent === window) {
+        try { window.location.href = (window.__WEBAPP_URL__ || ''); } catch(e) {}
+      }
     }
 
     function copyLink(inputId, btnId) {
