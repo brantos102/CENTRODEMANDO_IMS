@@ -550,6 +550,14 @@
           window.parent.postMessage({ tipo: 'CERRAR_WIZARD' }, '*');
         }
       } catch (e) {}
+      // FASE 8.69: en la ventana flotante (sandbox) host.close() no cierra la
+      // ventana superior; pedimos el cierre al panel vía token (él la cierra).
+      try {
+        if (window.__WTOK__) {
+          google.script.run.withSuccessHandler(function(){}).withFailureHandler(function(){})
+            .dash_wizardPedirCierre(window.__WTOK__);
+        }
+      } catch (e) {}
       try { google.script.host.close(); } catch (e) {}
     }
     let estado = {
@@ -567,6 +575,19 @@
 
     /* ===== INIT ===== */
     window.onload = function() {
+      // FASE 8.69: leer el TOKEN de cierre (?wtok=) que puso el panel. El HTML
+      // corre en el iframe sandbox y NO ve la URL superior directamente, pero
+      // google.script.url.getLocation() sí devuelve los parámetros del web app.
+      // Con ese token, al terminar avisamos al panel para que cierre la ventana.
+      window.__WTOK__ = '';
+      try {
+        if (google && google.script && google.script.url) {
+          google.script.url.getLocation(function(loc){
+            try { window.__WTOK__ = (loc && loc.parameter && loc.parameter.wtok) || ''; } catch(e){}
+          });
+        }
+      } catch(e){}
+
       // FIX FASE 7.7: handler de fallo + estado visible en el loader
       var _stat = function(txt) {
         var s = document.getElementById('wizard-loader-status');
@@ -2110,19 +2131,24 @@
       try { if (window.opener && !window.opener.closed && window.opener !== window) window.opener.postMessage(msg, '*'); } catch(e) {}
       try { if (window.parent && window.parent !== window) { window.parent.postMessage(msg, '*'); window.parent.postMessage({ tipo:'cerrarWizard' }, '*'); } } catch(e) {}
 
-      // 2) CERRAR la ventana flotante del asistente.
-      //    FASE 8.68 (fix clave): un web app de Apps Script sirve el HTML dentro
-      //    de un IFRAME sandbox, por eso window.close() NO cierra la ventana
-      //    superior (por eso "no se cerraba sola"). google.script.host.close()
-      //    SÍ cierra la ventana/pestaña del web app desde dentro del sandbox.
-      //    Además el panel padre poll-ea win.closed (cada 1s) y al detectar el
-      //    cierre refresca el dashboard automáticamente.
-      var cerrada = false;
-      try { google.script.host.close(); cerrada = true; } catch(e) {}
-      // Fallbacks para contextos no-sandbox (pestaña abierta con opener, etc.).
-      if (!cerrada) {
-        try { if (window.opener && !window.opener.closed && window.opener !== window) { window.close(); cerrada = true; } } catch(e) {}
-      }
+      // 2) CIERRE FIABLE (FASE 8.69): el asistente corre en un IFRAME sandbox de
+      //    Apps Script, por eso window.close()/host.close() NO cierran la ventana
+      //    superior de un web app independiente (por eso "no se cerraba sola").
+      //    La vía robusta: marcar el TOKEN en el servidor; el PANEL (que abrió la
+      //    ventana con window.open) lo detecta al poll-ear y la cierra con
+      //    win.close() (eso SÍ funciona porque es el opener).
+      try {
+        if (window.__WTOK__) {
+          google.script.run
+            .withSuccessHandler(function(){})
+            .withFailureHandler(function(){})
+            .dash_wizardPedirCierre(window.__WTOK__);
+        }
+      } catch(e) {}
+
+      // 3) Intentos de auto-cierre (por si el contexto SÍ lo permite: pestaña con
+      //    opener, o versiones futuras). Inocuos si fallan; el panel cierra igual.
+      try { google.script.host.close(); } catch(e) {}
       try { window.close(); } catch(e) {}
       // Último recurso (pestaña normal sin opener): volver al panel.
       if (!window.opener && window.parent === window) {

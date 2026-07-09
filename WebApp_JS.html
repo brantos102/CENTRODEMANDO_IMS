@@ -2047,7 +2047,11 @@ function abrirWizard(skipCheck) {
    el panel; al cerrarla, refresca el dashboard. Confiable (sin iframe). */
 function _abrirWizardVentana() {
   var base = window.__WEBAPP_URL__ || window.location.href.split('?')[0].split('#')[0];
-  var url = base + (base.indexOf('?') === -1 ? '?' : '&') + 'vista=wizard';
+  // FASE 8.69: token único para que el asistente pueda pedir el cierre de ESTA
+  // ventana a través del servidor (el asistente no puede cerrarse solo por el
+  // sandbox; este panel, que la abre, es quien la cierra con win.close()).
+  window._wizTok = 'w' + Date.now().toString(36) + Math.floor(Math.random()*1e6).toString(36);
+  var url = base + (base.indexOf('?') === -1 ? '?' : '&') + 'vista=wizard&wtok=' + window._wizTok;
   var w = Math.min(1150, (screen.availWidth || 1200) - 40);
   var h = Math.min(860, (screen.availHeight || 800) - 60);
   var left = Math.max(0, ((screen.availWidth || 1200) - w) / 2);
@@ -2088,6 +2092,7 @@ function _mostrarOverlayWizard(win) {
   }
   ov.style.display = 'flex';
   window._wizWin = win || null;
+  window._wizCerrado = false;   // FASE 8.69: rearmar el guard idempotente
   // Poll: si la ventana se cierra, quitar overlay y refrescar.
   if (window._wizPoll) clearInterval(window._wizPoll);
   if (win) {
@@ -2095,10 +2100,35 @@ function _mostrarOverlayWizard(win) {
       try { if (win.closed) { _cerrarOverlayWizard(true); } } catch(e){}
     }, 1000);
   }
+  // FASE 8.69: además del win.closed, preguntamos al SERVIDOR si el asistente
+  // pidió cerrar (marcó su token al terminar de crear el archivo). Cuando sí,
+  // cerramos la ventana desde aquí (win.close() funciona porque somos el opener)
+  // y refrescamos. Es la vía fiable para cerrar el web app del asistente.
+  if (window._wizSrvPoll) clearInterval(window._wizSrvPoll);
+  if (win && window._wizTok) {
+    window._wizSrvPoll = setInterval(function(){
+      try {
+        if (!window._wizWin || window._wizWin.closed) { _cerrarOverlayWizard(true); return; }
+      } catch(e){}
+      try {
+        google.script.run
+          .withSuccessHandler(function(debe){
+            if (debe) { try { if (window._wizWin && !window._wizWin.closed) window._wizWin.close(); } catch(e){} _cerrarOverlayWizard(true); }
+          })
+          .withFailureHandler(function(){})
+          .dash_wizardDebeCerrar(window._wizTok);
+      } catch(e){}
+    }, 2000);
+  }
 }
 function _focoWizard(){ try { if (window._wizWin && !window._wizWin.closed) window._wizWin.focus(); } catch(e){} }
 function _cerrarOverlayWizard(refrescar) {
+  // FASE 8.69: idempotente — puede llegar desde win.closed, el poll de servidor
+  // y/o el postMessage. Sólo actúa (y refresca) la primera vez.
   if (window._wizPoll) { clearInterval(window._wizPoll); window._wizPoll = null; }
+  if (window._wizSrvPoll) { clearInterval(window._wizSrvPoll); window._wizSrvPoll = null; }
+  if (window._wizCerrado) return;
+  window._wizCerrado = true;
   var ov = document.getElementById('wizard-overlay-dim');
   if (ov) ov.style.display = 'none';
   try { if (window._wizWin && !window._wizWin.closed) window._wizWin.close(); } catch(e){}

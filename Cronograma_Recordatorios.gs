@@ -2010,6 +2010,35 @@ function obtenerClientesEquipoWizard() {
   return { clientes: Object.keys(clientesSet).sort(), equipo: equipo, yo: yo };
 }
 
+/* ==========================================================================
+   FASE 8.69: CIERRE FIABLE DE LA VENTANA FLOTANTE DEL ASISTENTE
+   --------------------------------------------------------------------------
+   El asistente (web app) corre dentro de un IFRAME sandbox de Apps Script, por
+   eso NO puede cerrar su propia ventana superior (window.close / host.close no
+   funcionan de forma fiable en un web app independiente). La ÚNICA vía robusta
+   es que el PANEL (que abrió la ventana con window.open) la cierre con
+   win.close(). Para avisarle usamos un buzón en CacheService por TOKEN:
+     · El panel genera un token y lo pasa en la URL (?wtok=).
+     · El asistente, al terminar, marca el token con dash_wizardPedirCierre.
+     · El panel poll-ea dash_wizardDebeCerrar(token); cuando devuelve true,
+       cierra la ventana y refresca. El token evita colisiones entre usuarios.
+   ========================================================================== */
+function dash_wizardPedirCierre(token) {
+  token = String(token || "").replace(/[^A-Za-z0-9_]/g, "");
+  if (!token) return false;
+  try { CacheService.getScriptCache().put("WIZCLOSE::" + token, "1", 300); } catch (e) {}
+  return true;
+}
+function dash_wizardDebeCerrar(token) {
+  token = String(token || "").replace(/[^A-Za-z0-9_]/g, "");
+  if (!token) return false;
+  try {
+    var c = CacheService.getScriptCache();
+    if (c.get("WIZCLOSE::" + token)) { c.remove("WIZCLOSE::" + token); return true; }
+  } catch (e) {}
+  return false;
+}
+
 function obtenerEstadoIntegralDashboard() {
   try { _marcarPresencia(); } catch (e) {}   // FASE 8.65 (R5): presencia "activo ahora"
   var ss = _getSS();
