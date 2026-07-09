@@ -2006,15 +2006,14 @@ function abrirWizard(skipCheck) {
     verificarTrabajosAntesDeCrear(function(){ abrirWizard(true); });
     return;
   }
-  // HOTFIX 8.66.2: el iframe del wizard fallaba ("rechazó la conexión" /
-  // página en blanco) en despliegues de dominio (/a/macros/itsanet.com/), donde
-  // Google bloquea el framing. Solución DEFINITIVA y confiable: abrir el
-  // asistente en una PESTAÑA NUEVA (sin iframe → sin problema de framing).
-  _abrirWizardPestana();
+  // HOTFIX 8.66.3: el wizard vuelve a abrirse como MODAL (iframe) dentro de la
+  // pantalla, como pidió el operador. El fix real del "rechazó la conexión" fue
+  // 8.66.1 (permiso crearInventario + ALLOWALL en las pantallas de denegado);
+  // requiere crear NUEVA VERSIÓN del deploy para que aplique.
+  abrirWizardComoModal();
 }
 
-/* HOTFIX 8.66.2: abre el asistente en pestaña nueva usando la URL EXACTA con la
-   que cargó el panel (mismo origen y ruta válida garantizada). */
+/* Respaldo: abre el asistente en pestaña nueva (solo si el modal no cargara). */
 function _abrirWizardPestana() {
   var base = window.location.href.split('?')[0].split('#')[0];
   // Si la URL canónica del deploy existe y es de script.google.com, preferirla.
@@ -2054,8 +2053,12 @@ function abrirWizardComoModal() {
       '<div style="background:#0b1220;color:#e8ecf3;padding:14px 20px;display:flex;' +
       'justify-content:space-between;align-items:center;border-bottom:1px solid #283352;flex-shrink:0;">' +
         '<div style="font-size:15px;font-weight:600;display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">📦</span> Asistente de Creación de Inventario</div>' +
-        '<button id="wizard-modal-close" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;' +
-        'padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">✕ Cerrar ventana</button>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+          // HOTFIX 8.66.3: respaldo si el iframe no cargara (framing del dominio)
+          '<button onclick="cerrarWizardModal();_abrirWizardPestana();" title="Abrir en pestaña nueva si no carga aquí" style="background:transparent;color:#94a3b8;border:1px solid #334155;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:11px;">⇗ Pestaña</button>' +
+          '<button id="wizard-modal-close" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;' +
+          'padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;">✕ Cerrar ventana</button>' +
+        '</div>' +
       '</div>' +
       '<div id="wizard-modal-loader" style="position:absolute;inset:56px 0 0 0;background:#0b1220;color:#e8ecf3;' +
       'display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:system-ui,sans-serif;text-align:center;z-index:10;">' +
