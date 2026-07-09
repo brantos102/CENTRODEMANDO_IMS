@@ -4799,25 +4799,32 @@ function doGet(e) {
     var emailW = _usuarioActual();
     var uW = emailW ? _obtenerUsuario(emailW) : null;
 
-    // Validar acceso: debe ser Coordinador o Líder de Conteo activo
+    // FASE 8.66 FIX CRÍTICO: validar por PERMISO crearInventario (cubre Admin,
+    // Coordinador y Líder de Conteo) — antes el check hardcodeaba solo
+    // coordinador/líder y DEJABA FUERA a Admin → los Admin no podían crear
+    // archivos. Además, las pantallas de denegado ahora llevan ALLOWALL para
+    // que se muestren dentro del iframe (si no, el navegador dice "rechazó la
+    // conexión" en vez de mostrar el mensaje).
     if (!uW || !uW.activo) {
       var denW = HtmlService.createTemplateFromFile("AccesoDenegado");
       denW.email = emailW || "(sin sesión)";
       denW.diagnostico = "No autorizado para crear inventarios";
-      denW.recomendacion = "Solo Coordinadores y Líderes de Conteo pueden crear inventarios.";
+      denW.recomendacion = "Solo Admin, Coordinadores y Líderes de Conteo pueden crear inventarios.";
       return denW.evaluate()
         .setTitle("Acceso Denegado · Itsanet")
-        .addMetaTag("viewport", "width=device-width, initial-scale=1");
+        .addMetaTag("viewport", "width=device-width, initial-scale=1")
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
-    var rolNW = String(uW.rol || "").trim().toLowerCase();
-    if (rolNW !== "coordinador" && rolNW !== "líder de conteo" && rolNW !== "lider de conteo") {
+    var permW = _permisosDeRol(uW.rol);
+    if (!permW.crearInventario) {
       var denW2 = HtmlService.createTemplateFromFile("AccesoDenegado");
       denW2.email = emailW + " · " + uW.rol;
       denW2.diagnostico = "Tu rol no permite crear inventarios";
-      denW2.recomendacion = "Solo <b>Coordinadores</b> y <b>Líderes de Conteo</b> pueden crear inventarios. Solicita el cambio a un administrador.";
+      denW2.recomendacion = "Solo <b>Admin</b>, <b>Coordinadores</b> y <b>Líderes de Conteo</b> pueden crear inventarios. Solicita el cambio a un administrador.";
       return denW2.evaluate()
         .setTitle("Sin permisos · Itsanet")
-        .addMetaTag("viewport", "width=device-width, initial-scale=1");
+        .addMetaTag("viewport", "width=device-width, initial-scale=1")
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
 
     return HtmlService.createHtmlOutputFromFile("AsistenteCreacionV2")
