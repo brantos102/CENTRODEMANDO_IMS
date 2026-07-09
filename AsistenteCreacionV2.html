@@ -610,10 +610,17 @@
               }
               if (d && d.equipo) {
                 var sel = document.getElementById('ev-resp');
-                d.equipo.forEach(function(n){
+                // FASE 8.67: el USUARIO LOGEADO va PRIMERO y queda PRESELECCIONADO
+                // (responsable por defecto). El resto del equipo se ordena debajo.
+                var yo = (d.yo || '').trim();
+                var lista = d.equipo.slice();
+                if (yo && lista.indexOf(yo) === -1) lista.unshift(yo);
+                else if (yo) { lista = [yo].concat(lista.filter(function(n){ return n !== yo; })); }
+                lista.forEach(function(n){
                   var o = document.createElement('option'); o.value = n; o.innerText = n;
                   sel.appendChild(o);
                 });
+                if (yo) sel.value = yo;   // primera sugerencia = usuario logeado
               }
               ocultarLoaderSiListo();
             } catch (e) { _err('Render dashboard: ' + e.message); }
@@ -717,16 +724,18 @@
       }
 
       if (isData) {
+        // FASE 8.67: el 'Sugerir códigos del mes' (api-mes-box) ahora vale para
+        // AMBAS fuentes — CSV y API usan el mismo cronograma de códigos.
+        $('api-mes-box').style.display = 'block';
+        _poblarMesExtraccion();
+        window._fuenteWizard = f;   // 'API' | 'CSV' → etiquetas del status/cobertura
         if (f === 'API') {
           $('csv-upload-box').style.display = 'none';
           $('api-upload-box').style.display = 'flex';
-          $('api-mes-box').style.display = 'block';   // FASE 8.56
-          _poblarMesExtraccion();                      // FASE 8.56
           $('data-zone-title').innerHTML = '<span class="step-num">2</span> Extracción y validación API <small id="csv-cache-status"></small>';
         } else {
           $('csv-upload-box').style.display = 'flex';
           $('api-upload-box').style.display = 'none';
-          $('api-mes-box').style.display = 'none';     // FASE 8.56
           $('data-zone-title').innerHTML = '<span class="step-num">2</span> Carga y validación CSV <small id="csv-cache-status"></small>';
         }
       }
@@ -785,34 +794,56 @@
           totalUnidades: res.reporte.sumaCantidad
         };
 
-        // 3. FASE 8.56: detectar códigos devueltos que NO están en la lista
-        // solicitada (variantes de otros meses, ej. DG100 → DG100GR de julio).
-        // Si hay, abrir la ventana de decisión ANTES de pintar y validar.
-        const solicitadosRaw = $('filtroCodigos').value.trim();
-        if (solicitadosRaw) {
-          const setSolic = new Set(solicitadosRaw.split(/[\s,;\n\r\t]+/)
-            .map(s => s.trim().toUpperCase()).filter(Boolean));
-          const extra = {};
-          estado.csvData.forEach(r => {
-            const sku = String(r[6] || '').toUpperCase();
-            if (sku && !setSolic.has(sku)) {
-              if (!extra[sku]) extra[sku] = { filas: 0, unidades: 0 };
-              extra[sku].filas++;
-              extra[sku].unidades += (parseFloat(r[16]) || 0);
-            }
-          });
-          if (Object.keys(extra).length > 0) {
-            abrirModalVariantesMes(extra);
-            return; // continúa en aplicarVariantesMes()
-          }
-        }
-
-        // 4. Sin variantes extra → pintar y validar directo
-        _pintarStatusApiYValidar('');
+        // 3. FASE 8.67: detección de variantes fuera de lo solicitado + cobertura,
+        // AHORA COMPARTIDA con el flujo CSV (misma lógica y ventanas).
+        window._fuenteWizard = 'API';
+        _detectarVariantesYContinuar();
 
       }).withFailureHandler(err => {
         $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error de conexión API: ' + (err.message || err) + '</div>';
       }).previsualizarStockItsanet(cli, filtros, incluirVariantes);
+    }
+
+    /* ═══ FASE 8.67: post-procesamiento COMPARTIDO (CSV y API) ═══
+       Detecta códigos presentes que NO están en la lista solicitada (variantes
+       de otros meses). Si hay, abre la ventana de decisión; si no, pinta el
+       status (con cobertura) y valida. Usado por extraerDesdeAPI() y parsearCSV(). */
+    function _detectarVariantesYContinuar() {
+      estado.datosYaFiltrados = false;
+      const solicitadosRaw = $('filtroCodigos').value.trim();
+      if (solicitadosRaw) {
+        const incluirVar = $('chkIncluirVariantes').checked;
+        const setSolic = new Set(solicitadosRaw.split(/[\s,;\n\r\t]+/)
+          .map(s => limpiarSku(s).toUpperCase()).filter(Boolean));
+        const raizDe = s => String(s).split('_')[0];
+        const raicesSolic = new Set(Array.from(setSolic).map(raizDe));
+        const solicArr = Array.from(setSolic);
+        const extra = {};   // variantes NO exactamente solicitadas → ventana de decisión
+        // Filtrar los datos a: EXACTO solicitado + (si aplica) sus VARIANTES.
+        // Para CSV esto evita listar TODO el stock del cliente como "extra";
+        // para API los datos ya vienen filtrados (redundante e inocuo).
+        estado.csvData = estado.csvData.filter(r => {
+          const sku = String(r[6] || '').toUpperCase();
+          if (!sku) return false;
+          if (setSolic.has(sku)) return true;   // exacto → siempre entra
+          if (!incluirVar) return false;         // sin variantes → fuera
+          // ¿es variante de un solicitado? comparte raíz, o uno es prefijo del otro
+          let esVar = raicesSolic.has(raizDe(sku));
+          if (!esVar) { for (let c of solicArr) { if (sku.indexOf(c) === 0 || c.indexOf(sku) === 0) { esVar = true; break; } } }
+          if (esVar) {
+            if (!extra[sku]) extra[sku] = { filas: 0, unidades: 0 };
+            extra[sku].filas++; extra[sku].unidades += (parseFloat(r[16]) || 0);
+            return true;   // se mantiene; la ventana decide si se queda
+          }
+          return false;    // no solicitado ni variante → fuera
+        });
+        estado.datosYaFiltrados = true;   // ya está filtrado en el wizard → procesar() no re-filtra
+        if (Object.keys(extra).length > 0) {
+          abrirModalVariantesMes(extra);
+          return; // continúa en aplicarVariantesMes() → _pintarStatusApiYValidar
+        }
+      }
+      _pintarStatusApiYValidar('');
     }
 
     /* ===== FASE 8.56: status + validación (métricas SIEMPRE desde los datos finales) ===== */
@@ -899,7 +930,8 @@
           var cliTxt = $('cliente').value.trim().toUpperCase();
           var mesTxt = (document.getElementById('mesExtraccion') && $('mesExtraccion').value) || '';
           var L = [];
-          L.push('RESUMEN DE EXTRACCIÓN API ITSANET — ' + cliTxt + (mesTxt ? ' · ' + mesTxt : '') + ' · ' + new Date().toLocaleString());
+          var _fuenteLbl = (window._fuenteWizard === 'CSV') ? 'CARGA CSV/TXT' : 'EXTRACCIÓN API ITSANET';
+          L.push('RESUMEN DE ' + _fuenteLbl + ' — ' + cliTxt + (mesTxt ? ' · ' + mesTxt : '') + ' · ' + new Date().toLocaleString());
           L.push('Solicitados: ' + solicUnicos.length + ' | Con datos en stock: ' + conDatosList.length + ' | Sin stock: ' + noEnc.length + ' | Adicionales (variantes/otros meses): ' + adicionales.length);
           L.push('');
           L.push('— CON DATOS EN STOCK (' + conDatosList.length + ') —');
@@ -935,7 +967,7 @@
 
       $('csv-status-box').innerHTML =
         '<div class="csv-status ok">' +
-          '<b>✓ Datos de API ITSANET extraídos</b>' + (notaExtra || '') + '<br>' +
+          '<b>✓ ' + (window._fuenteWizard === 'CSV' ? 'CSV cargado y consolidado' : 'Datos de API ITSANET extraídos') + '</b>' + (notaExtra || '') + '<br>' +
           '<span class="csv-metric"><b>' + filas + '</b> filas obtenidas</span>' +
           '<span class="csv-metric"><b>' + Math.round(unidades).toLocaleString() + '</b> unidades totales</span>' +
           serieHtml +
@@ -1018,7 +1050,7 @@
         '<div style="background:#131c2e;border:1px solid #283352;border-radius:12px;max-width:580px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">' +
           '<div style="padding:12px 16px;border-bottom:1px solid #283352;">' +
             '<div style="font-weight:600;font-size:14px;">🏷 Códigos adicionales encontrados (' + skus.length + ')</div>' +
-            '<div style="font-size:11px;color:var(--muted);margin-top:4px;">La API devolvió códigos que <b>NO están en tu lista solicitada</b>' +
+            '<div style="font-size:11px;color:var(--muted);margin-top:4px;">' + (window._fuenteWizard === 'CSV' ? 'El archivo CSV incluye' : 'La API devolvió') + ' códigos que <b>NO están en tu lista solicitada</b>' +
             (mesSel ? ' del mes de <b>' + mesSel + '</b>' : '') +
             '. Marca los que SÍ deben incluirse en el archivo; los desmarcados se excluyen. ' +
             '<span style="color:#fbbf24;">⚠ = programado para otro mes.</span></div>' +
@@ -1403,17 +1435,12 @@
           '</span>';
       }
 
-      $('csv-status-box').innerHTML =
-        '<div class="csv-status ok">' +
-          '<b>✓ CSV cargado</b><br>' +
-          '<span class="csv-metric"><b>' + estado.csvData.length + '</b> filas consolidadas</span>' +
-          '<span class="csv-metric"><b>' + Math.round(tot).toLocaleString() + '</b> unidades totales</span>' +
-          bloqueSeries +
-          varianteHtml +
-        '</div>';
-
-      // Disparar validación backend
-      validarBackend();
+      // FASE 8.67: PARIDAD — el CSV usa el MISMO post-procesamiento que la API
+      // (detección de variantes de otros meses + cobertura de la solicitud +
+      // tabla copiable para el correo de inicio + validación contra histórico).
+      // Lo único distinto es que aquí los datos vienen del archivo del cliente.
+      window._fuenteWizard = 'CSV';
+      _detectarVariantesYContinuar();
     }
 
     function validarBackend() {
@@ -1731,10 +1758,14 @@
       btn.disabled = true;
       setStatus('Creando archivo…');
 
-      // Aplicar filtro SKUs si está
+      // Aplicar filtro SKUs si está.
+      // FASE 8.67: si el wizard YA filtró (estado.datosYaFiltrados, vía
+      // _detectarVariantesYContinuar tanto para CSV como API), NO re-filtramos
+      // aquí — estado.csvData ya es el conjunto final decidido (incluida la
+      // ventana de variantes). Re-filtrar sobre datos ya podados perdía códigos.
       let datosEnviar = estado.csvData;
       let _resumenFiltro = null;
-      if (estado.fuente === 'CSV') {
+      if (estado.fuente === 'CSV' && !estado.datosYaFiltrados) {
         const filtroRaw = $('filtroCodigos').value.trim();
         if (filtroRaw) {
           const incluirVariantes = $('chkIncluirVariantes').checked;

@@ -1629,6 +1629,17 @@ function asignarArchivoAEvento(filaCronograma, fileId, fileUrl, fileName) {
     cron.getRange(filaCronograma, CRON_CFG.CR_COL_ESTADO).setValue("En Proceso");
   }
 
+  // 4. FASE 8.67: registrar RESPONSABLE (col I) si el evento aún no tiene uno.
+  //    Al VINCULAR el archivo, el usuario que lo vincula queda como responsable.
+  //    Si el evento ya traía responsable (de su creación), se respeta.
+  try {
+    var respEvt = String(cron.getRange(filaCronograma, CRON_CFG.CR_COL_RESP).getValue() || "").trim();
+    if (!respEvt) {
+      var nomVinc = _nombreUsuarioActual();
+      if (nomVinc) cron.getRange(filaCronograma, CRON_CFG.CR_COL_RESP).setValue(String(nomVinc).toUpperCase());
+    }
+  } catch (eResp) {}
+
   return { ok: true, fila: filaCronograma };
 }
 
@@ -1992,7 +2003,11 @@ function obtenerClientesEquipoWizard() {
   } catch (e) {}
   var equipo = [];
   try { equipo = _listarEquipoActivo(); } catch (e) {}
-  return { clientes: Object.keys(clientesSet).sort(), equipo: equipo };
+  // FASE 8.67: nombre CANÓNICO del usuario logeado → el wizard lo usa como
+  // PRIMERA SUGERENCIA (responsable por defecto) en "Nuevo evento".
+  var yo = "";
+  try { yo = _canonNombre(_nombreUsuarioActual()); } catch (e) {}
+  return { clientes: Object.keys(clientesSet).sort(), equipo: equipo, yo: yo };
 }
 
 function obtenerEstadoIntegralDashboard() {
