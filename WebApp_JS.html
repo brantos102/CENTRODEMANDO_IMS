@@ -2006,10 +2006,31 @@ function abrirWizard(skipCheck) {
     verificarTrabajosAntesDeCrear(function(){ abrirWizard(true); });
     return;
   }
-  // FIX FASE 8.2: El wizard se abre como modal overlay DENTRO de la misma pantalla.
-  // No abre pestaña nueva, no redirige al libro. El iframe carga ?vista=wizard
-  // del MISMO origen, lo que evita los problemas de pantalla blanca del sandbox.
-  abrirWizardComoModal();
+  // HOTFIX 8.66.2: el iframe del wizard fallaba ("rechazó la conexión" /
+  // página en blanco) en despliegues de dominio (/a/macros/itsanet.com/), donde
+  // Google bloquea el framing. Solución DEFINITIVA y confiable: abrir el
+  // asistente en una PESTAÑA NUEVA (sin iframe → sin problema de framing).
+  _abrirWizardPestana();
+}
+
+/* HOTFIX 8.66.2: abre el asistente en pestaña nueva usando la URL EXACTA con la
+   que cargó el panel (mismo origen y ruta válida garantizada). */
+function _abrirWizardPestana() {
+  var base = window.location.href.split('?')[0].split('#')[0];
+  // Si la URL canónica del deploy existe y es de script.google.com, preferirla.
+  if (window.__WEBAPP_URL__ && String(window.__WEBAPP_URL__).indexOf('script.google') !== -1) {
+    base = String(window.__WEBAPP_URL__).split('?')[0].split('#')[0];
+  }
+  var url = base + (base.indexOf('?') === -1 ? '?' : '&') + 'vista=wizard';
+  var w = window.open(url, '_blank');
+  if (!w) {
+    // Popups bloqueados → ofrecer enlace manual en un modal.
+    modalCustom('📦 Asistente de Creación', 'Tu navegador bloqueó la ventana emergente. Abre el asistente con este botón:',
+      '<div style="text-align:center;padding:8px 0;"><a href="'+url+'" target="_blank" style="background:var(--accent);color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;display:inline-block;">▶ Abrir Asistente de Creación</a></div>',
+      'Cerrar', cerrarModal);
+    return;
+  }
+  toast('📦 Asistente abierto en una pestaña nueva. Al terminar de crear el archivo, vuelve aquí (el panel se actualiza solo).','info');
 }
 
 function abrirWizardComoModal() {
