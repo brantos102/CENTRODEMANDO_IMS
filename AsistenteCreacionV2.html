@@ -345,7 +345,20 @@
             <div id="mes-sugerencia-info" style="font-size:11px;color:var(--muted);margin-top:4px;"></div>
           </div>
 
-          <div class="field">
+          <!-- FASE 8.70: modo de extracción — por código (SKU) o por posición física -->
+          <div class="field" id="modo-filtro-box">
+            <label>¿Qué vas a contar?</label>
+            <div style="display:flex;gap:6px;">
+              <label class="radio-mini selected" style="flex:1;justify-content:center;">
+                <input type="radio" name="modoFiltro" value="sku" checked onchange="cambiarModoFiltro()"> Por código (SKU)
+              </label>
+              <label class="radio-mini" style="flex:1;justify-content:center;">
+                <input type="radio" name="modoFiltro" value="posicion" onchange="cambiarModoFiltro()"> Por posición
+              </label>
+            </div>
+          </div>
+
+          <div class="field" id="sku-filtro-box">
             <label>Filtrar SKUs (opcional)</label>
             <textarea id="filtroCodigos" rows="2"
               placeholder="Pega los SKUs separados por línea. Vacío = importa el 100%."></textarea>
@@ -353,6 +366,17 @@
               <input type="checkbox" id="chkIncluirVariantes" checked style="margin:0;">
               <span>Incluir <b style="color:var(--text);">variantes con sufijo</b> (ej. <code style="font-family:ui-monospace,monospace;background:#1c2740;padding:1px 4px;border-radius:3px;">_U</code>)</span>
             </label>
+          </div>
+
+          <!-- FASE 8.70: extracción por POSICIÓN — todo el contenido de las ubicaciones -->
+          <div class="field" id="pos-filtro-box" style="display:none;">
+            <label>Posiciones a contar</label>
+            <textarea id="filtroPosiciones" rows="3"
+              placeholder="Una por línea o separadas por coma. Ej:&#10;BM-A-01-2&#10;BM-Z-05-3&#10;MZ-2E-04-5"></textarea>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5;">
+              Se incluirá <b style="color:var(--text);">TODO el contenido</b> (todas las referencias, series y cantidades) de las posiciones indicadas.<br>
+              También sirve un rango parcial: <code style="font-family:ui-monospace,monospace;background:#1c2740;padding:1px 4px;border-radius:3px;">BM-A-01</code> toma toda la columna · <code style="font-family:ui-monospace,monospace;background:#1c2740;padding:1px 4px;border-radius:3px;">BM-A</code> todo el pasillo.
+            </div>
           </div>
 
           <div style="text-align:right; margin-bottom: 8px;">
@@ -565,6 +589,7 @@
       folderId: null, folderName: '',
       csvData: [], csvAplicado: false, csvValidado: null,
       modo: null, filaEvento: null, datosEvento: null,
+      modoFiltro: 'sku',   // FASE 8.70: 'sku' (por código) | 'posicion' (por ubicación física)
       eventos: []
     };
     let cacheDash = null;
@@ -747,7 +772,8 @@
       if (isData) {
         // FASE 8.67: el 'Sugerir códigos del mes' (api-mes-box) ahora vale para
         // AMBAS fuentes — CSV y API usan el mismo cronograma de códigos.
-        $('api-mes-box').style.display = 'block';
+        // FASE 8.70: el mes de códigos es SKU-only → oculto en modo posición.
+        $('api-mes-box').style.display = (estado.modoFiltro === 'posicion') ? 'none' : 'block';
         _poblarMesExtraccion();
         window._fuenteWizard = f;   // 'API' | 'CSV' → etiquetas del status/cobertura
         if (f === 'API') {
@@ -778,6 +804,34 @@
       validar();
     }
 
+    /* ===== FASE 8.70: modo de filtrado — por CÓDIGO (SKU) o por POSICIÓN ===== */
+    function cambiarModoFiltro() {
+      var sel = document.querySelector('input[name="modoFiltro"]:checked');
+      var modo = (sel && sel.value) || 'sku';
+      estado.modoFiltro = modo;
+      document.querySelectorAll('input[name="modoFiltro"]').forEach(function(r){
+        var w = r.closest('.radio-mini'); if (w) w.classList.toggle('selected', r.checked);
+      });
+      var esPos = (modo === 'posicion');
+      var skuBox = document.getElementById('sku-filtro-box');
+      var posBox = document.getElementById('pos-filtro-box');
+      if (skuBox) skuBox.style.display = esPos ? 'none' : 'block';
+      if (posBox) posBox.style.display = esPos ? 'block' : 'none';
+      // El 'mes de conteo' (sugerencia de códigos) es SKU-only.
+      var mb = document.getElementById('api-mes-box');
+      if (mb) mb.style.display = (esPos || !(estado.fuente === 'CSV' || estado.fuente === 'API')) ? 'none' : 'block';
+      // Cambiar de modo invalida los datos ya cargados (el filtro es distinto):
+      // se re-extrae / re-carga para no mezclar un filtrado con el otro.
+      estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
+      estado.datosYaFiltrados = false;
+      window._posCobertura = null; window._codigosNoEncontrados = [];
+      var csb = document.getElementById('csv-status-box'); if (csb) csb.innerHTML = '';
+      var vrb = document.getElementById('val-report-box'); if (vrb) vrb.innerHTML = '';
+      var btnRe = document.getElementById('btn-revalidar'); if (btnRe) btnRe.style.display = 'none';
+      var inpCsv = document.getElementById('csv-upload'); if (inpCsv) inpCsv.value = '';
+      validar();
+    }
+
     /* ===== EXTRACCIÓN API ===== */
     function extraerDesdeAPI() {
       const cli = $('cliente').value.trim();
@@ -785,7 +839,10 @@
         $('csv-status-box').innerHTML = '<div class="csv-status err">⚠ Indica el cliente en el Paso 1 antes de conectar a la API.</div>';
         return;
       }
-      const filtros = $('filtroCodigos').value.trim();
+      // FASE 8.70: en modo POSICIÓN se extrae el stock COMPLETO (sin filtro de
+      // SKU) para poder localizar TODAS las referencias de las posiciones
+      // pedidas; el filtrado por posición se hace luego en _filtrarPorPosicion().
+      const filtros = (estado.modoFiltro === 'posicion') ? '' : $('filtroCodigos').value.trim();
       const incluirVariantes = $('chkIncluirVariantes').checked;
 
       $('csv-status-box').innerHTML = '<div class="csv-status">⏳ Conectando con API ITSANET y extrayendo stock...</div>';
@@ -825,11 +882,118 @@
       }).previsualizarStockItsanet(cli, filtros, incluirVariantes);
     }
 
+    /* ═══════════════════════════════════════════════════════════════════════
+       FASE 8.70: EXTRACCIÓN POR POSICIÓN (ubicación física)
+       ─────────────────────────────────────────────────────────────────────
+       La posición vive en la columna 14 del formato rM (17 col), con el
+       formato NAVE-CALLE-COLUMNA-NIVEL (ej. BM-A-01-2) — idéntico en CSV y API.
+       El match es por PREFIJO DE SEGMENTOS: la posición pedida debe ser igual
+       o prefijo (segmento a segmento) de la del stock. Así:
+         · "BM-A-01-2" → sólo esa ranura exacta.
+         · "BM-A-01"   → toda la columna (BM-A-01-1, BM-A-01-2, …).
+         · "BM-A"      → todo el pasillo (BM-A-*).
+       No hay falsos positivos ("BM-A-1" NO matchea "BM-A-10-2": segmento ≠).
+       Se conserva CADA fila intacta (SKU, serie, lote, cantidad, posición…);
+       sólo se seleccionan por ubicación → cero pérdida/alteración de datos. */
+    function _normPos(p) {
+      // Normaliza a MAYÚSCULAS y separador único '-' (acepta '-', '/', espacios).
+      return String(p == null ? '' : p).toUpperCase().trim()
+        .replace(/[\/\s]+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+    }
+    function _segPos(p) { var n = _normPos(p); return n ? n.split('-') : []; }
+    function _posCoincide(stockPos, pedidoSegs) {
+      var s = _segPos(stockPos);
+      if (!s.length || s.length < pedidoSegs.length) return false;
+      for (var i = 0; i < pedidoSegs.length; i++) {
+        if (s[i] === pedidoSegs[i]) continue;
+        // Segmentos puramente numéricos se comparan por VALOR ("04" == "4"),
+        // pero NUNCA se confunden distintos ("10" ≠ "1"). Evita fallos por
+        // ceros a la izquierda sin introducir coincidencias erróneas.
+        if (/^\d+$/.test(s[i]) && /^\d+$/.test(pedidoSegs[i]) &&
+            parseInt(s[i], 10) === parseInt(pedidoSegs[i], 10)) continue;
+        return false;
+      }
+      return true;
+    }
+    function _filtrarPorPosicion() {
+      estado.datosYaFiltrados = false;
+      var raw = ($('filtroPosiciones') && $('filtroPosiciones').value || '').trim();
+      var pedidos = raw.split(/[\n,;\t\r]+/).map(_normPos).filter(Boolean);
+      var vistos = {}, pedidosU = [];
+      pedidos.forEach(function(p){ if (!vistos[p]) { vistos[p] = true; pedidosU.push(p); } });
+      if (pedidosU.length === 0) {
+        $('csv-status-box').innerHTML = '<div class="csv-status err">⚠ Indica al menos una posición (ej. <b>BM-A-01-2</b>).</div>';
+        estado.csvAplicado = false; estado.csvValidado = null; validar(); return;
+      }
+      // Guardia: si NINGUNA fila trae posición (col 14 vacía en todo el set), el
+      // origen no tiene columna de ubicación → avisar claro (no "sin stock").
+      var hayPos = estado.csvData.some(function(r){ return String(r[14] || '').trim() !== ''; });
+      if (!hayPos) {
+        $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Los datos cargados no tienen columna de <b>POSICIÓN / UBICACIÓN</b>, no se puede filtrar por posición.<br><small>En CSV asegúrate de incluir la columna POSICION/UBICACION; por API la posición viene automática.</small></div>';
+        estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null; validar(); return;
+      }
+      var segsArr = pedidosU.map(_segPos);
+      var encontradas = {}; pedidosU.forEach(function(p){ encontradas[p] = 0; });
+      estado.csvData = estado.csvData.filter(function(r){
+        var sp = String(r[14] || '');
+        if (!sp) return false;
+        for (var i = 0; i < segsArr.length; i++) {
+          if (_posCoincide(sp, segsArr[i])) { encontradas[pedidosU[i]]++; return true; }
+        }
+        return false;
+      });
+      estado.datosYaFiltrados = true;
+      var conStock = pedidosU.filter(function(p){ return encontradas[p] > 0; });
+      var sinStock = pedidosU.filter(function(p){ return encontradas[p] === 0; });
+      window._posCobertura = { pedidas: pedidosU, conStock: conStock, sinStock: sinStock, encontradas: encontradas };
+      window._codigosNoEncontrados = []; // la cobertura SKU no aplica en modo posición
+      if (estado.csvData.length === 0) {
+        var cliTx = $('cliente').value.trim().toUpperCase();
+        $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Ninguna de las ' + pedidosU.length +
+          ' posiciones indicadas tiene stock en <b>' + escapeHtml(cliTx) + '</b>. Revisa el formato (ej. BM-A-01-2).</div>';
+        estado.csvAplicado = false; estado.csvValidado = null; validar(); return;
+      }
+      _pintarStatusApiYValidar('');
+    }
+    /* Tabla de cobertura de POSICIONES para el status (y correo de inicio). */
+    function _covHtmlPosicion() {
+      var cov = window._posCobertura; if (!cov) return '';
+      var cliTxt = $('cliente').value.trim().toUpperCase();
+      // Texto copiable para el correo de inicio.
+      var L = [];
+      L.push('RESUMEN DE EXTRACCIÓN POR POSICIÓN — ' + cliTxt + ' · ' + new Date().toLocaleString());
+      L.push('Posiciones solicitadas: ' + cov.pedidas.length + ' | Con stock: ' + cov.conStock.length + ' | Sin stock/no encontradas: ' + cov.sinStock.length);
+      L.push('');
+      L.push('— CON STOCK (' + cov.conStock.length + ') —');
+      L.push(cov.conStock.map(function(p){ return p + ' (' + cov.encontradas[p] + ' filas)'; }).join(', ') || '(ninguna)');
+      L.push('');
+      L.push('— SIN STOCK / NO ENCONTRADAS (' + cov.sinStock.length + ') —');
+      L.push(cov.sinStock.join(', ') || '(ninguna)');
+      window._covTexto = L.join('\n');
+      var fila = function(lbl, arr, color, conConteo){
+        var txt = arr.length ? arr.map(function(p){ return conConteo ? (p + ' · ' + cov.encontradas[p] + ' filas') : p; }).join(', ') : '—';
+        return '<tr><td style="padding:4px 6px;border-bottom:1px solid #1c2740;white-space:nowrap;color:'+color+';font-weight:600;vertical-align:top;">'+lbl+' ('+arr.length+')</td>' +
+          '<td style="padding:4px 6px;border-bottom:1px solid #1c2740;font-family:ui-monospace,monospace;font-size:9px;word-break:break-all;">'+txt+'</td></tr>';
+      };
+      return '<div class="val-report" style="margin-top:6px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;">' +
+          '<b style="font-size:11px;">📍 Cobertura por posición — ' + cov.pedidas.length + ' solicitadas</b>' +
+          '<button type="button" onclick="copiarCobertura(this)" style="background:#1c2740;color:#e8ecf3;border:1px solid #334155;padding:4px 10px;border-radius:5px;font-size:10px;cursor:pointer;white-space:nowrap;">📋 Copiar tabla (correo de inicio)</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10px;">' +
+          fila('✓ Con stock', cov.conStock, 'var(--ok)', true) +
+          fila('✗ Sin stock / no encontradas', cov.sinStock, 'var(--danger)', false) +
+        '</table></div>' +
+      '</div>';
+    }
+
     /* ═══ FASE 8.67: post-procesamiento COMPARTIDO (CSV y API) ═══
        Detecta códigos presentes que NO están en la lista solicitada (variantes
        de otros meses). Si hay, abre la ventana de decisión; si no, pinta el
        status (con cobertura) y valida. Usado por extraerDesdeAPI() y parsearCSV(). */
     function _detectarVariantesYContinuar() {
+      // FASE 8.70: si el modo es POR POSICIÓN, deriva al filtro por ubicación.
+      if (estado.modoFiltro === 'posicion') { _filtrarPorPosicion(); return; }
       estado.datosYaFiltrados = false;
       const solicitadosRaw = $('filtroCodigos').value.trim();
       if (solicitadosRaw) {
@@ -918,7 +1082,9 @@
       // ════════════════════════════════════════════════════════════════
       var covHtml = '';
       try {
-        var solicRaw2 = $('filtroCodigos').value.trim();
+        // FASE 8.70: en modo posición NO se calcula cobertura por SKU (se
+        // sustituye por la de posiciones más abajo). Forzar rama vacía.
+        var solicRaw2 = (estado.modoFiltro === 'posicion') ? '' : $('filtroCodigos').value.trim();
         if (solicRaw2) {
           var solicArr = solicRaw2.split(/[\s,;\n\r\t]+/).map(function(s){ return limpiarSku(s); }).filter(Boolean);
           var solicUnicos = []; var vistosS = {};
@@ -986,9 +1152,21 @@
         }
       } catch (eCov) { covHtml = ''; }
 
+      // FASE 8.70: en modo POSICIÓN, la cobertura es por ubicación (no por SKU).
+      if (estado.modoFiltro === 'posicion') { try { covHtml = _covHtmlPosicion(); } catch (ePos) { covHtml = ''; } }
+
+      // Encabezado del status según fuente y modo.
+      var _hdrLbl;
+      if (estado.modoFiltro === 'posicion') {
+        var _nPos = (window._posCobertura && window._posCobertura.conStock.length) || 0;
+        _hdrLbl = 'Stock por posición extraído · ' + _nPos + ' posición(es) con contenido';
+      } else {
+        _hdrLbl = (window._fuenteWizard === 'CSV') ? 'CSV cargado y consolidado' : 'Datos de API ITSANET extraídos';
+      }
+
       $('csv-status-box').innerHTML =
         '<div class="csv-status ok">' +
-          '<b>✓ ' + (window._fuenteWizard === 'CSV' ? 'CSV cargado y consolidado' : 'Datos de API ITSANET extraídos') + '</b>' + (notaExtra || '') + '<br>' +
+          '<b>✓ ' + _hdrLbl + '</b>' + (notaExtra || '') + '<br>' +
           '<span class="csv-metric"><b>' + filas + '</b> filas obtenidas</span>' +
           '<span class="csv-metric"><b>' + Math.round(unidades).toLocaleString() + '</b> unidades totales</span>' +
           serieHtml +
@@ -1501,13 +1679,15 @@
       var inp = document.getElementById('csv-upload');
       if (inp) inp.value = '';
       window._codigosNoEncontrados = []; // FASE 8.59: limpiar cobertura previa
+      window._posCobertura = null;       // FASE 8.70: limpiar cobertura de posiciones
       estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
+      estado.datosYaFiltrados = false;
       $('csv-status-box').innerHTML = '';
       $('val-report-box').innerHTML = '';
       var btnRe = document.getElementById('btn-revalidar');
       if (btnRe) btnRe.style.display = 'none';
       validar();
-      setStatus('Archivo limpiado. Selecciona un nuevo CSV.', 'info');
+      setStatus('Datos limpiados. Vuelve a cargar / extraer.', 'info');
     }
 
     /* FIX FASE 8.7: Re-validar el CSV cargado (útil si cambiaste el cliente) */
