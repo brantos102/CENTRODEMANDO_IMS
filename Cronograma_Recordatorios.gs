@@ -4548,8 +4548,13 @@ function procesarCreacionArchivoConValidacion(datos) {
   } else {
     resultadoFinal = procesarCreacionArchivoIntegral(datos);
   }
+  // FASE 8.72: bodega de origen (solo fiable cuando la fuente REAL es la API).
+  var _tieneBodega = (String(datos.fuenteReal || "") === "API") && (String(datos.bodega || "") !== "");
+  var _bodTrace = (String(datos.bodega || "").trim().toUpperCase() === "GYE") ? "GYE" : "UIO";
+  var _bodTraceLbl = (_bodTrace === "GYE") ? "Guayaquil (GYE)" : "Quito (UIO)";
+
   _registrarActividad(_usuarioActual(), "crear_archivo", "",
-    "Cliente: " + datos.clientName + " · Archivo: " + datos.fileName);
+    "Cliente: " + datos.clientName + (_tieneBodega ? " · Bodega: " + _bodTrace : "") + " · Archivo: " + datos.fileName);
 
   // Enriquecer respuesta con datos para modal post-creación
   var fileId = _idDeUrl(resultadoFinal.fileUrl);
@@ -4560,6 +4565,48 @@ function procesarCreacionArchivoConValidacion(datos) {
   resultadoFinal.wmsConfigurado = !!_obtenerWmsUrl();
   // FIX FASE 7.3: Pasar al frontend los SKUs solicitados que no quedaron en CSV
   resultadoFinal.codigosNoEncontrados = datos.codigosNoEncontrados || [];
+
+  // ══════════════════════════════════════════════════════════════════════
+  // FASE 8.72: TRAZABILIDAD DE BODEGA (Quito/Guayaquil) — 100% ADITIVA.
+  // Solo cuando la fuente real es la API (única vía donde se elige la bodega).
+  // Todo best-effort en try/catch: NUNCA bloquea ni altera la creación.
+  //   1) ScriptProperties BODEGA_ARCHIVO_<fileId> → fuente de verdad universal.
+  //   2) NOTA en A1 del archivo → self-documenting, sin cambiar ningún valor.
+  //   3) Cronograma: se ANEXA "Bodega: …" a observaciones (col K), sin sobrescribir.
+  // ══════════════════════════════════════════════════════════════════════
+  if (_tieneBodega) {
+    resultadoFinal.bodega = _bodTrace;
+    resultadoFinal.bodegaLabel = _bodTraceLbl;
+    // 1) Fuente de verdad universal (cubre incluso archivos sin evento).
+    try { if (fileId) PropertiesService.getScriptProperties().setProperty("BODEGA_ARCHIVO_" + fileId, _bodTrace); } catch (eB1) {}
+    // 2) Nota en el archivo (no toca ningún valor de celda).
+    try {
+      if (fileId) {
+        var ssArch = SpreadsheetApp.openById(fileId);
+        var hojaPl = ssArch.getSheetByName("PLANILLA DE CONTEO FISICO") || ssArch.getSheets()[0];
+        if (hojaPl) {
+          hojaPl.getRange(1, 1).setNote(
+            "TRAZABILIDAD ITSANET IMS\nBodega de origen: " + _bodTraceLbl +
+            "\nFuente: API ITSANET" +
+            "\nCreado: " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm"));
+        }
+      }
+    } catch (eB2) {}
+    // 3) Cronograma: anexar la bodega a observaciones de la fila vinculada.
+    try {
+      if (resultadoFinal.vinculo && resultadoFinal.vinculo.fila) {
+        var cronB = _getSS().getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
+        if (cronB) {
+          var celObs = cronB.getRange(resultadoFinal.vinculo.fila, CRON_CFG.CR_COL_OBS);
+          var obsPrev = String(celObs.getValue() || "").trim();
+          if (obsPrev.toUpperCase().indexOf("BODEGA:") === -1) {
+            var tagB = "Bodega: " + _bodTraceLbl;
+            celObs.setValue(obsPrev ? (obsPrev + " · " + tagB) : tagB);
+          }
+        }
+      }
+    } catch (eB3) {}
+  }
 
   // Si pidió crear evento → intentar crear evento en Calendar también
   try {

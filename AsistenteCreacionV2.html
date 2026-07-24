@@ -2128,7 +2128,13 @@
         // Como 'extraerDesdeAPI' ya formatea la matriz a las 17 columnas perfectas,
         // el backend la validará e insertará usando su lógica actual intacta. Cero riesgos.
         dataSource: estado.fuente === 'API' ? 'CSV' : estado.fuente,
-        
+
+        // FASE 8.72: trazabilidad de bodega (solo aplica cuando la fuente REAL es
+        // la API, que es donde se elige Quito/Guayaquil). fuenteReal conserva la
+        // fuente verdadera aunque a dataSource se le mande 'CSV' por el engaño.
+        fuenteReal: estado.fuente,
+        bodega: (estado.fuente === 'API') ? (estado.bodega === 'GYE' ? 'GYE' : 'UIO') : '',
+
         folderId: estado.folderId,
         csvData: datosEnviar,
         codigosNoEncontrados: window._codigosNoEncontrados || [],
@@ -2199,6 +2205,8 @@
     function mostrarModalPostCreacion(res) {
       window.isProcessingFile = false; // FIX FASE 8.54: liberar bandera al terminar
       let resumen = '';
+      // FASE 8.72: confirmar la bodega de origen registrada (trazabilidad).
+      if (res.bodega) resumen += '<div style="color:#60a5fa;font-size:12px;margin-bottom:6px;">🏭 Bodega de origen registrada: <b>' + (res.bodegaLabel || res.bodega) + '</b></div>';
       if (res.vinculo) resumen += '<div style="color:#22c55e;font-size:12px;margin-bottom:6px;">✓ Vinculado al cronograma (' + res.vinculo.tipo + ', fila ' + res.vinculo.fila + ')</div>';
       if (res.vinculoError) resumen += '<div style="color:#fbbf24;font-size:12px;margin-bottom:6px;">⚠ Vinculación al cronograma falló: ' + res.vinculoError + '</div>';
       if (res.calendar && res.calendar.ok) resumen += '<div style="color:#22c55e;font-size:12px;margin-bottom:6px;">✓ Evento agregado a Google Calendar</div>';
