@@ -325,6 +325,19 @@
 
           <div class="field" id="api-upload-box" style="display:none;">
             <label>Conexión ERP (API ITSANET)</label>
+            <!-- FASE 8.71: BODEGA / depósito de origen — decide de qué endpoint se extrae. -->
+            <div style="margin-bottom:8px;">
+              <label style="font-size:11px;color:var(--muted);margin-bottom:4px;display:block;">Bodega / depósito de origen</label>
+              <div style="display:flex;gap:6px;">
+                <label class="radio-mini selected" style="flex:1;justify-content:center;">
+                  <input type="radio" name="bodegaExtrac" value="UIO" checked onchange="cambiarBodega()"> 🏢 Quito (UIO)
+                </label>
+                <label class="radio-mini" style="flex:1;justify-content:center;">
+                  <input type="radio" name="bodegaExtrac" value="GYE" onchange="cambiarBodega()"> 🌴 Guayaquil (GYE)
+                </label>
+              </div>
+              <div id="bodega-hint" style="font-size:10.5px;color:var(--muted);margin-top:4px;"></div>
+            </div>
             <div style="display:flex;gap:6px;align-items:center;">
               <button type="button" onclick="extraerDesdeAPI()" style="flex:1;background:var(--accent);color:#fff;border:none;padding:9px 10px;border-radius:5px;font-size:12px;font-weight:600;display:flex;justify-content:center;align-items:center;gap:8px;cursor:pointer;box-shadow:0 4px 10px rgba(59,130,246,0.3);">
                 ⬇️ Extraer Stock desde API
@@ -590,6 +603,7 @@
       csvData: [], csvAplicado: false, csvValidado: null,
       modo: null, filaEvento: null, datosEvento: null,
       modoFiltro: 'sku',   // FASE 8.70: 'sku' (por código) | 'posicion' (por ubicación física)
+      bodega: 'UIO',       // FASE 8.71: 'UIO' (Quito, actual) | 'GYE' (Guayaquil) — de dónde extrae la API
       eventos: []
     };
     let cacheDash = null;
@@ -780,6 +794,11 @@
           $('csv-upload-box').style.display = 'none';
           $('api-upload-box').style.display = 'flex';
           $('data-zone-title').innerHTML = '<span class="step-num">2</span> Extracción y validación API <small id="csv-cache-status"></small>';
+          // FASE 8.71: refrescar el texto de ayuda de la bodega seleccionada.
+          var bh = document.getElementById('bodega-hint');
+          if (bh) bh.innerHTML = (estado.bodega === 'GYE')
+            ? 'Se extraerá del endpoint de <b>Guayaquil</b>. El cliente debe tener credenciales GYE registradas.'
+            : 'Se extraerá del endpoint de <b>Quito</b> (bodega actual).';
         } else {
           $('csv-upload-box').style.display = 'flex';
           $('api-upload-box').style.display = 'none';
@@ -832,6 +851,28 @@
       validar();
     }
 
+    /* ===== FASE 8.71: bodega de extracción (Quito UIO / Guayaquil GYE) ===== */
+    function cambiarBodega() {
+      var sel = document.querySelector('input[name="bodegaExtrac"]:checked');
+      var b = (sel && sel.value === 'GYE') ? 'GYE' : 'UIO';
+      estado.bodega = b;
+      document.querySelectorAll('input[name="bodegaExtrac"]').forEach(function(r){
+        var w = r.closest('.radio-mini'); if (w) w.classList.toggle('selected', r.checked);
+      });
+      var hint = document.getElementById('bodega-hint');
+      if (hint) hint.innerHTML = (b === 'GYE')
+        ? 'Se extraerá del endpoint de <b>Guayaquil</b>. El cliente debe tener credenciales GYE registradas.'
+        : 'Se extraerá del endpoint de <b>Quito</b> (bodega actual).';
+      // Cambiar de bodega invalida lo ya extraído (es de otro origen).
+      estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
+      estado.datosYaFiltrados = false;
+      window._posCobertura = null; window._codigosNoEncontrados = [];
+      var csb = document.getElementById('csv-status-box'); if (csb) csb.innerHTML = '';
+      var vrb = document.getElementById('val-report-box'); if (vrb) vrb.innerHTML = '';
+      var btnRe = document.getElementById('btn-revalidar'); if (btnRe) btnRe.style.display = 'none';
+      validar();
+    }
+
     /* ===== EXTRACCIÓN API ===== */
     function extraerDesdeAPI() {
       const cli = $('cliente').value.trim();
@@ -844,8 +885,10 @@
       // pedidas; el filtrado por posición se hace luego en _filtrarPorPosicion().
       const filtros = (estado.modoFiltro === 'posicion') ? '' : $('filtroCodigos').value.trim();
       const incluirVariantes = $('chkIncluirVariantes').checked;
+      const bodega = (estado.bodega === 'GYE') ? 'GYE' : 'UIO';   // FASE 8.71
+      const bodegaLbl = (bodega === 'GYE') ? 'Guayaquil (GYE)' : 'Quito (UIO)';
 
-      $('csv-status-box').innerHTML = '<div class="csv-status">⏳ Conectando con API ITSANET y extrayendo stock...</div>';
+      $('csv-status-box').innerHTML = '<div class="csv-status">⏳ Conectando con API ITSANET · <b>' + bodegaLbl + '</b> y extrayendo stock...</div>';
       $('val-report-box').innerHTML = '';
       var btnRe = document.getElementById('btn-revalidar');
       if (btnRe) btnRe.style.display = 'none';
@@ -878,8 +921,8 @@
         _detectarVariantesYContinuar();
 
       }).withFailureHandler(err => {
-        $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error de conexión API: ' + (err.message || err) + '</div>';
-      }).previsualizarStockItsanet(cli, filtros, incluirVariantes);
+        $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error de conexión API (' + bodegaLbl + '): ' + (err.message || err) + '</div>';
+      }).previsualizarStockItsanet(cli, filtros, incluirVariantes, bodega);
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -1160,8 +1203,11 @@
       if (estado.modoFiltro === 'posicion') {
         var _nPos = (window._posCobertura && window._posCobertura.conStock.length) || 0;
         _hdrLbl = 'Stock por posición extraído · ' + _nPos + ' posición(es) con contenido';
+      } else if (window._fuenteWizard === 'CSV') {
+        _hdrLbl = 'CSV cargado y consolidado';
       } else {
-        _hdrLbl = (window._fuenteWizard === 'CSV') ? 'CSV cargado y consolidado' : 'Datos de API ITSANET extraídos';
+        // FASE 8.71: la API indica de qué bodega provienen los datos.
+        _hdrLbl = 'Datos de API ITSANET extraídos · ' + (estado.bodega === 'GYE' ? 'Guayaquil (GYE)' : 'Quito (UIO)');
       }
 
       $('csv-status-box').innerHTML =
@@ -1917,10 +1963,14 @@
       const csvInfo = estado.csvValidado
         ? ' · CSV: ' + estado.csvValidado.reporte.incluidas + ' filas válidas'
         : '';
+      // FASE 8.71: en fuente API se indica de qué bodega se extrajo.
+      const fuenteTxt = (estado.fuente === 'API')
+        ? ('API ITSANET · ' + (estado.bodega === 'GYE' ? 'Guayaquil (GYE)' : 'Quito (UIO)'))
+        : estado.fuente;
       $('resumen').innerHTML =
         '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">CLIENTE:</span> <b>' + estado.cliente.toUpperCase() + '</b></div>' +
         '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">ARCHIVO:</span> ' + estado.fileName + '</div>' +
-        '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">FUENTE:</span> ' + estado.fuente + csvInfo + '</div>' +
+        '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">FUENTE:</span> ' + fuenteTxt + csvInfo + '</div>' +
         '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">CARPETA:</span> ' + estado.folderName + '</div>' +
         '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">' + vinc + '</div>';
     }

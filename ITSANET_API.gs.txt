@@ -8,7 +8,36 @@
  * 4. Funciones de prueba intactas para validación en el editor.
  */
 
-var ITSANET_BASE = "https://ec.itsanet.com/q_apidepot"; // Endpoint QUITO
+var ITSANET_BASE = "https://ec.itsanet.com/q_apidepot"; // Endpoint QUITO (default / compat)
+
+/* ===========================================================================
+   FASE 8.71 — SOPORTE MULTI-BODEGA (Quito UIO + Guayaquil GYE)
+   ---------------------------------------------------------------------------
+   Quito (UIO) es la bodega ACTUAL y sigue intacta: cualquier llamada que NO
+   pase 'bodega' resuelve a UIO → comportamiento byte a byte igual al de hoy.
+   Guayaquil (GYE) se añade como segunda bodega con su propio endpoint,
+   credenciales y token. La selección de bodega solo cambia DE DÓNDE se extrae;
+   el resto del pipeline (validación, filtros SKU/posición, creación) es idéntico.
+   =========================================================================== */
+var ITSANET_ENDPOINTS = {
+  "UIO": "https://ec.itsanet.com/q_apidepot",  // Quito
+  "GYE": "https://ec.itsanet.com/g_apidepot"   // Guayaquil
+};
+function _bodegaNorm(bodega) {
+  var b = String(bodega || "").trim().toUpperCase();
+  return (b === "GYE") ? "GYE" : "UIO";   // ausente/otro → UIO (comportamiento actual)
+}
+function _endpointBodega(bodega) {
+  return ITSANET_ENDPOINTS[_bodegaNorm(bodega)] || ITSANET_BASE;
+}
+function _bodegaLabel(bodega) {
+  return (_bodegaNorm(bodega) === "GYE") ? "Guayaquil (GYE)" : "Quito (UIO)";
+}
+/* Sufijo para llaves de token por bodega: UIO conserva la llave LEGACY (sin
+   sufijo) para no invalidar tokens/credenciales existentes; GYE usa 'GYE_'. */
+function _bodegaTokenPref(bodega) {
+  return (_bodegaNorm(bodega) === "GYE") ? "GYE_" : "";
+}
 
 /**
  * (0) LEGACY — la pestaña ya NO es el almacén oficial (ver FASE 8.57).
@@ -44,79 +73,96 @@ function crearHojaCredencialesAPI() {
    · Lectura con fallback a la pestaña legacy mientras no se migre.
    =========================================================================== */
 
-var CRED_API_PREFIX = "CRED_API_";
+var CRED_API_PREFIX = "CRED_API_";          // UIO (legacy, intacto)
+var CRED_API_PREFIX_GYE = "CREDGYE_API_";   // GYE (FASE 8.71) — prefijo DISTINTO (no colisiona)
 
-function _credKey(cliente) {
-  return CRED_API_PREFIX + String(cliente || "").trim().toUpperCase();
+function _credPrefix(bodega) {
+  return (_bodegaNorm(bodega) === "GYE") ? CRED_API_PREFIX_GYE : CRED_API_PREFIX;
+}
+function _credKey(cliente, bodega) {
+  return _credPrefix(bodega) + String(cliente || "").trim().toUpperCase();
 }
 
 /**
  * Busca las credenciales del cliente: ScriptProperties primero (seguro),
  * pestaña CREDENCIALES_API como fallback legacy si aún existe.
  */
-function _obtenerCredencialesAPI(cliente) {
+function _obtenerCredencialesAPI(cliente, bodega) {
   var cliStr = String(cliente).trim().toUpperCase();
+  var b = _bodegaNorm(bodega);   // FASE 8.71
 
-  // 1) Almacenamiento interno (FASE 8.57)
+  // 1) Almacenamiento interno (FASE 8.57) — por BODEGA (UIO usa la llave legacy)
   try {
-    var raw = PropertiesService.getScriptProperties().getProperty(_credKey(cliStr));
+    var raw = PropertiesService.getScriptProperties().getProperty(_credKey(cliStr, b));
     if (raw) {
       var j = JSON.parse(raw);
       if (j && j.user && j.pass) return { user: String(j.user), pass: String(j.pass) };
     }
   } catch (eP) {}
 
-  // 2) Fallback legacy: pestaña (si aún no se migró)
-  var ss = _ssCronCod();
-  var sh = ss.getSheetByName("CREDENCIALES_API");
-  if (sh) {
-    var data = sh.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim().toUpperCase() === cliStr) {
-        return { user: String(data[i][1]).trim(), pass: String(data[i][2]).trim() };
+  // 2) Fallback legacy: pestaña CREDENCIALES_API — SOLO para UIO (era de Quito).
+  if (b === "UIO") {
+    var ss = _ssCronCod();
+    var sh = ss.getSheetByName("CREDENCIALES_API");
+    if (sh) {
+      var data = sh.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][0]).trim().toUpperCase() === cliStr) {
+          return { user: String(data[i][1]).trim(), pass: String(data[i][2]).trim() };
+        }
       }
     }
   }
-  throw new Error("No hay credenciales API para '" + cliStr +
-    "'. Pídele al Coordinador registrarlas (Panel → 🔐 Credenciales API).");
+  throw new Error("No hay credenciales API para '" + cliStr + "' en " + _bodegaLabel(b) +
+    ". Pídele al Coordinador registrarlas (Panel → 🔐 Credenciales API).");
 }
 
 /** COORDINADOR: crea o REEMPLAZA la credencial de un cliente. */
-function guardarCredencialAPI(cliente, usuario, password) {
+function guardarCredencialAPI(cliente, usuario, password, bodega) {
   _requiereRol(["Coordinador"]);
   var cliN = String(cliente || "").trim().toUpperCase();
+  var b = _bodegaNorm(bodega);   // FASE 8.71
   if (!cliN || !String(usuario || "").trim() || !String(password || "").trim()) {
     throw new Error("Cliente, usuario y contraseña son obligatorios.");
   }
   PropertiesService.getScriptProperties().setProperty(
-    _credKey(cliN),
+    _credKey(cliN, b),
     JSON.stringify({ user: String(usuario).trim(), pass: String(password).trim() })
   );
-  // Invalida el token del día para forzar renovación con la clave nueva
+  // Invalida el token del día de ESA bodega para forzar renovación con la clave nueva
   try {
     var sp = PropertiesService.getScriptProperties();
-    sp.deleteProperty("ITSANET_TOKEN_" + cliN);
-    sp.deleteProperty("FECHA_TOKEN_" + cliN);
+    var pref = _bodegaTokenPref(b);
+    sp.deleteProperty("ITSANET_TOKEN_" + pref + cliN);
+    sp.deleteProperty("FECHA_TOKEN_" + pref + cliN);
   } catch (eT) {}
   try {
     if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
-      _registrarActividad(_usuarioActual(), "guardar_cred_api", "", cliN);
+      _registrarActividad(_usuarioActual(), "guardar_cred_api", "", cliN + " · " + b);
     }
   } catch (eL) {}
-  return { ok: true, cliente: cliN };
+  return { ok: true, cliente: cliN, bodega: b };
 }
 
 /** COORDINADOR: elimina la credencial de un cliente. */
-function eliminarCredencialAPI(cliente) {
+function eliminarCredencialAPI(cliente, bodega) {
   _requiereRol(["Coordinador"]);
   var cliN = String(cliente || "").trim().toUpperCase();
-  PropertiesService.getScriptProperties().deleteProperty(_credKey(cliN));
+  var b = _bodegaNorm(bodega);   // FASE 8.71
+  var sp = PropertiesService.getScriptProperties();
+  sp.deleteProperty(_credKey(cliN, b));
+  // Limpiar también el token cacheado de esa bodega.
+  try {
+    var pref = _bodegaTokenPref(b);
+    sp.deleteProperty("ITSANET_TOKEN_" + pref + cliN);
+    sp.deleteProperty("FECHA_TOKEN_" + pref + cliN);
+  } catch (eT) {}
   try {
     if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
-      _registrarActividad(_usuarioActual(), "eliminar_cred_api", "", cliN);
+      _registrarActividad(_usuarioActual(), "eliminar_cred_api", "", cliN + " · " + b);
     }
   } catch (eL) {}
-  return { ok: true, cliente: cliN };
+  return { ok: true, cliente: cliN, bodega: b };
 }
 
 /** COORDINADOR: lista clientes configurados (SIN devolver claves). */
@@ -125,13 +171,19 @@ function listarClientesAPI() {
   var props = PropertiesService.getScriptProperties().getProperties();
   var out = [];
   for (var k in props) {
-    if (k.indexOf(CRED_API_PREFIX) === 0) {
-      var usuario = "";
-      try { usuario = (JSON.parse(props[k]) || {}).user || ""; } catch (e) {}
-      out.push({ cliente: k.substring(CRED_API_PREFIX.length), usuario: usuario });
-    }
+    var cli = null, bod = null;
+    // GYE primero (su prefijo NO empieza por CRED_API_, así que no colisiona).
+    if (k.indexOf(CRED_API_PREFIX_GYE) === 0) { cli = k.substring(CRED_API_PREFIX_GYE.length); bod = "GYE"; }
+    else if (k.indexOf(CRED_API_PREFIX) === 0) { cli = k.substring(CRED_API_PREFIX.length); bod = "UIO"; }
+    if (cli == null) continue;
+    var usuario = "";
+    try { usuario = (JSON.parse(props[k]) || {}).user || ""; } catch (e) {}
+    out.push({ cliente: cli, usuario: usuario, bodega: bod });
   }
-  out.sort(function(a, b) { return a.cliente < b.cliente ? -1 : 1; });
+  out.sort(function(a, b) {
+    if (a.bodega !== b.bodega) return a.bodega < b.bodega ? -1 : 1;
+    return a.cliente < b.cliente ? -1 : 1;
+  });
   var hojaLegacy = false;
   try { hojaLegacy = !!_ssCronCod().getSheetByName("CREDENCIALES_API"); } catch (e2) {}
   return { clientes: out, hojaLegacyExiste: hojaLegacy };
@@ -170,22 +222,26 @@ function migrarCredencialesAScriptProperties() {
  * Centraliza el control y caché del token.
  * REGLA: un solo token por día POR CLIENTE.
  */
-function obtenerORenovarTokenWMS(cliente) {
-  var creds = _obtenerCredencialesAPI(cliente);
+function obtenerORenovarTokenWMS(cliente, bodega) {
+  var b = _bodegaNorm(bodega);                       // FASE 8.71
+  var creds = _obtenerCredencialesAPI(cliente, b);
+  var endpoint = _endpointBodega(b);
   var sp = PropertiesService.getScriptProperties();
   var hoy = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd");
-  
-  var tokenKey = 'ITSANET_TOKEN_' + cliente;
-  var dateKey = 'FECHA_TOKEN_' + cliente;
-  
+
+  // UIO conserva la llave LEGACY (sin sufijo); GYE usa 'GYE_'.
+  var pref = _bodegaTokenPref(b);
+  var tokenKey = 'ITSANET_TOKEN_' + pref + cliente;
+  var dateKey = 'FECHA_TOKEN_' + pref + cliente;
+
   var tokenGuardado = sp.getProperty(tokenKey);
   var fechaGuardada = sp.getProperty(dateKey);
 
   if (tokenGuardado && fechaGuardada === hoy) {
-    return tokenGuardado; 
+    return tokenGuardado;
   }
 
-  var resToken = UrlFetchApp.fetch(ITSANET_BASE + "/gettoken", {
+  var resToken = UrlFetchApp.fetch(endpoint + "/gettoken", {
     "method": "get",
     "headers": { "userid": creds.user, "password": creds.pass },
     "muteHttpExceptions": true
@@ -200,14 +256,15 @@ function obtenerORenovarTokenWMS(cliente) {
     sp.setProperty(dateKey, hoy);
     return String(nuevoToken).trim();
   } else {
-    throw new Error("Error token " + cliente + ". HTTP " + code + " -> " + body.substring(0, 100));
+    throw new Error("Error token " + cliente + " (" + _bodegaLabel(b) + "). HTTP " + code + " -> " + body.substring(0, 100));
   }
 }
 
-// (2) Consulta el STOCK con el token del cliente.
-function consultarStockItsanet(cliente) {
-  var token = obtenerORenovarTokenWMS(cliente);
-  var res = UrlFetchApp.fetch(ITSANET_BASE + "/getstock", {
+// (2) Consulta el STOCK con el token del cliente (en la bodega indicada).
+function consultarStockItsanet(cliente, bodega) {
+  var b = _bodegaNorm(bodega);                       // FASE 8.71
+  var token = obtenerORenovarTokenWMS(cliente, b);
+  var res = UrlFetchApp.fetch(_endpointBodega(b) + "/getstock", {
     "method": "get",
     "headers": { "token": String(token).trim() },
     "muteHttpExceptions": true
@@ -351,9 +408,10 @@ function _clienteCoincideItsanet(cliFila, cliSel) {
 }
 
 // ORQUESTADOR para el wizard
-function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVariantes) {
-  var r = consultarStockItsanet(clienteSeleccionado);
-  if (r.code !== 200) throw new Error('El servidor reporta HTTP ' + r.code);
+function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVariantes, bodega) {
+  var _bod = _bodegaNorm(bodega);   // FASE 8.71 — default UIO (comportamiento actual)
+  var r = consultarStockItsanet(clienteSeleccionado, _bod);
+  if (r.code !== 200) throw new Error('El servidor de ' + _bodegaLabel(_bod) + ' reporta HTTP ' + r.code);
   
   // FIX CRÍTICO: Manejar respuesta vacía de q_apidepot
   var j = [];
@@ -433,7 +491,7 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
   rep.skusUnicosCount = Object.keys(skusUnicos).length;
   rep.clientesDetalle = Object.keys(clientes).map(function(k){ return {cliente:k, filas:clientes[k]}; }).sort(function(a,b){ return b.filas-a.filas; });
   
-  if (!datosLimpios.length) throw new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de Quito.');
+  if (!datosLimpios.length) throw new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de ' + _bodegaLabel(_bod) + '.');
 
   return { datosLimpios: datosLimpios, reporte: rep };
 }
