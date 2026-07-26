@@ -870,7 +870,22 @@
       var csb = document.getElementById('csv-status-box'); if (csb) csb.innerHTML = '';
       var vrb = document.getElementById('val-report-box'); if (vrb) vrb.innerHTML = '';
       var btnRe = document.getElementById('btn-revalidar'); if (btnRe) btnRe.style.display = 'none';
+      // FASE 8.73: refrescar las SUGERENCIAS de cliente según la sede (bases
+      // independientes: GYE sugiere clientes GYE; UIO los de Quito). El input es
+      // libre, esto solo cambia el datalist de autocompletado — sin bloquear.
+      _cargarSugerenciasCliente(b);
       validar();
+    }
+
+    /* FASE 8.73: pobla el datalist de clientes con los de la SEDE indicada. */
+    function _cargarSugerenciasCliente(bodega) {
+      try {
+        google.script.run.withSuccessHandler(function(lista){
+          var dl = document.getElementById('clientes-lista');
+          if (!dl) return;
+          dl.innerHTML = (lista || []).map(function(c){ return '<option value="' + c + '">'; }).join('');
+        }).withFailureHandler(function(){}).obtenerClientesPorBodega(bodega === 'GYE' ? 'GYE' : 'UIO');
+      } catch (e) {}
     }
 
     /* ===== EXTRACCIÓN API ===== */
@@ -1249,7 +1264,10 @@
       const txtActual = $('filtroCodigos').value.trim();
       if (txtActual && !confirm('La lista de códigos ya tiene contenido.\n¿Reemplazarla con los códigos programados de ' + mes + '?')) return;
 
-      $('mes-sugerencia-info').innerHTML = '⏳ Consultando cronograma de códigos…';
+      // FASE 8.73: el cronograma de códigos es POR SEDE. Sólo se usa GYE cuando
+      // la extracción es por API+Guayaquil; en cualquier otro caso, UIO.
+      const bodegaCod = (estado.fuente === 'API' && estado.bodega === 'GYE') ? 'GYE' : 'UIO';
+      $('mes-sugerencia-info').innerHTML = '⏳ Consultando cronograma de códigos (' + (bodegaCod === 'GYE' ? 'Guayaquil' : 'Quito') + ')…';
       google.script.run.withSuccessHandler(res => {
         if (!res || !res.existe) {
           estado.mesCodigosSugeridos = null;
@@ -1267,7 +1285,7 @@
         validar();
       }).withFailureHandler(err => {
         $('mes-sugerencia-info').innerHTML = '<span style="color:#fca5a5;">❌ ' + (err.message || err) + '</span>';
-      }).obtenerCodigosProgramados(cli, mes);
+      }).obtenerCodigosProgramados(cli, mes, bodegaCod);
     }
 
     /* ===== FASE 8.56: ventana de variantes fuera de la lista solicitada ===== */
@@ -1333,7 +1351,7 @@
         });
       }).withFailureHandler(() => {
         document.querySelectorAll('.var-mes-info').forEach(el => { el.innerHTML = ''; });
-      }).obtenerMesesDeCodigos(cli, skus);
+      }).obtenerMesesDeCodigos(cli, skus, (estado.fuente === 'API' && estado.bodega === 'GYE') ? 'GYE' : 'UIO');  // FASE 8.73
     }
 
     function aplicarVariantesMes() {

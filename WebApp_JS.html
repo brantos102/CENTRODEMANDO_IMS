@@ -2439,32 +2439,46 @@ function _crearEventoFinal(datos) {
     .crearEventoCronograma(datos);
 }
 
-/* ===== FASE 8.56: CRONOGRAMA DE CÓDIGOS POR CLIENTE (solo Coordinador) ===== */
-function abrirCronCodigos() {
-  toast('Cargando resumen…');
+/* ===== FASE 8.56 / 8.73: CRONOGRAMA DE CÓDIGOS POR CLIENTE Y SEDE (Coordinador) =====
+   Cada sede (Quito UIO / Guayaquil GYE) tiene su cronograma INDEPENDIENTE. */
+function abrirCronCodigos(bodega) {
+  var bod = (bodega === 'GYE') ? 'GYE' : 'UIO';
+  var bodLbl = (bod === 'GYE') ? 'Guayaquil (GYE)' : 'Quito (UIO)';
+  var hoja = (bod === 'GYE') ? 'CRONOGRAMA_CODIGOS_GYE' : 'CRONOGRAMA_CODIGOS';
+  toast('Cargando resumen ('+bodLbl+')…');
   google.script.run.withSuccessHandler(function(res){
     var resumen = (res && res.length)
       ? res.map(function(r){ return '<span class="pill pill-muted" style="margin:2px;display:inline-block;">'+escapeHtml(r.cliente)+': '+r.codigos+'</span>'; }).join(' ')
-      : '<span style="color:var(--muted);">Aún no hay clientes cargados.</span>';
-    modalCustom('📅 Cronograma de códigos por cliente',
+      : '<span style="color:var(--muted);">Aún no hay clientes cargados en esta sede.</span>';
+    // Selector de sede: cambiar re-abre el modal para la otra base (bases separadas).
+    var selSede =
+      '<div class="field"><label>Sede / base de datos *</label>' +
+      '<select id="cc-bodega" onchange="cerrarModal(); abrirCronCodigos(this.value);">' +
+        '<option value="UIO"' + (bod==='UIO'?' selected':'') + '>Quito (UIO)</option>' +
+        '<option value="GYE"' + (bod==='GYE'?' selected':'') + '>Guayaquil (GYE)</option>' +
+      '</select></div>';
+    modalCustom('📅 Cronograma de códigos · ' + bodLbl,
       'Pega desde el Excel del cliente las columnas <b>ABC | producto_id | ENERO…DICIEMBRE</b> (con X en los meses programados). ' +
-      '<b>REEMPLAZA</b> por completo el bloque de ese cliente. La hoja CRONOGRAMA_CODIGOS queda protegida: solo se edita desde aquí.',
-      '<div style="margin-bottom:8px;font-size:11px;max-height:70px;overflow-y:auto;"><b>Clientes cargados:</b><br>'+resumen+'</div>'+
+      '<b>REEMPLAZA</b> el bloque de ese cliente <b>en esta sede</b>. La hoja <code>'+hoja+'</code> queda protegida: solo se edita desde aquí. ' +
+      'Quito y Guayaquil son <b>independientes</b> (sin cruces).',
+      selSede +
+      '<div style="margin-bottom:8px;font-size:11px;max-height:64px;overflow-y:auto;"><b>Clientes cargados en '+bodLbl+':</b><br>'+resumen+'</div>'+
       '<div class="field"><label>Cliente *</label><input type="text" id="cc-cliente" placeholder="Ej. DEGSO" style="text-transform:uppercase;"></div>'+
       '<div class="field"><label>Códigos (pegar desde Excel) *</label>'+
-      '<textarea id="cc-datos" rows="8" placeholder="A\t3M1161511MX\tX\t\t\t\tX\t\t\t\tX\t\t\t" style="width:100%;font-family:ui-monospace,monospace;font-size:10px;"></textarea>'+
+      '<textarea id="cc-datos" rows="7" placeholder="A\t3M1161511MX\tX\t\t\t\tX\t\t\t\tX\t\t\t" style="width:100%;font-family:ui-monospace,monospace;font-size:10px;"></textarea>'+
       '<div style="font-size:10px;color:var(--muted);margin-top:3px;">Tip: en el Excel selecciona desde la primera fila de datos (sin encabezados) las columnas ABC + producto_id + los 12 meses, copia y pega aquí.</div></div>',
       'Actualizar cronograma', function(){
         var cli = $('cc-cliente').value.trim(), txt = $('cc-datos').value;
+        var bSel = ($('cc-bodega') && $('cc-bodega').value === 'GYE') ? 'GYE' : 'UIO';
         if (!cli || !txt.trim()) { toast('Cliente y códigos obligatorios','error'); return false; }
-        cerrarModal(); toast('Actualizando cronograma de '+cli.toUpperCase()+'…');
+        cerrarModal(); toast('Actualizando cronograma de '+cli.toUpperCase()+' ('+bSel+')…');
         google.script.run.withSuccessHandler(function(r){
-          toast('✓ '+r.cliente+': '+r.codigos+' códigos cargados (reemplazó '+r.reemplazadas+' anteriores)','success');
+          toast('✓ '+r.cliente+' ('+(r.bodega||bSel)+'): '+r.codigos+' códigos cargados (reemplazó '+r.reemplazadas+' anteriores)','success');
         }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
-        .actualizarCronogramaCodigos(cli, txt);
+        .actualizarCronogramaCodigos(cli, txt, bSel);
       });
   }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
-  .obtenerResumenCronCodigos();
+  .obtenerResumenCronCodigos(bod);
 }
 
 /* ===== FASE 8.65 R10: sincronizar cronograma con Google Calendar ===== */

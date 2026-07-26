@@ -512,16 +512,24 @@ var CRONCOD_HOJA  = "CRONOGRAMA_CODIGOS";
 var CRONCOD_MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
                      "JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
 
+/* FASE 8.73: el cronograma de códigos es INDEPENDIENTE por sede. Quito (UIO)
+   conserva la hoja actual CRONOGRAMA_CODIGOS intacta; Guayaquil (GYE) usa una
+   hoja SEPARADA (CRONOGRAMA_CODIGOS_GYE) → cero cruces de códigos entre bases. */
+function _hojaCronCod(bodega) {
+  return (_bodegaNorm(bodega) === "GYE") ? (CRONCOD_HOJA + "_GYE") : CRONCOD_HOJA;
+}
+
 function _ssCronCod() {
   // _getSS() (del Centro de Mando) si existe; fallback al libro activo.
   return (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
 }
 
-function _asegurarHojaCronCodigos() {
+function _asegurarHojaCronCodigos(bodega) {
   var ss = _ssCronCod();
-  var sh = ss.getSheetByName(CRONCOD_HOJA);
+  var nombreHoja = _hojaCronCod(bodega);   // FASE 8.73
+  var sh = ss.getSheetByName(nombreHoja);
   if (!sh) {
-    sh = ss.insertSheet(CRONCOD_HOJA);
+    sh = ss.insertSheet(nombreHoja);
     var head = ["CLIENTE","CODIGO","ABC"].concat(CRONCOD_MESES);
     sh.getRange(1,1,1,head.length).setValues([head]);
     sh.getRange(1,1,1,head.length).setFontWeight("bold")
@@ -541,10 +549,11 @@ function _asegurarHojaCronCodigos() {
   return sh;
 }
 
-/* Lee las filas del cliente (match flexible: DEGSO ≈ DEGSO2, misma raíz). */
-function _leerCronCodigosCliente(cliente) {
+/* Lee las filas del cliente (match flexible: DEGSO ≈ DEGSO2, misma raíz).
+   FASE 8.73: lee de la hoja de la SEDE indicada (UIO/GYE). */
+function _leerCronCodigosCliente(cliente, bodega) {
   var ss = _ssCronCod();
-  var sh = ss.getSheetByName(CRONCOD_HOJA);
+  var sh = ss.getSheetByName(_hojaCronCod(bodega));
   if (!sh || sh.getLastRow() < 2) return { existe:false, filas:[] };
   var v = sh.getRange(2, 1, sh.getLastRow()-1, 15).getValues();
   var filas = [];
@@ -562,11 +571,12 @@ function _leerCronCodigosCliente(cliente) {
   return { existe: filas.length>0, filas: filas };
 }
 
-/* WIZARD: códigos programados del cliente para un MES (sugerencia editable). */
-function obtenerCodigosProgramados(cliente, mes) {
+/* WIZARD: códigos programados del cliente para un MES (sugerencia editable).
+   FASE 8.73: por SEDE (UIO/GYE) — cada base tiene su propio cronograma. */
+function obtenerCodigosProgramados(cliente, mes, bodega) {
   var mesN = String(mes||"").trim().toUpperCase();
   if (CRONCOD_MESES.indexOf(mesN) === -1) throw new Error("Mes inválido: " + mes);
-  var data = _leerCronCodigosCliente(cliente);
+  var data = _leerCronCodigosCliente(cliente, bodega);
   if (!data.existe) {
     return { existe:false, mes:mesN, codigos:[], total:0, abc:{}, totalCliente:0 };
   }
@@ -584,9 +594,9 @@ function obtenerCodigosProgramados(cliente, mes) {
 
 /* VENTANA DE VARIANTES: meses programados de una lista de SKUs.
    → { "DG100GR": ["JULIO"], ... } (solo los que existen en el cronograma). */
-function obtenerMesesDeCodigos(cliente, listaSkus) {
+function obtenerMesesDeCodigos(cliente, listaSkus, bodega) {
   var out = {};
-  var data = _leerCronCodigosCliente(cliente);
+  var data = _leerCronCodigosCliente(cliente, bodega);
   if (!data.existe) return out;
   var idx = {};
   data.filas.forEach(function(f){ idx[f.codigo] = f; });
@@ -600,8 +610,9 @@ function obtenerMesesDeCodigos(cliente, listaSkus) {
 /* COORDINADOR: REEMPLAZA el bloque completo del cliente con lo pegado desde
    su Excel (columnas ABC | producto_id | ENERO…DICIEMBRE con X; también
    acepta sin la columna ABC). Acepta TSV (pegado directo), ';' o ','. */
-function actualizarCronogramaCodigos(cliente, textoPegado) {
+function actualizarCronogramaCodigos(cliente, textoPegado, bodega) {
   _requiereRol(["Coordinador"]);
+  var _bodCC = _bodegaNorm(bodega);   // FASE 8.73
   var cliN = String(cliente||"").trim().toUpperCase();
   if (!cliN) throw new Error("Indica el cliente.");
   if (!textoPegado || !String(textoPegado).trim()) {
@@ -635,7 +646,7 @@ function actualizarCronogramaCodigos(cliente, textoPegado) {
   if (!nuevas.length) throw new Error("No se reconoció ningún código en el texto pegado. " +
     "Copia desde el Excel las columnas ABC + producto_id + los 12 meses.");
 
-  var sh = _asegurarHojaCronCodigos();
+  var sh = _asegurarHojaCronCodigos(_bodCC);
   var last = sh.getLastRow(), borradas = 0;
   if (last >= 2) {
     // Releer todo, quitar el bloque del cliente (match EXACTO del registrado) y reescribir.
@@ -657,7 +668,7 @@ function actualizarCronogramaCodigos(cliente, textoPegado) {
   try {
     if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
       _registrarActividad(_usuarioActual(), "actualizar_cron_codigos", "",
-        cliN + ": " + nuevas.length + " códigos (reemplazó " + borradas + ")");
+        cliN + " (" + _bodCC + "): " + nuevas.length + " códigos (reemplazó " + borradas + ")");
     }
   } catch (eL) {}
 
@@ -665,13 +676,13 @@ function actualizarCronogramaCodigos(cliente, textoPegado) {
   CRONCOD_MESES.forEach(function(mn, mi){
     porMes[mn] = nuevas.filter(function(f){ return f[3+mi] === "X"; }).length;
   });
-  return { ok:true, cliente:cliN, codigos:nuevas.length, reemplazadas:borradas, porMes:porMes };
+  return { ok:true, cliente:cliN, bodega:_bodCC, codigos:nuevas.length, reemplazadas:borradas, porMes:porMes };
 }
 
-/* PANEL: resumen de clientes cargados en el cronograma de códigos. */
-function obtenerResumenCronCodigos() {
+/* PANEL: resumen de clientes cargados en el cronograma de códigos (por SEDE). */
+function obtenerResumenCronCodigos(bodega) {
   var ss = _ssCronCod();
-  var sh = ss.getSheetByName(CRONCOD_HOJA);
+  var sh = ss.getSheetByName(_hojaCronCod(bodega));   // FASE 8.73
   var out = [];
   if (!sh || sh.getLastRow() < 2) return out;
   var v = sh.getRange(2, 1, sh.getLastRow()-1, 2).getValues();
@@ -683,4 +694,51 @@ function obtenerResumenCronCodigos() {
   for (var k in cnt) out.push({ cliente:k, codigos:cnt[k] });
   out.sort(function(a,b){ return a.cliente < b.cliente ? -1 : 1; });
   return out;
+}
+
+/* ===========================================================================
+   FASE 8.73 — CLIENTES SUGERIDOS POR SEDE (para el asistente)
+   ---------------------------------------------------------------------------
+   Devuelve SOLO nombres de cliente (sin claves ni datos sensibles) de la sede
+   indicada, para que el asistente sugiera los clientes correctos según la base:
+     · GYE: clientes con credencial GYE + clientes del cronograma de códigos GYE.
+     · UIO: clientes con credencial UIO + cronograma UIO + histórico del maestro
+            (PANEL/CRONOGRAMA) — así la sede actual mantiene sus sugerencias ricas.
+   No lleva _requiereRol: son solo nombres (ya visibles en el sistema); lo usa
+   cualquier creador de inventario. Evita cruces entre bases en la sugerencia.
+   =========================================================================== */
+function obtenerClientesPorBodega(bodega) {
+  var b = _bodegaNorm(bodega);
+  var set = {};
+  // 1) Clientes con credencial de ESA sede.
+  try {
+    var props = PropertiesService.getScriptProperties().getProperties();
+    for (var k in props) {
+      if (b === "GYE") {
+        if (k.indexOf(CRED_API_PREFIX_GYE) === 0) set[k.substring(CRED_API_PREFIX_GYE.length)] = true;
+      } else {
+        // UIO: prefijo legacy, excluyendo los de GYE (que no empiezan por CRED_API_).
+        if (k.indexOf(CRED_API_PREFIX_GYE) !== 0 && k.indexOf(CRED_API_PREFIX) === 0) {
+          set[k.substring(CRED_API_PREFIX.length)] = true;
+        }
+      }
+    }
+  } catch (e1) {}
+  // 2) Clientes del cronograma de códigos de esa sede.
+  try {
+    var sh = _ssCronCod().getSheetByName(_hojaCronCod(b));
+    if (sh && sh.getLastRow() >= 2) {
+      sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function(r){
+        var c = String(r[0] || "").trim().toUpperCase(); if (c) set[c] = true;
+      });
+    }
+  } catch (e2) {}
+  // 3) SOLO UIO: sumar el histórico del maestro (no perder sugerencias actuales).
+  if (b === "UIO") {
+    try {
+      var rw = (typeof obtenerClientesEquipoWizard === "function") ? obtenerClientesEquipoWizard() : null;
+      if (rw && rw.clientes) rw.clientes.forEach(function(c){ if (c) set[String(c).toUpperCase()] = true; });
+    } catch (e3) {}
+  }
+  return Object.keys(set).sort();
 }
