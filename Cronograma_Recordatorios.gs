@@ -1836,6 +1836,15 @@ function procesarCreacionArchivo(datos) {
       if (_nomCr) sheet.getRange(newRow, 9).setValue(_nomCr);
     } catch (eResp) {}
 
+    // FASE 8.74: SECCIÓN POR SEDE — col F (BD) del PANEL. Marca la base de datos
+    // de origen: GYE si se extrajo de Guayaquil por API; UIO en cualquier otro
+    // caso (Quito por API, CSV o en blanco = base actual). Aditivo, best-effort.
+    try {
+      var _bdSede = (String(datos.fuenteReal || "") === "API" &&
+                     String(datos.bodega || "").trim().toUpperCase() === "GYE") ? "GYE" : "UIO";
+      sheet.getRange(newRow, CRON_CFG.PA_COL_BD).setValue(_bdSede);
+    } catch (eBd) {}
+
     return {
       folderName: folder.getName(),
       fileUrl: newFile.getUrl()
@@ -1913,6 +1922,13 @@ function _procesarCreacionArchivoInline(datos) {
       var _nomCr = (_uCr && _uCr.nombre) ? String(_uCr.nombre).toUpperCase() : (_emailCr || "");
       if (_nomCr) sheet.getRange(newRow, 9).setValue(_nomCr);
     } catch (eResp) {}
+
+    // FASE 8.74: sección por sede — col F (BD) del PANEL (igual que la función principal).
+    try {
+      var _bdSede = (String(datos.fuenteReal || "") === "API" &&
+                     String(datos.bodega || "").trim().toUpperCase() === "GYE") ? "GYE" : "UIO";
+      sheet.getRange(newRow, CRON_CFG.PA_COL_BD).setValue(_bdSede);
+    } catch (eBd) {}
 
     return {
       folderName: folder.getName(),
@@ -2372,7 +2388,8 @@ function obtenerEstadoIntegralDashboard() {
         avance: r[CRON_CFG.PA_COL_AVANCE - 1],
         responsable: r[CRON_CFG.PA_COL_RESP - 1],
         unidades: parseFloat(r[CRON_CFG.PA_COL_UNID - 1]) || 0,
-        efectividad: parseFloat(r[CRON_CFG.PA_COL_EFEC_U - 1]) || 0
+        efectividad: parseFloat(r[CRON_CFG.PA_COL_EFEC_U - 1]) || 0,
+        bd: String(r[CRON_CFG.PA_COL_BD - 1] || "").trim().toUpperCase()   // FASE 8.74: sede (UIO/GYE)
       };
     });
   }
@@ -8572,6 +8589,68 @@ function crearSubcarpeta(parentId, name) {
   var parent = DriveApp.getFolderById(parentId);
   var newFolder = parent.createFolder(name);
   return { id: newFolder.getId(), name: newFolder.getName() };
+}
+
+/* ==========================================================================
+   FASE 8.74 — BORRAR CARPETAS (con advertencia si tienen contenido)
+   --------------------------------------------------------------------------
+   · Las carpetas RAÍZ configuradas (CONFIG.ROOT_FOLDER_IDS) están PROTEGIDAS.
+   · inspeccionarCarpeta: cuenta archivos y subcarpetas y devuelve sus nombres
+     para que el asistente advierta ANTES de borrar.
+   · eliminarCarpeta: si NO está vacía exige confirmado=true; mueve a la
+     Papelera de Drive (recuperable ~30 días — más seguro que borrado
+     permanente). Gate: Admin/Coordinador/Líder (mismos que crean archivos).
+   ========================================================================== */
+function _esCarpetaRaizConfig(folderId) {
+  try {
+    var ids = (typeof CONFIG !== "undefined" && CONFIG && CONFIG.ROOT_FOLDER_IDS) ? CONFIG.ROOT_FOLDER_IDS : [];
+    return ids.indexOf(String(folderId)) !== -1;
+  } catch (e) { return false; }
+}
+
+function inspeccionarCarpeta(folderId) {
+  _requiereRol(["Coordinador", "Líder de Conteo"]);   // Admin pasa por comodín
+  if (!folderId || folderId === "VIRTUAL_ROOT") throw new Error("Selecciona una carpeta válida.");
+  if (_esCarpetaRaizConfig(folderId)) {
+    throw new Error("Es una carpeta RAÍZ del sistema — no se puede borrar (protegida).");
+  }
+  var folder = DriveApp.getFolderById(folderId);
+  var archivos = [], nArch = 0;
+  var itF = folder.getFiles();
+  while (itF.hasNext()) { var f = itF.next(); nArch++; if (archivos.length < 60) archivos.push(f.getName()); }
+  var subs = [], nSub = 0;
+  var itS = folder.getFolders();
+  while (itS.hasNext()) { var s = itS.next(); nSub++; if (subs.length < 60) subs.push(s.getName()); }
+  return {
+    id: folderId, name: folder.getName(),
+    numArchivos: nArch, archivos: archivos,
+    numSubcarpetas: nSub, subcarpetas: subs,
+    vacia: (nArch === 0 && nSub === 0)
+  };
+}
+
+function eliminarCarpeta(folderId, confirmado) {
+  _requiereRol(["Coordinador", "Líder de Conteo"]);   // Admin pasa por comodín
+  if (!folderId || folderId === "VIRTUAL_ROOT") throw new Error("Selecciona una carpeta válida.");
+  if (_esCarpetaRaizConfig(folderId)) {
+    throw new Error("Es una carpeta RAÍZ del sistema — no se puede borrar (protegida).");
+  }
+  var folder = DriveApp.getFolderById(folderId);
+  // Recontar en el servidor (defensa: no confiar solo en el frontend).
+  var nArch = 0; var itF = folder.getFiles(); while (itF.hasNext()) { itF.next(); nArch++; }
+  var nSub = 0;  var itS = folder.getFolders(); while (itS.hasNext()) { itS.next(); nSub++; }
+  var vacia = (nArch === 0 && nSub === 0);
+  if (!vacia && !confirmado) {
+    throw new Error("CARPETA_CON_ARCHIVOS||La carpeta tiene " + nArch + " archivo(s) y " +
+      nSub + " subcarpeta(s). Confirma para moverla a la papelera.");
+  }
+  var nombre = folder.getName();
+  folder.setTrashed(true);   // Papelera (recuperable) — no borrado permanente.
+  try {
+    _registrarActividad(_usuarioActual(), "borrar_carpeta", "",
+      nombre + " (" + nArch + " arch, " + nSub + " subc) → papelera");
+  } catch (eL) {}
+  return { ok: true, name: nombre, movidaAPapelera: true, numArchivos: nArch, numSubcarpetas: nSub };
 }
 
 function ejecutarCreacionArchivo(folderId) {

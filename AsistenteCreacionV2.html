@@ -1422,7 +1422,12 @@
       const item = document.createElement('div');
       item.className = 'folder-item';
       item.dataset.id = id;
-      item.innerHTML = '<span class="arrow">▶</span><span>📁</span><span>' + name + '</span>';
+      // FASE 8.74: botón de borrar carpeta (no en la raíz virtual ni en las raíces).
+      const delHtml = (!isRoot && id !== 'VIRTUAL_ROOT')
+        ? '<span class="fold-del" title="Borrar esta carpeta" style="margin-left:auto;padding:0 4px;cursor:pointer;opacity:.45;font-size:12px;">🗑</span>'
+        : '';
+      item.innerHTML = '<span class="arrow">▶</span><span>📁</span>' +
+        '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + name + '</span>' + delHtml;
       item.onclick = (e) => {
         e.stopPropagation();
         document.querySelectorAll('.folder-item.selected').forEach(x => x.classList.remove('selected'));
@@ -1454,12 +1459,90 @@
           }
         }
       };
+      // FASE 8.74: el 🗑 borra la carpeta (sin disparar el select/expand del nodo).
+      const delEl = item.querySelector('.fold-del');
+      if (delEl) {
+        delEl.onmouseenter = function(){ delEl.style.opacity = '1'; };
+        delEl.onmouseleave = function(){ delEl.style.opacity = '.45'; };
+        delEl.onclick = function(e){ e.stopPropagation(); borrarCarpeta(id, name); };
+      }
       wrap.appendChild(item);
       const sub = document.createElement('div');
       sub.className = 'sub-list';
       wrap.appendChild(sub);
       parent.appendChild(wrap);
       if (isRoot) item.click();
+    }
+
+    /* ===== FASE 8.74: BORRAR CARPETA (con advertencia si tiene archivos) ===== */
+    function borrarCarpeta(folderId, folderName) {
+      setStatus('Revisando "' + folderName + '"…', 'info');
+      google.script.run.withSuccessHandler(function(info){
+        setStatus('');
+        if (info.vacia) {
+          // Carpeta vacía → solo confirmación, sin advertencia.
+          if (confirm('¿Borrar la carpeta VACÍA "' + info.name + '"?\nSe moverá a la Papelera de Drive.')) {
+            window._pendBorrarCarpeta = { id: info.id, name: info.name };
+            _ejecutarBorradoCarpeta();
+          }
+        } else {
+          // Carpeta con contenido → advertencia con conteo y nombres.
+          _modalBorrarCarpeta(info);
+        }
+      }).withFailureHandler(function(e){
+        setStatus('❌ ' + (e.message || e), 'err');
+        alert('No se puede borrar: ' + (e.message || e));
+      }).inspeccionarCarpeta(folderId);
+    }
+
+    function _modalBorrarCarpeta(info) {
+      var prev = document.getElementById('modal-borrar-carpeta'); if (prev) prev.remove();
+      var filas = (info.archivos || []).map(function(n){
+        return '<div style="padding:2px 0;border-bottom:1px solid #131c2e;">📄 ' + escapeHtml(n) + '</div>';
+      }).join('');
+      var masA = (info.numArchivos > (info.archivos || []).length)
+        ? '<div style="color:var(--muted);padding-top:4px;">… y ' + (info.numArchivos - info.archivos.length) + ' archivo(s) más</div>' : '';
+      var subTxt = (info.numSubcarpetas > 0)
+        ? '<div style="margin-top:6px;color:#fbbf24;font-size:11px;">⚠ Incluye <b>' + info.numSubcarpetas + '</b> subcarpeta(s): ' + escapeHtml((info.subcarpetas || []).slice(0, 20).join(', ')) + '</div>' : '';
+      window._pendBorrarCarpeta = { id: info.id, name: info.name };
+      var ov = document.createElement('div');
+      ov.id = 'modal-borrar-carpeta';
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      ov.innerHTML =
+        '<div style="background:#131c2e;border:1px solid #7f1d1d;border-radius:12px;max-width:520px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">' +
+          '<div style="padding:14px 16px;border-bottom:1px solid #283352;">' +
+            '<div style="font-weight:700;font-size:15px;color:#fca5a5;">🗑 Borrar carpeta “' + escapeHtml(info.name) + '”</div>' +
+            '<div style="font-size:12px;color:var(--muted);margin-top:5px;">Esta carpeta <b style="color:#f59e0b;">NO está vacía</b>: contiene <b>' + info.numArchivos + ' archivo(s)</b>. Si continúas, la carpeta y todo su contenido se moverán a la <b>Papelera de Drive</b> (recuperable ~30 días).</div>' +
+            subTxt +
+          '</div>' +
+          '<div style="padding:8px 16px;overflow-y:auto;flex:1;font-size:11px;font-family:ui-monospace,monospace;">' + filas + masA + '</div>' +
+          '<div style="padding:12px 16px;border-top:1px solid #283352;display:flex;justify-content:flex-end;gap:8px;">' +
+            '<button type="button" onclick="document.getElementById(\'modal-borrar-carpeta\').remove(); window._pendBorrarCarpeta=null;" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:8px 16px;border-radius:6px;font-size:12px;cursor:pointer;">Cancelar</button>' +
+            '<button type="button" onclick="document.getElementById(\'modal-borrar-carpeta\').remove(); _ejecutarBorradoCarpeta();" style="background:#dc2626;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">🗑 Borrar carpeta y ' + info.numArchivos + ' archivo(s)</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(ov);
+    }
+
+    function _ejecutarBorradoCarpeta() {
+      var p = window._pendBorrarCarpeta; if (!p) return;
+      window._pendBorrarCarpeta = null;
+      setStatus('Borrando “' + p.name + '”…', 'info');
+      google.script.run.withSuccessHandler(function(res){
+        setStatus('✓ Carpeta “' + p.name + '” movida a la papelera' + (res && res.numArchivos ? ' (' + res.numArchivos + ' archivo[s])' : '') + '.', 'ok');
+        // Quitar el nodo del árbol.
+        var node = document.querySelector('.folder-item[data-id="' + p.id + '"]');
+        if (node && node.parentElement) node.parentElement.remove();
+        // Si era la carpeta seleccionada, limpiar la selección/destino.
+        if (estado.folderId === p.id) {
+          estado.folderId = null; estado.folderName = '';
+          var fi = document.getElementById('folder-info'); if (fi) fi.innerText = '';
+          validar();
+        }
+      }).withFailureHandler(function(e){
+        setStatus('❌ ' + (e.message || e), 'err');
+        alert('Error al borrar la carpeta: ' + (e.message || e));
+      }).eliminarCarpeta(p.id, true);
     }
 
     function crearCarpeta() {

@@ -862,8 +862,12 @@ function pintarPan() {
     // FASE 8.60: columna AVANCE (carga operativa del archivo, en vivo vía batch)
     var avIni = (av.indexOf('entregado') !== -1) ? '<b style="color:#22c55e;">100%</b>'
               : (d.fileId ? '<span style="color:var(--muted);">…</span>' : '—');
+    // FASE 8.74: badge de SEDE (base de datos de origen) — secciona GYE vs Quito.
+    var bdBadge = '';
+    if (d.bd === 'GYE') bdBadge = '<span title="Base Guayaquil" style="font-size:8px;font-weight:700;color:#34d399;background:rgba(16,185,129,.16);border:1px solid rgba(16,185,129,.4);padding:0 4px;border-radius:5px;margin-left:5px;vertical-align:middle;">GYE</span>';
+    else if (d.bd === 'UIO') bdBadge = '<span title="Base Quito" style="font-size:8px;font-weight:700;color:#60a5fa;background:rgba(59,130,246,.16);border:1px solid rgba(59,130,246,.4);padding:0 4px;border-radius:5px;margin-left:5px;vertical-align:middle;">UIO</span>';
     return '<div class="rw" style="grid-template-columns:1.3fr 1.1fr 60px 52px 86px 88px 52px;gap:6px;">'+
-      '<div><div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente)+'</div></div>'+
+      '<div><div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente)+bdBadge+'</div></div>'+
       '<div style="font-size:11px;color:#60a5fa;overflow:hidden;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+resp+'</div>'+apPan+'</div>'+
       '<div>'+fmtNum(d.unidades)+'</div>'+
       '<div style="color:'+efColor+';font-weight:500;">'+ef+'</div>'+
