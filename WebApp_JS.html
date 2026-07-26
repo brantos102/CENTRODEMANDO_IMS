@@ -2517,13 +2517,22 @@ function abrirCredencialesAPI() {
           var bodBadge = (bod === 'GYE')
             ? '<span style="font-size:10px;font-weight:700;color:#34d399;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.4);padding:1px 6px;border-radius:6px;">GYE</span>'
             : '<span style="font-size:10px;font-weight:700;color:#60a5fa;background:rgba(59,130,246,.14);border:1px solid rgba(59,130,246,.4);padding:1px 6px;border-radius:6px;">UIO</span>';
+          // FASE 8.76: de dónde viene la credencial (interno seguro / pestaña legacy).
+          var srcTag = (c.fuente === 'legacy')
+            ? '<span title="Está en la pestaña CREDENCIALES_API (recomendado migrar)" style="font-size:9px;color:#fbbf24;">📄 pestaña</span>'
+            : '<span title="Almacenamiento interno del script (seguro)" style="font-size:9px;color:#22c55e;">🔒 interno</span>';
           return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;">' +
             bodBadge +
-            '<b style="min-width:96px;">' + escapeHtml(c.cliente) + '</b>' +
+            '<b style="min-width:90px;">' + escapeHtml(c.cliente) + '</b>' +
             '<span style="flex:1;color:var(--muted);">usuario: ' + escapeHtml(c.usuario || '—') + ' · clave: ••••••</span>' +
+            srcTag +
             '<button class="mini-btn" title="Eliminar credencial" onclick="eliminarCredAPI(\'' + escapeHtml(c.cliente) + '\',\'' + bod + '\')">🗑</button></div>';
         }).join('')
-      : '<div style="color:var(--muted);font-size:12px;">Sin credenciales registradas todavía.</div>';
+      : '<div style="color:var(--muted);font-size:12px;">Sin credenciales registradas todavía en ninguna sede.</div>';
+    // FASE 8.76: resumen de conteo por almacenamiento (transparencia del estado real).
+    var _nI = res.nInterno || 0, _nL = res.nLegacy || 0;
+    var conteo = '<div style="font-size:10.5px;color:var(--muted);margin-bottom:6px;">' +
+      'Registradas: <b>' + (_nI + _nL) + '</b> · 🔒 interno: <b>' + _nI + '</b> · 📄 pestaña legacy: <b>' + _nL + '</b></div>';
     var legacy = res.hojaLegacyExiste
       ? '<div style="background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.3);color:#fde047;padding:7px;border-radius:5px;font-size:11px;margin:8px 0;">' +
         '⚠ Aún existe la pestaña CREDENCIALES_API con claves a la vista de los editores. ' +
@@ -2532,7 +2541,7 @@ function abrirCredencialesAPI() {
     modalCustom('🔐 Credenciales API ITSANET',
       'Las claves se guardan en el almacenamiento interno del script — <b>invisibles en el libro</b> para cualquier usuario. ' +
       'Cada credencial es <b>por bodega</b> (Quito/Guayaquil). Guardar con el mismo cliente y bodega <b>REEMPLAZA</b> su credencial.',
-      '<div style="max-height:140px;overflow-y:auto;margin-bottom:8px;">' + filas + '</div>' + legacy +
+      conteo + '<div style="max-height:140px;overflow-y:auto;margin-bottom:8px;">' + filas + '</div>' + legacy +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
         '<div class="field"><label>Cliente *</label><input type="text" id="ca-cliente" placeholder="Ej. BELIA" style="text-transform:uppercase;"></div>' +
         '<div class="field"><label>Bodega *</label><select id="ca-bodega"><option value="UIO">Quito (UIO)</option><option value="GYE">Guayaquil (GYE)</option></select></div>' +

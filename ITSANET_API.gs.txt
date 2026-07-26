@@ -157,6 +157,22 @@ function eliminarCredencialAPI(cliente, bodega) {
     sp.deleteProperty("ITSANET_TOKEN_" + pref + cliN);
     sp.deleteProperty("FECHA_TOKEN_" + pref + cliN);
   } catch (eT) {}
+  // FASE 8.76: si la credencial estaba en la pestaña LEGACY (solo UIO), quitar
+  // esa fila también — así el botón "eliminar" funciona venga de donde venga.
+  if (b === "UIO") {
+    try {
+      var shL = _ssCronCod().getSheetByName("CREDENCIALES_API");
+      if (shL && shL.getLastRow() >= 2) {
+        var lastL = shL.getLastRow(), lastC = shL.getLastColumn();
+        var valsL = shL.getRange(2, 1, lastL - 1, lastC).getValues();
+        var restan = valsL.filter(function(r){ return String(r[0] || "").trim().toUpperCase() !== cliN; });
+        if (restan.length !== valsL.length) {   // hubo match
+          shL.getRange(2, 1, lastL - 1, lastC).clearContent();
+          if (restan.length) shL.getRange(2, 1, restan.length, lastC).setValues(restan);
+        }
+      }
+    } catch (eShL) {}
+  }
   try {
     if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
       _registrarActividad(_usuarioActual(), "eliminar_cred_api", "", cliN + " · " + b);
@@ -170,6 +186,9 @@ function listarClientesAPI() {
   _requiereRol(["Coordinador"]);
   var props = PropertiesService.getScriptProperties().getProperties();
   var out = [];
+  var vistos = {};   // "BODEGA|CLIENTE" ya listado (evita duplicar)
+  var nInterno = 0, nLegacy = 0;
+  // 1) Almacenamiento interno (ScriptProperties): UIO (prefijo legacy) + GYE.
   for (var k in props) {
     var cli = null, bod = null;
     // GYE primero (su prefijo NO empieza por CRED_API_, así que no colisiona).
@@ -178,15 +197,33 @@ function listarClientesAPI() {
     if (cli == null) continue;
     var usuario = "";
     try { usuario = (JSON.parse(props[k]) || {}).user || ""; } catch (e) {}
-    out.push({ cliente: cli, usuario: usuario, bodega: bod });
+    out.push({ cliente: cli, usuario: usuario, bodega: bod, fuente: "interno" });
+    vistos[bod + "|" + cli] = true; nInterno++;
   }
+  // 2) FASE 8.76 (FIX): pestaña LEGACY CREDENCIALES_API (siempre Quito/UIO).
+  //    ANTES el panel SÓLO leía ScriptProperties → si las credenciales de Quito
+  //    estaban en la pestaña, el panel aparecía VACÍO aunque la extracción SÍ
+  //    funcionaba (usa esa pestaña como fallback). Ahora también se muestran.
+  try {
+    var shL = _ssCronCod().getSheetByName("CREDENCIALES_API");
+    if (shL && shL.getLastRow() >= 2) {
+      var dataL = shL.getRange(2, 1, shL.getLastRow() - 1, 2).getValues();
+      for (var i = 0; i < dataL.length; i++) {
+        var cL = String(dataL[i][0] || "").trim().toUpperCase();
+        if (!cL || cL === "EJEMPLO") continue;
+        if (vistos["UIO|" + cL]) continue;   // ya está en el interno
+        out.push({ cliente: cL, usuario: String(dataL[i][1] || "").trim(), bodega: "UIO", fuente: "legacy" });
+        vistos["UIO|" + cL] = true; nLegacy++;
+      }
+    }
+  } catch (eL) {}
   out.sort(function(a, b) {
     if (a.bodega !== b.bodega) return a.bodega < b.bodega ? -1 : 1;
     return a.cliente < b.cliente ? -1 : 1;
   });
   var hojaLegacy = false;
   try { hojaLegacy = !!_ssCronCod().getSheetByName("CREDENCIALES_API"); } catch (e2) {}
-  return { clientes: out, hojaLegacyExiste: hojaLegacy };
+  return { clientes: out, hojaLegacyExiste: hojaLegacy, nInterno: nInterno, nLegacy: nLegacy };
 }
 
 /** COORDINADOR: migra la pestaña legacy a Properties y LA ELIMINA. */
