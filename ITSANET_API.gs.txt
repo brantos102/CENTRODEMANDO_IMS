@@ -8,36 +8,7 @@
  * 4. Funciones de prueba intactas para validación en el editor.
  */
 
-var ITSANET_BASE = "https://ec.itsanet.com/q_apidepot"; // Endpoint QUITO (default / compat)
-
-/* ===========================================================================
-   FASE 8.71 — SOPORTE MULTI-BODEGA (Quito UIO + Guayaquil GYE)
-   ---------------------------------------------------------------------------
-   Quito (UIO) es la bodega ACTUAL y sigue intacta: cualquier llamada que NO
-   pase 'bodega' resuelve a UIO → comportamiento byte a byte igual al de hoy.
-   Guayaquil (GYE) se añade como segunda bodega con su propio endpoint,
-   credenciales y token. La selección de bodega solo cambia DE DÓNDE se extrae;
-   el resto del pipeline (validación, filtros SKU/posición, creación) es idéntico.
-   =========================================================================== */
-var ITSANET_ENDPOINTS = {
-  "UIO": "https://ec.itsanet.com/q_apidepot",  // Quito
-  "GYE": "https://ec.itsanet.com/g_apidepot"   // Guayaquil
-};
-function _bodegaNorm(bodega) {
-  var b = String(bodega || "").trim().toUpperCase();
-  return (b === "GYE") ? "GYE" : "UIO";   // ausente/otro → UIO (comportamiento actual)
-}
-function _endpointBodega(bodega) {
-  return ITSANET_ENDPOINTS[_bodegaNorm(bodega)] || ITSANET_BASE;
-}
-function _bodegaLabel(bodega) {
-  return (_bodegaNorm(bodega) === "GYE") ? "Guayaquil (GYE)" : "Quito (UIO)";
-}
-/* Sufijo para llaves de token por bodega: UIO conserva la llave LEGACY (sin
-   sufijo) para no invalidar tokens/credenciales existentes; GYE usa 'GYE_'. */
-function _bodegaTokenPref(bodega) {
-  return (_bodegaNorm(bodega) === "GYE") ? "GYE_" : "";
-}
+var ITSANET_BASE = "https://ec.itsanet.com/q_apidepot"; // Endpoint QUITO
 
 /**
  * (0) LEGACY — la pestaña ya NO es el almacén oficial (ver FASE 8.57).
@@ -73,29 +44,19 @@ function crearHojaCredencialesAPI() {
    · Lectura con fallback a la pestaña legacy mientras no se migre.
    =========================================================================== */
 
-var CRED_API_PREFIX = "CRED_API_";          // UIO (ORIGINAL — intacto)
-var CRED_API_PREFIX_GYE = "CREDGYE_API_";   // GYE (FASE 8.77) — prefijo SEPARADO
+var CRED_API_PREFIX = "CRED_API_";
 
-// FASE 8.77: la llave de UIO vuelve a ser EXACTAMENTE la original (una sola
-// forma, sin bodega) → la ruta de Quito es byte a byte igual al estable.
-// GYE tiene su propia llave, aislada.
 function _credKey(cliente) {
   return CRED_API_PREFIX + String(cliente || "").trim().toUpperCase();
-}
-function _credKeyGYE(cliente) {
-  return CRED_API_PREFIX_GYE + String(cliente || "").trim().toUpperCase();
 }
 
 /**
  * Busca las credenciales del cliente: ScriptProperties primero (seguro),
  * pestaña CREDENCIALES_API como fallback legacy si aún existe.
  */
-function _obtenerCredencialesAPI(cliente, bodega) {
-  // FASE 8.77: GYE va por una rama SEPARADA. UIO/ausente ejecuta el CÓDIGO
-  // ORIGINAL EXACTO (idéntico al estable) — imposible que Quito regrese.
-  if (_bodegaNorm(bodega) === "GYE") return _obtenerCredencialesGYE(cliente);
-
+function _obtenerCredencialesAPI(cliente) {
   var cliStr = String(cliente).trim().toUpperCase();
+
   // 1) Almacenamiento interno (FASE 8.57)
   try {
     var raw = PropertiesService.getScriptProperties().getProperty(_credKey(cliStr));
@@ -104,7 +65,8 @@ function _obtenerCredencialesAPI(cliente, bodega) {
       if (j && j.user && j.pass) return { user: String(j.user), pass: String(j.pass) };
     }
   } catch (eP) {}
-  // 2) Fallback legacy: pestaña CREDENCIALES_API (si aún no se migró)
+
+  // 2) Fallback legacy: pestaña (si aún no se migró)
   var ss = _ssCronCod();
   var sh = ss.getSheetByName("CREDENCIALES_API");
   if (sh) {
@@ -119,84 +81,42 @@ function _obtenerCredencialesAPI(cliente, bodega) {
     "'. Pídele al Coordinador registrarlas (Panel → 🔐 Credenciales API).");
 }
 
-// FASE 8.77: GYE — credenciales SOLO del almacén interno (llave separada). Sin
-// pestaña legacy (esa era exclusiva de Quito).
-function _obtenerCredencialesGYE(cliente) {
-  var cliStr = String(cliente).trim().toUpperCase();
-  try {
-    var raw = PropertiesService.getScriptProperties().getProperty(_credKeyGYE(cliStr));
-    if (raw) {
-      var j = JSON.parse(raw);
-      if (j && j.user && j.pass) return { user: String(j.user), pass: String(j.pass) };
-    }
-  } catch (eP) {}
-  throw new Error("No hay credenciales API para '" + cliStr + "' en Guayaquil (GYE). " +
-    "Pídele al Coordinador registrarlas (Panel → 🔐 Credenciales API, bodega Guayaquil).");
-}
-
 /** COORDINADOR: crea o REEMPLAZA la credencial de un cliente. */
-function guardarCredencialAPI(cliente, usuario, password, bodega) {
+function guardarCredencialAPI(cliente, usuario, password) {
   _requiereRol(["Coordinador"]);
   var cliN = String(cliente || "").trim().toUpperCase();
-  var b = _bodegaNorm(bodega);   // FASE 8.77
   if (!cliN || !String(usuario || "").trim() || !String(password || "").trim()) {
     throw new Error("Cliente, usuario y contraseña son obligatorios.");
   }
-  // UIO usa la llave ORIGINAL; GYE la suya propia.
   PropertiesService.getScriptProperties().setProperty(
-    (b === "GYE") ? _credKeyGYE(cliN) : _credKey(cliN),
+    _credKey(cliN),
     JSON.stringify({ user: String(usuario).trim(), pass: String(password).trim() })
   );
-  // Invalida el token del día de ESA bodega para forzar renovación con la clave nueva
+  // Invalida el token del día para forzar renovación con la clave nueva
   try {
     var sp = PropertiesService.getScriptProperties();
-    var pref = _bodegaTokenPref(b);
-    sp.deleteProperty("ITSANET_TOKEN_" + pref + cliN);
-    sp.deleteProperty("FECHA_TOKEN_" + pref + cliN);
+    sp.deleteProperty("ITSANET_TOKEN_" + cliN);
+    sp.deleteProperty("FECHA_TOKEN_" + cliN);
   } catch (eT) {}
   try {
     if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
-      _registrarActividad(_usuarioActual(), "guardar_cred_api", "", cliN + " · " + b);
+      _registrarActividad(_usuarioActual(), "guardar_cred_api", "", cliN);
     }
   } catch (eL) {}
-  return { ok: true, cliente: cliN, bodega: b };
+  return { ok: true, cliente: cliN };
 }
 
 /** COORDINADOR: elimina la credencial de un cliente. */
-function eliminarCredencialAPI(cliente, bodega) {
+function eliminarCredencialAPI(cliente) {
   _requiereRol(["Coordinador"]);
   var cliN = String(cliente || "").trim().toUpperCase();
-  var b = _bodegaNorm(bodega);   // FASE 8.77
-  var sp = PropertiesService.getScriptProperties();
-  sp.deleteProperty((b === "GYE") ? _credKeyGYE(cliN) : _credKey(cliN));
-  // Limpiar también el token cacheado de esa bodega.
-  try {
-    var pref = _bodegaTokenPref(b);
-    sp.deleteProperty("ITSANET_TOKEN_" + pref + cliN);
-    sp.deleteProperty("FECHA_TOKEN_" + pref + cliN);
-  } catch (eT) {}
-  // FASE 8.76: si la credencial estaba en la pestaña LEGACY (solo UIO), quitar
-  // esa fila también — así el botón "eliminar" funciona venga de donde venga.
-  if (b === "UIO") {
-    try {
-      var shL = _ssCronCod().getSheetByName("CREDENCIALES_API");
-      if (shL && shL.getLastRow() >= 2) {
-        var lastL = shL.getLastRow(), lastC = shL.getLastColumn();
-        var valsL = shL.getRange(2, 1, lastL - 1, lastC).getValues();
-        var restan = valsL.filter(function(r){ return String(r[0] || "").trim().toUpperCase() !== cliN; });
-        if (restan.length !== valsL.length) {   // hubo match
-          shL.getRange(2, 1, lastL - 1, lastC).clearContent();
-          if (restan.length) shL.getRange(2, 1, restan.length, lastC).setValues(restan);
-        }
-      }
-    } catch (eShL) {}
-  }
+  PropertiesService.getScriptProperties().deleteProperty(_credKey(cliN));
   try {
     if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
-      _registrarActividad(_usuarioActual(), "eliminar_cred_api", "", cliN + " · " + b);
+      _registrarActividad(_usuarioActual(), "eliminar_cred_api", "", cliN);
     }
   } catch (eL) {}
-  return { ok: true, cliente: cliN, bodega: b };
+  return { ok: true, cliente: cliN };
 }
 
 /** COORDINADOR: lista clientes configurados (SIN devolver claves). */
@@ -204,76 +124,17 @@ function listarClientesAPI() {
   _requiereRol(["Coordinador"]);
   var props = PropertiesService.getScriptProperties().getProperties();
   var out = [];
-  var vistos = {};   // "BODEGA|CLIENTE" ya listado (evita duplicar)
-  var nInterno = 0, nLegacy = 0;
-  // 1) Almacenamiento interno (ScriptProperties): UIO (prefijo legacy) + GYE.
   for (var k in props) {
-    var cli = null, bod = null;
-    // GYE primero (su prefijo NO empieza por CRED_API_, así que no colisiona).
-    if (k.indexOf(CRED_API_PREFIX_GYE) === 0) { cli = k.substring(CRED_API_PREFIX_GYE.length); bod = "GYE"; }
-    else if (k.indexOf(CRED_API_PREFIX) === 0) { cli = k.substring(CRED_API_PREFIX.length); bod = "UIO"; }
-    if (cli == null) continue;
-    var usuario = "";
-    try { usuario = (JSON.parse(props[k]) || {}).user || ""; } catch (e) {}
-    out.push({ cliente: cli, usuario: usuario, bodega: bod, fuente: "interno" });
-    vistos[bod + "|" + cli] = true; nInterno++;
-  }
-  // 2) FASE 8.76 (FIX): pestaña LEGACY CREDENCIALES_API (siempre Quito/UIO).
-  //    ANTES el panel SÓLO leía ScriptProperties → si las credenciales de Quito
-  //    estaban en la pestaña, el panel aparecía VACÍO aunque la extracción SÍ
-  //    funcionaba (usa esa pestaña como fallback). Ahora también se muestran.
-  try {
-    var shL = _ssCronCod().getSheetByName("CREDENCIALES_API");
-    if (shL && shL.getLastRow() >= 2) {
-      var dataL = shL.getRange(2, 1, shL.getLastRow() - 1, 2).getValues();
-      for (var i = 0; i < dataL.length; i++) {
-        var cL = String(dataL[i][0] || "").trim().toUpperCase();
-        if (!cL || cL === "EJEMPLO") continue;
-        if (vistos["UIO|" + cL]) continue;   // ya está en el interno
-        out.push({ cliente: cL, usuario: String(dataL[i][1] || "").trim(), bodega: "UIO", fuente: "legacy" });
-        vistos["UIO|" + cL] = true; nLegacy++;
-      }
+    if (k.indexOf(CRED_API_PREFIX) === 0) {
+      var usuario = "";
+      try { usuario = (JSON.parse(props[k]) || {}).user || ""; } catch (e) {}
+      out.push({ cliente: k.substring(CRED_API_PREFIX.length), usuario: usuario });
     }
-  } catch (eL) {}
-  out.sort(function(a, b) {
-    if (a.bodega !== b.bodega) return a.bodega < b.bodega ? -1 : 1;
-    return a.cliente < b.cliente ? -1 : 1;
-  });
+  }
+  out.sort(function(a, b) { return a.cliente < b.cliente ? -1 : 1; });
   var hojaLegacy = false;
   try { hojaLegacy = !!_ssCronCod().getSheetByName("CREDENCIALES_API"); } catch (e2) {}
-  return { clientes: out, hojaLegacyExiste: hojaLegacy, nInterno: nInterno, nLegacy: nLegacy };
-}
-
-/* ===========================================================================
-   FASE 8.77 — DIAGNÓSTICO DEFINITIVO DE CREDENCIALES
-   ---------------------------------------------------------------------------
-   Ejecútala DESDE EL EDITOR de Apps Script (menú ▶ Ejecutar → DIAGNOSTICO_credenciales)
-   y mira "Ver → Registro de ejecución". Muestra EXACTAMENTE qué credenciales
-   existen en ESTE proyecto — sin claves, solo nombres. Así sabemos en 10 seg si
-   el problema es de código o de que las credenciales no están en este proyecto.
-   No depende del despliegue web (lee directo el almacén del script).
-   =========================================================================== */
-function DIAGNOSTICO_credenciales() {
-  var props = PropertiesService.getScriptProperties().getProperties();
-  var uio = [], gye = [];
-  for (var k in props) {
-    if (k.indexOf(CRED_API_PREFIX_GYE) === 0) gye.push(k.substring(CRED_API_PREFIX_GYE.length));
-    else if (k.indexOf(CRED_API_PREFIX) === 0) uio.push(k.substring(CRED_API_PREFIX.length));
-  }
-  var sh = null; try { sh = _ssCronCod().getSheetByName("CREDENCIALES_API"); } catch (e) {}
-  var legacy = [];
-  if (sh && sh.getLastRow() >= 2) {
-    sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function(r){
-      var c = String(r[0] || "").trim().toUpperCase(); if (c && c !== "EJEMPLO") legacy.push(c);
-    });
-  }
-  var msg = "═══ DIAGNÓSTICO CREDENCIALES (este proyecto) ═══\n" +
-    "QUITO/UIO (interno CRED_API_): " + uio.length + (uio.length ? " → " + uio.sort().join(", ") : "") + "\n" +
-    "GUAYAQUIL/GYE (interno CREDGYE_API_): " + gye.length + (gye.length ? " → " + gye.sort().join(", ") : "") + "\n" +
-    "Pestaña legacy CREDENCIALES_API: " + (sh ? (legacy.length + (legacy.length ? " → " + legacy.sort().join(", ") : "")) : "(no existe)") + "\n" +
-    "Total propiedades del script: " + Object.keys(props).length;
-  try { Logger.log(msg); } catch (e) {}
-  return msg;
+  return { clientes: out, hojaLegacyExiste: hojaLegacy };
 }
 
 /** COORDINADOR: migra la pestaña legacy a Properties y LA ELIMINA. */
@@ -309,22 +170,19 @@ function migrarCredencialesAScriptProperties() {
  * Centraliza el control y caché del token.
  * REGLA: un solo token por día POR CLIENTE.
  */
-function obtenerORenovarTokenWMS(cliente, bodega) {
-  // FASE 8.77: GYE por rama separada; UIO/ausente = CÓDIGO ORIGINAL EXACTO.
-  if (_bodegaNorm(bodega) === "GYE") return _tokenWMS_GYE(cliente);
-
+function obtenerORenovarTokenWMS(cliente) {
   var creds = _obtenerCredencialesAPI(cliente);
   var sp = PropertiesService.getScriptProperties();
   var hoy = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd");
-
+  
   var tokenKey = 'ITSANET_TOKEN_' + cliente;
   var dateKey = 'FECHA_TOKEN_' + cliente;
-
+  
   var tokenGuardado = sp.getProperty(tokenKey);
   var fechaGuardada = sp.getProperty(dateKey);
 
   if (tokenGuardado && fechaGuardada === hoy) {
-    return tokenGuardado;
+    return tokenGuardado; 
   }
 
   var resToken = UrlFetchApp.fetch(ITSANET_BASE + "/gettoken", {
@@ -346,44 +204,10 @@ function obtenerORenovarTokenWMS(cliente, bodega) {
   }
 }
 
-// FASE 8.77: token de GUAYAQUIL (endpoint g_apidepot, credenciales GYE, caché
-// separado 'ITSANET_TOKEN_GYE_<cli>'). Aislado del de Quito.
-function _tokenWMS_GYE(cliente) {
-  var creds = _obtenerCredencialesGYE(cliente);
-  var sp = PropertiesService.getScriptProperties();
-  var hoy = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd");
-  var tokenKey = 'ITSANET_TOKEN_GYE_' + cliente;
-  var dateKey = 'FECHA_TOKEN_GYE_' + cliente;
-  var tokenGuardado = sp.getProperty(tokenKey);
-  var fechaGuardada = sp.getProperty(dateKey);
-  if (tokenGuardado && fechaGuardada === hoy) {
-    return tokenGuardado;
-  }
-  var resToken = UrlFetchApp.fetch(ITSANET_ENDPOINTS.GYE + "/gettoken", {
-    "method": "get",
-    "headers": { "userid": creds.user, "password": creds.pass },
-    "muteHttpExceptions": true
-  });
-  var code = resToken.getResponseCode();
-  var body = resToken.getContentText();
-  var json = {}; try { json = JSON.parse(body); } catch (e) {}
-  var nuevoToken = json.token || json.Token || json.Result || json.result;
-  if (nuevoToken) {
-    sp.setProperty(tokenKey, String(nuevoToken).trim());
-    sp.setProperty(dateKey, hoy);
-    return String(nuevoToken).trim();
-  } else {
-    throw new Error("Error token " + cliente + " (Guayaquil GYE). HTTP " + code + " -> " + body.substring(0, 100));
-  }
-}
-
-// (2) Consulta el STOCK con el token del cliente. UIO usa ITSANET_BASE (original);
-// GYE usa el endpoint g_apidepot. FASE 8.77.
-function consultarStockItsanet(cliente, bodega) {
-  var esGYE = (_bodegaNorm(bodega) === "GYE");
-  var token = obtenerORenovarTokenWMS(cliente, esGYE ? "GYE" : "UIO");
-  var endpoint = esGYE ? ITSANET_ENDPOINTS.GYE : ITSANET_BASE;
-  var res = UrlFetchApp.fetch(endpoint + "/getstock", {
+// (2) Consulta el STOCK con el token del cliente.
+function consultarStockItsanet(cliente) {
+  var token = obtenerORenovarTokenWMS(cliente);
+  var res = UrlFetchApp.fetch(ITSANET_BASE + "/getstock", {
     "method": "get",
     "headers": { "token": String(token).trim() },
     "muteHttpExceptions": true
@@ -527,10 +351,9 @@ function _clienteCoincideItsanet(cliFila, cliSel) {
 }
 
 // ORQUESTADOR para el wizard
-function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVariantes, bodega) {
-  var _bod = _bodegaNorm(bodega);   // FASE 8.71 — default UIO (comportamiento actual)
-  var r = consultarStockItsanet(clienteSeleccionado, _bod);
-  if (r.code !== 200) throw new Error('El servidor de ' + _bodegaLabel(_bod) + ' reporta HTTP ' + r.code);
+function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVariantes) {
+  var r = consultarStockItsanet(clienteSeleccionado);
+  if (r.code !== 200) throw new Error('El servidor reporta HTTP ' + r.code);
   
   // FIX CRÍTICO: Manejar respuesta vacía de q_apidepot
   var j = [];
@@ -610,7 +433,7 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
   rep.skusUnicosCount = Object.keys(skusUnicos).length;
   rep.clientesDetalle = Object.keys(clientes).map(function(k){ return {cliente:k, filas:clientes[k]}; }).sort(function(a,b){ return b.filas-a.filas; });
   
-  if (!datosLimpios.length) throw new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de ' + _bodegaLabel(_bod) + '.');
+  if (!datosLimpios.length) throw new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de Quito.');
 
   return { datosLimpios: datosLimpios, reporte: rep };
 }
@@ -631,24 +454,16 @@ var CRONCOD_HOJA  = "CRONOGRAMA_CODIGOS";
 var CRONCOD_MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
                      "JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
 
-/* FASE 8.73: el cronograma de códigos es INDEPENDIENTE por sede. Quito (UIO)
-   conserva la hoja actual CRONOGRAMA_CODIGOS intacta; Guayaquil (GYE) usa una
-   hoja SEPARADA (CRONOGRAMA_CODIGOS_GYE) → cero cruces de códigos entre bases. */
-function _hojaCronCod(bodega) {
-  return (_bodegaNorm(bodega) === "GYE") ? (CRONCOD_HOJA + "_GYE") : CRONCOD_HOJA;
-}
-
 function _ssCronCod() {
   // _getSS() (del Centro de Mando) si existe; fallback al libro activo.
   return (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
 }
 
-function _asegurarHojaCronCodigos(bodega) {
+function _asegurarHojaCronCodigos() {
   var ss = _ssCronCod();
-  var nombreHoja = _hojaCronCod(bodega);   // FASE 8.73
-  var sh = ss.getSheetByName(nombreHoja);
+  var sh = ss.getSheetByName(CRONCOD_HOJA);
   if (!sh) {
-    sh = ss.insertSheet(nombreHoja);
+    sh = ss.insertSheet(CRONCOD_HOJA);
     var head = ["CLIENTE","CODIGO","ABC"].concat(CRONCOD_MESES);
     sh.getRange(1,1,1,head.length).setValues([head]);
     sh.getRange(1,1,1,head.length).setFontWeight("bold")
@@ -668,11 +483,10 @@ function _asegurarHojaCronCodigos(bodega) {
   return sh;
 }
 
-/* Lee las filas del cliente (match flexible: DEGSO ≈ DEGSO2, misma raíz).
-   FASE 8.73: lee de la hoja de la SEDE indicada (UIO/GYE). */
-function _leerCronCodigosCliente(cliente, bodega) {
+/* Lee las filas del cliente (match flexible: DEGSO ≈ DEGSO2, misma raíz). */
+function _leerCronCodigosCliente(cliente) {
   var ss = _ssCronCod();
-  var sh = ss.getSheetByName(_hojaCronCod(bodega));
+  var sh = ss.getSheetByName(CRONCOD_HOJA);
   if (!sh || sh.getLastRow() < 2) return { existe:false, filas:[] };
   var v = sh.getRange(2, 1, sh.getLastRow()-1, 15).getValues();
   var filas = [];
@@ -690,12 +504,11 @@ function _leerCronCodigosCliente(cliente, bodega) {
   return { existe: filas.length>0, filas: filas };
 }
 
-/* WIZARD: códigos programados del cliente para un MES (sugerencia editable).
-   FASE 8.73: por SEDE (UIO/GYE) — cada base tiene su propio cronograma. */
-function obtenerCodigosProgramados(cliente, mes, bodega) {
+/* WIZARD: códigos programados del cliente para un MES (sugerencia editable). */
+function obtenerCodigosProgramados(cliente, mes) {
   var mesN = String(mes||"").trim().toUpperCase();
   if (CRONCOD_MESES.indexOf(mesN) === -1) throw new Error("Mes inválido: " + mes);
-  var data = _leerCronCodigosCliente(cliente, bodega);
+  var data = _leerCronCodigosCliente(cliente);
   if (!data.existe) {
     return { existe:false, mes:mesN, codigos:[], total:0, abc:{}, totalCliente:0 };
   }
@@ -713,9 +526,9 @@ function obtenerCodigosProgramados(cliente, mes, bodega) {
 
 /* VENTANA DE VARIANTES: meses programados de una lista de SKUs.
    → { "DG100GR": ["JULIO"], ... } (solo los que existen en el cronograma). */
-function obtenerMesesDeCodigos(cliente, listaSkus, bodega) {
+function obtenerMesesDeCodigos(cliente, listaSkus) {
   var out = {};
-  var data = _leerCronCodigosCliente(cliente, bodega);
+  var data = _leerCronCodigosCliente(cliente);
   if (!data.existe) return out;
   var idx = {};
   data.filas.forEach(function(f){ idx[f.codigo] = f; });
@@ -729,9 +542,8 @@ function obtenerMesesDeCodigos(cliente, listaSkus, bodega) {
 /* COORDINADOR: REEMPLAZA el bloque completo del cliente con lo pegado desde
    su Excel (columnas ABC | producto_id | ENERO…DICIEMBRE con X; también
    acepta sin la columna ABC). Acepta TSV (pegado directo), ';' o ','. */
-function actualizarCronogramaCodigos(cliente, textoPegado, bodega) {
+function actualizarCronogramaCodigos(cliente, textoPegado) {
   _requiereRol(["Coordinador"]);
-  var _bodCC = _bodegaNorm(bodega);   // FASE 8.73
   var cliN = String(cliente||"").trim().toUpperCase();
   if (!cliN) throw new Error("Indica el cliente.");
   if (!textoPegado || !String(textoPegado).trim()) {
@@ -765,7 +577,7 @@ function actualizarCronogramaCodigos(cliente, textoPegado, bodega) {
   if (!nuevas.length) throw new Error("No se reconoció ningún código en el texto pegado. " +
     "Copia desde el Excel las columnas ABC + producto_id + los 12 meses.");
 
-  var sh = _asegurarHojaCronCodigos(_bodCC);
+  var sh = _asegurarHojaCronCodigos();
   var last = sh.getLastRow(), borradas = 0;
   if (last >= 2) {
     // Releer todo, quitar el bloque del cliente (match EXACTO del registrado) y reescribir.
@@ -787,7 +599,7 @@ function actualizarCronogramaCodigos(cliente, textoPegado, bodega) {
   try {
     if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
       _registrarActividad(_usuarioActual(), "actualizar_cron_codigos", "",
-        cliN + " (" + _bodCC + "): " + nuevas.length + " códigos (reemplazó " + borradas + ")");
+        cliN + ": " + nuevas.length + " códigos (reemplazó " + borradas + ")");
     }
   } catch (eL) {}
 
@@ -795,13 +607,13 @@ function actualizarCronogramaCodigos(cliente, textoPegado, bodega) {
   CRONCOD_MESES.forEach(function(mn, mi){
     porMes[mn] = nuevas.filter(function(f){ return f[3+mi] === "X"; }).length;
   });
-  return { ok:true, cliente:cliN, bodega:_bodCC, codigos:nuevas.length, reemplazadas:borradas, porMes:porMes };
+  return { ok:true, cliente:cliN, codigos:nuevas.length, reemplazadas:borradas, porMes:porMes };
 }
 
-/* PANEL: resumen de clientes cargados en el cronograma de códigos (por SEDE). */
-function obtenerResumenCronCodigos(bodega) {
+/* PANEL: resumen de clientes cargados en el cronograma de códigos. */
+function obtenerResumenCronCodigos() {
   var ss = _ssCronCod();
-  var sh = ss.getSheetByName(_hojaCronCod(bodega));   // FASE 8.73
+  var sh = ss.getSheetByName(CRONCOD_HOJA);
   var out = [];
   if (!sh || sh.getLastRow() < 2) return out;
   var v = sh.getRange(2, 1, sh.getLastRow()-1, 2).getValues();
@@ -813,51 +625,4 @@ function obtenerResumenCronCodigos(bodega) {
   for (var k in cnt) out.push({ cliente:k, codigos:cnt[k] });
   out.sort(function(a,b){ return a.cliente < b.cliente ? -1 : 1; });
   return out;
-}
-
-/* ===========================================================================
-   FASE 8.73 — CLIENTES SUGERIDOS POR SEDE (para el asistente)
-   ---------------------------------------------------------------------------
-   Devuelve SOLO nombres de cliente (sin claves ni datos sensibles) de la sede
-   indicada, para que el asistente sugiera los clientes correctos según la base:
-     · GYE: clientes con credencial GYE + clientes del cronograma de códigos GYE.
-     · UIO: clientes con credencial UIO + cronograma UIO + histórico del maestro
-            (PANEL/CRONOGRAMA) — así la sede actual mantiene sus sugerencias ricas.
-   No lleva _requiereRol: son solo nombres (ya visibles en el sistema); lo usa
-   cualquier creador de inventario. Evita cruces entre bases en la sugerencia.
-   =========================================================================== */
-function obtenerClientesPorBodega(bodega) {
-  var b = _bodegaNorm(bodega);
-  var set = {};
-  // 1) Clientes con credencial de ESA sede.
-  try {
-    var props = PropertiesService.getScriptProperties().getProperties();
-    for (var k in props) {
-      if (b === "GYE") {
-        if (k.indexOf(CRED_API_PREFIX_GYE) === 0) set[k.substring(CRED_API_PREFIX_GYE.length)] = true;
-      } else {
-        // UIO: prefijo legacy, excluyendo los de GYE (que no empiezan por CRED_API_).
-        if (k.indexOf(CRED_API_PREFIX_GYE) !== 0 && k.indexOf(CRED_API_PREFIX) === 0) {
-          set[k.substring(CRED_API_PREFIX.length)] = true;
-        }
-      }
-    }
-  } catch (e1) {}
-  // 2) Clientes del cronograma de códigos de esa sede.
-  try {
-    var sh = _ssCronCod().getSheetByName(_hojaCronCod(b));
-    if (sh && sh.getLastRow() >= 2) {
-      sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function(r){
-        var c = String(r[0] || "").trim().toUpperCase(); if (c) set[c] = true;
-      });
-    }
-  } catch (e2) {}
-  // 3) SOLO UIO: sumar el histórico del maestro (no perder sugerencias actuales).
-  if (b === "UIO") {
-    try {
-      var rw = (typeof obtenerClientesEquipoWizard === "function") ? obtenerClientesEquipoWizard() : null;
-      if (rw && rw.clientes) rw.clientes.forEach(function(c){ if (c) set[String(c).toUpperCase()] = true; });
-    } catch (e3) {}
-  }
-  return Object.keys(set).sort();
 }

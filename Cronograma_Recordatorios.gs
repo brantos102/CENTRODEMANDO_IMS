@@ -1836,15 +1836,6 @@ function procesarCreacionArchivo(datos) {
       if (_nomCr) sheet.getRange(newRow, 9).setValue(_nomCr);
     } catch (eResp) {}
 
-    // FASE 8.74: SECCIÓN POR SEDE — col F (BD) del PANEL. Marca la base de datos
-    // de origen: GYE si se extrajo de Guayaquil por API; UIO en cualquier otro
-    // caso (Quito por API, CSV o en blanco = base actual). Aditivo, best-effort.
-    try {
-      var _bdSede = (String(datos.fuenteReal || "") === "API" &&
-                     String(datos.bodega || "").trim().toUpperCase() === "GYE") ? "GYE" : "UIO";
-      sheet.getRange(newRow, CRON_CFG.PA_COL_BD).setValue(_bdSede);
-    } catch (eBd) {}
-
     return {
       folderName: folder.getName(),
       fileUrl: newFile.getUrl()
@@ -1922,13 +1913,6 @@ function _procesarCreacionArchivoInline(datos) {
       var _nomCr = (_uCr && _uCr.nombre) ? String(_uCr.nombre).toUpperCase() : (_emailCr || "");
       if (_nomCr) sheet.getRange(newRow, 9).setValue(_nomCr);
     } catch (eResp) {}
-
-    // FASE 8.74: sección por sede — col F (BD) del PANEL (igual que la función principal).
-    try {
-      var _bdSede = (String(datos.fuenteReal || "") === "API" &&
-                     String(datos.bodega || "").trim().toUpperCase() === "GYE") ? "GYE" : "UIO";
-      sheet.getRange(newRow, CRON_CFG.PA_COL_BD).setValue(_bdSede);
-    } catch (eBd) {}
 
     return {
       folderName: folder.getName(),
@@ -2388,8 +2372,7 @@ function obtenerEstadoIntegralDashboard() {
         avance: r[CRON_CFG.PA_COL_AVANCE - 1],
         responsable: r[CRON_CFG.PA_COL_RESP - 1],
         unidades: parseFloat(r[CRON_CFG.PA_COL_UNID - 1]) || 0,
-        efectividad: parseFloat(r[CRON_CFG.PA_COL_EFEC_U - 1]) || 0,
-        bd: String(r[CRON_CFG.PA_COL_BD - 1] || "").trim().toUpperCase()   // FASE 8.74: sede (UIO/GYE)
+        efectividad: parseFloat(r[CRON_CFG.PA_COL_EFEC_U - 1]) || 0
       };
     });
   }
@@ -4565,13 +4548,8 @@ function procesarCreacionArchivoConValidacion(datos) {
   } else {
     resultadoFinal = procesarCreacionArchivoIntegral(datos);
   }
-  // FASE 8.72: bodega de origen (solo fiable cuando la fuente REAL es la API).
-  var _tieneBodega = (String(datos.fuenteReal || "") === "API") && (String(datos.bodega || "") !== "");
-  var _bodTrace = (String(datos.bodega || "").trim().toUpperCase() === "GYE") ? "GYE" : "UIO";
-  var _bodTraceLbl = (_bodTrace === "GYE") ? "Guayaquil (GYE)" : "Quito (UIO)";
-
   _registrarActividad(_usuarioActual(), "crear_archivo", "",
-    "Cliente: " + datos.clientName + (_tieneBodega ? " · Bodega: " + _bodTrace : "") + " · Archivo: " + datos.fileName);
+    "Cliente: " + datos.clientName + " · Archivo: " + datos.fileName);
 
   // Enriquecer respuesta con datos para modal post-creación
   var fileId = _idDeUrl(resultadoFinal.fileUrl);
@@ -4582,48 +4560,6 @@ function procesarCreacionArchivoConValidacion(datos) {
   resultadoFinal.wmsConfigurado = !!_obtenerWmsUrl();
   // FIX FASE 7.3: Pasar al frontend los SKUs solicitados que no quedaron en CSV
   resultadoFinal.codigosNoEncontrados = datos.codigosNoEncontrados || [];
-
-  // ══════════════════════════════════════════════════════════════════════
-  // FASE 8.72: TRAZABILIDAD DE BODEGA (Quito/Guayaquil) — 100% ADITIVA.
-  // Solo cuando la fuente real es la API (única vía donde se elige la bodega).
-  // Todo best-effort en try/catch: NUNCA bloquea ni altera la creación.
-  //   1) ScriptProperties BODEGA_ARCHIVO_<fileId> → fuente de verdad universal.
-  //   2) NOTA en A1 del archivo → self-documenting, sin cambiar ningún valor.
-  //   3) Cronograma: se ANEXA "Bodega: …" a observaciones (col K), sin sobrescribir.
-  // ══════════════════════════════════════════════════════════════════════
-  if (_tieneBodega) {
-    resultadoFinal.bodega = _bodTrace;
-    resultadoFinal.bodegaLabel = _bodTraceLbl;
-    // 1) Fuente de verdad universal (cubre incluso archivos sin evento).
-    try { if (fileId) PropertiesService.getScriptProperties().setProperty("BODEGA_ARCHIVO_" + fileId, _bodTrace); } catch (eB1) {}
-    // 2) Nota en el archivo (no toca ningún valor de celda).
-    try {
-      if (fileId) {
-        var ssArch = SpreadsheetApp.openById(fileId);
-        var hojaPl = ssArch.getSheetByName("PLANILLA DE CONTEO FISICO") || ssArch.getSheets()[0];
-        if (hojaPl) {
-          hojaPl.getRange(1, 1).setNote(
-            "TRAZABILIDAD ITSANET IMS\nBodega de origen: " + _bodTraceLbl +
-            "\nFuente: API ITSANET" +
-            "\nCreado: " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm"));
-        }
-      }
-    } catch (eB2) {}
-    // 3) Cronograma: anexar la bodega a observaciones de la fila vinculada.
-    try {
-      if (resultadoFinal.vinculo && resultadoFinal.vinculo.fila) {
-        var cronB = _getSS().getSheetByName(CRON_CFG.HOJA_CRONOGRAMA);
-        if (cronB) {
-          var celObs = cronB.getRange(resultadoFinal.vinculo.fila, CRON_CFG.CR_COL_OBS);
-          var obsPrev = String(celObs.getValue() || "").trim();
-          if (obsPrev.toUpperCase().indexOf("BODEGA:") === -1) {
-            var tagB = "Bodega: " + _bodTraceLbl;
-            celObs.setValue(obsPrev ? (obsPrev + " · " + tagB) : tagB);
-          }
-        }
-      }
-    } catch (eB3) {}
-  }
 
   // Si pidió crear evento → intentar crear evento en Calendar también
   try {
@@ -8537,20 +8473,14 @@ const CONFIG = {
   INVENTARIO_GLOBAL_NAME: "MATRIZ_INVENTARIOS_UIO",
   INVENTARIO_GLOBAL_ID: "1npxaCwfbwTJ-c8qpcw7qAhVT_CAXi4gUduPe2WuFXK4",
   ROOT_FOLDER_IDS: [
-    "12QkkKJ61AisU7vsNDqSuw03LGd4MSZFY",   // INT  (Quito / UIO)
-    "1HAqPpumvBKREO8vLeKp2kD-5WIoNdAsV"    // SLOT (Quito / UIO)
-    // Agrega aquí más IDs de raíz de QUITO cuando abras nuevos operativos
-  ],
-  // FASE 8.75: carpetas RAÍZ de la sede GUAYAQUIL (GYE). Se muestran en el árbol
-  // marcadas como GYE, separadas de las de Quito. Requiere que la carpeta esté
-  // compartida (editor) con la cuenta del proyecto para poder guardar ahí.
-  ROOT_FOLDER_IDS_GYE: [
-    "1vClQh7AOD1oeVaThMH-4H6eTROVv3HJr"    // GYE — INVENTARIOS Guayaquil
+    "12QkkKJ61AisU7vsNDqSuw03LGd4MSZFY",   // INT
+    "1HAqPpumvBKREO8vLeKp2kD-5WIoNdAsV"    // SLOT
+    // Agrega aquí más IDs de raíz cuando abras nuevos clientes/operativos
   ]
 };
 
 function obtenerEstructuraInicial() {
-  return { id: "VIRTUAL_ROOT", name: " Itsanet · Bodegas (Quito + Guayaquil)" };
+  return { id: "VIRTUAL_ROOT", name: " Itsanet (UIO)" };
 }
 
 // Backend: Obtiene subcarpetas
@@ -8558,10 +8488,9 @@ function obtenerEstructuraInicial() {
 function obtenerSubcarpetas(parentId) {
   var list = [];
 
-  // CASO A: Si estamos en el inicio, mostramos las carpetas RAÍZ configuradas.
+  // CASO A: Si estamos en el inicio, mostramos las carpetas configuradas en CONFIG
   if (parentId === "VIRTUAL_ROOT") {
-    // 1) Quito (UIO) — como hasta ahora.
-    var ids = CONFIG.ROOT_FOLDER_IDS || [];
+    var ids = CONFIG.ROOT_FOLDER_IDS; // Leemos el Array de IDs
     for (var i = 0; i < ids.length; i++) {
       try {
         var f = DriveApp.getFolderById(ids[i]);
@@ -8570,17 +8499,7 @@ function obtenerSubcarpetas(parentId) {
         list.push({ id: "ERROR", name: " Error ID: " + ids[i] });
       }
     }
-    // 2) FASE 8.75: Guayaquil (GYE) — marcadas para distinguirlas de Quito.
-    var idsG = CONFIG.ROOT_FOLDER_IDS_GYE || [];
-    for (var g = 0; g < idsG.length; g++) {
-      try {
-        var fg = DriveApp.getFolderById(idsG[g]);
-        list.push({ id: fg.getId(), name: "🌴 " + fg.getName() + " · GYE" });
-      } catch (eg) {
-        list.push({ id: "ERROR", name: " Error ID GYE (¿compartida con el proyecto?): " + idsG[g] });
-      }
-    }
-    return list; // No ordenamos para respetar el orden de configuración
+    return list; // No ordenamos para respetar tu orden de configuración
   }
 
   // CASO B: Navegación normal dentro de una carpeta real
@@ -8606,72 +8525,6 @@ function crearSubcarpeta(parentId, name) {
   var parent = DriveApp.getFolderById(parentId);
   var newFolder = parent.createFolder(name);
   return { id: newFolder.getId(), name: newFolder.getName() };
-}
-
-/* ==========================================================================
-   FASE 8.74 — BORRAR CARPETAS (con advertencia si tienen contenido)
-   --------------------------------------------------------------------------
-   · Las carpetas RAÍZ configuradas (CONFIG.ROOT_FOLDER_IDS) están PROTEGIDAS.
-   · inspeccionarCarpeta: cuenta archivos y subcarpetas y devuelve sus nombres
-     para que el asistente advierta ANTES de borrar.
-   · eliminarCarpeta: si NO está vacía exige confirmado=true; mueve a la
-     Papelera de Drive (recuperable ~30 días — más seguro que borrado
-     permanente). Gate: Admin/Coordinador/Líder (mismos que crean archivos).
-   ========================================================================== */
-function _esCarpetaRaizConfig(folderId) {
-  try {
-    var ids = [];
-    if (typeof CONFIG !== "undefined" && CONFIG) {
-      if (CONFIG.ROOT_FOLDER_IDS) ids = ids.concat(CONFIG.ROOT_FOLDER_IDS);
-      if (CONFIG.ROOT_FOLDER_IDS_GYE) ids = ids.concat(CONFIG.ROOT_FOLDER_IDS_GYE);  // FASE 8.75
-    }
-    return ids.indexOf(String(folderId)) !== -1;
-  } catch (e) { return false; }
-}
-
-function inspeccionarCarpeta(folderId) {
-  _requiereRol(["Coordinador", "Líder de Conteo"]);   // Admin pasa por comodín
-  if (!folderId || folderId === "VIRTUAL_ROOT") throw new Error("Selecciona una carpeta válida.");
-  if (_esCarpetaRaizConfig(folderId)) {
-    throw new Error("Es una carpeta RAÍZ del sistema — no se puede borrar (protegida).");
-  }
-  var folder = DriveApp.getFolderById(folderId);
-  var archivos = [], nArch = 0;
-  var itF = folder.getFiles();
-  while (itF.hasNext()) { var f = itF.next(); nArch++; if (archivos.length < 60) archivos.push(f.getName()); }
-  var subs = [], nSub = 0;
-  var itS = folder.getFolders();
-  while (itS.hasNext()) { var s = itS.next(); nSub++; if (subs.length < 60) subs.push(s.getName()); }
-  return {
-    id: folderId, name: folder.getName(),
-    numArchivos: nArch, archivos: archivos,
-    numSubcarpetas: nSub, subcarpetas: subs,
-    vacia: (nArch === 0 && nSub === 0)
-  };
-}
-
-function eliminarCarpeta(folderId, confirmado) {
-  _requiereRol(["Coordinador", "Líder de Conteo"]);   // Admin pasa por comodín
-  if (!folderId || folderId === "VIRTUAL_ROOT") throw new Error("Selecciona una carpeta válida.");
-  if (_esCarpetaRaizConfig(folderId)) {
-    throw new Error("Es una carpeta RAÍZ del sistema — no se puede borrar (protegida).");
-  }
-  var folder = DriveApp.getFolderById(folderId);
-  // Recontar en el servidor (defensa: no confiar solo en el frontend).
-  var nArch = 0; var itF = folder.getFiles(); while (itF.hasNext()) { itF.next(); nArch++; }
-  var nSub = 0;  var itS = folder.getFolders(); while (itS.hasNext()) { itS.next(); nSub++; }
-  var vacia = (nArch === 0 && nSub === 0);
-  if (!vacia && !confirmado) {
-    throw new Error("CARPETA_CON_ARCHIVOS||La carpeta tiene " + nArch + " archivo(s) y " +
-      nSub + " subcarpeta(s). Confirma para moverla a la papelera.");
-  }
-  var nombre = folder.getName();
-  folder.setTrashed(true);   // Papelera (recuperable) — no borrado permanente.
-  try {
-    _registrarActividad(_usuarioActual(), "borrar_carpeta", "",
-      nombre + " (" + nArch + " arch, " + nSub + " subc) → papelera");
-  } catch (eL) {}
-  return { ok: true, name: nombre, movidaAPapelera: true, numArchivos: nArch, numSubcarpetas: nSub };
 }
 
 function ejecutarCreacionArchivo(folderId) {

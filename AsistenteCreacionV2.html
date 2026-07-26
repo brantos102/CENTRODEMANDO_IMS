@@ -325,19 +325,6 @@
 
           <div class="field" id="api-upload-box" style="display:none;">
             <label>Conexión ERP (API ITSANET)</label>
-            <!-- FASE 8.71: BODEGA / depósito de origen — decide de qué endpoint se extrae. -->
-            <div style="margin-bottom:8px;">
-              <label style="font-size:11px;color:var(--muted);margin-bottom:4px;display:block;">Bodega / depósito de origen</label>
-              <div style="display:flex;gap:6px;">
-                <label class="radio-mini selected" style="flex:1;justify-content:center;">
-                  <input type="radio" name="bodegaExtrac" value="UIO" checked onchange="cambiarBodega()"> 🏢 Quito (UIO)
-                </label>
-                <label class="radio-mini" style="flex:1;justify-content:center;">
-                  <input type="radio" name="bodegaExtrac" value="GYE" onchange="cambiarBodega()"> 🌴 Guayaquil (GYE)
-                </label>
-              </div>
-              <div id="bodega-hint" style="font-size:10.5px;color:var(--muted);margin-top:4px;"></div>
-            </div>
             <div style="display:flex;gap:6px;align-items:center;">
               <button type="button" onclick="extraerDesdeAPI()" style="flex:1;background:var(--accent);color:#fff;border:none;padding:9px 10px;border-radius:5px;font-size:12px;font-weight:600;display:flex;justify-content:center;align-items:center;gap:8px;cursor:pointer;box-shadow:0 4px 10px rgba(59,130,246,0.3);">
                 ⬇️ Extraer Stock desde API
@@ -603,7 +590,6 @@
       csvData: [], csvAplicado: false, csvValidado: null,
       modo: null, filaEvento: null, datosEvento: null,
       modoFiltro: 'sku',   // FASE 8.70: 'sku' (por código) | 'posicion' (por ubicación física)
-      bodega: 'UIO',       // FASE 8.71: 'UIO' (Quito, actual) | 'GYE' (Guayaquil) — de dónde extrae la API
       eventos: []
     };
     let cacheDash = null;
@@ -794,11 +780,6 @@
           $('csv-upload-box').style.display = 'none';
           $('api-upload-box').style.display = 'flex';
           $('data-zone-title').innerHTML = '<span class="step-num">2</span> Extracción y validación API <small id="csv-cache-status"></small>';
-          // FASE 8.71: refrescar el texto de ayuda de la bodega seleccionada.
-          var bh = document.getElementById('bodega-hint');
-          if (bh) bh.innerHTML = (estado.bodega === 'GYE')
-            ? 'Se extraerá del endpoint de <b>Guayaquil</b>. El cliente debe tener credenciales GYE registradas.'
-            : 'Se extraerá del endpoint de <b>Quito</b> (bodega actual).';
         } else {
           $('csv-upload-box').style.display = 'flex';
           $('api-upload-box').style.display = 'none';
@@ -851,43 +832,6 @@
       validar();
     }
 
-    /* ===== FASE 8.71: bodega de extracción (Quito UIO / Guayaquil GYE) ===== */
-    function cambiarBodega() {
-      var sel = document.querySelector('input[name="bodegaExtrac"]:checked');
-      var b = (sel && sel.value === 'GYE') ? 'GYE' : 'UIO';
-      estado.bodega = b;
-      document.querySelectorAll('input[name="bodegaExtrac"]').forEach(function(r){
-        var w = r.closest('.radio-mini'); if (w) w.classList.toggle('selected', r.checked);
-      });
-      var hint = document.getElementById('bodega-hint');
-      if (hint) hint.innerHTML = (b === 'GYE')
-        ? 'Se extraerá del endpoint de <b>Guayaquil</b>. El cliente debe tener credenciales GYE registradas.'
-        : 'Se extraerá del endpoint de <b>Quito</b> (bodega actual).';
-      // Cambiar de bodega invalida lo ya extraído (es de otro origen).
-      estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
-      estado.datosYaFiltrados = false;
-      window._posCobertura = null; window._codigosNoEncontrados = [];
-      var csb = document.getElementById('csv-status-box'); if (csb) csb.innerHTML = '';
-      var vrb = document.getElementById('val-report-box'); if (vrb) vrb.innerHTML = '';
-      var btnRe = document.getElementById('btn-revalidar'); if (btnRe) btnRe.style.display = 'none';
-      // FASE 8.73: refrescar las SUGERENCIAS de cliente según la sede (bases
-      // independientes: GYE sugiere clientes GYE; UIO los de Quito). El input es
-      // libre, esto solo cambia el datalist de autocompletado — sin bloquear.
-      _cargarSugerenciasCliente(b);
-      validar();
-    }
-
-    /* FASE 8.73: pobla el datalist de clientes con los de la SEDE indicada. */
-    function _cargarSugerenciasCliente(bodega) {
-      try {
-        google.script.run.withSuccessHandler(function(lista){
-          var dl = document.getElementById('clientes-lista');
-          if (!dl) return;
-          dl.innerHTML = (lista || []).map(function(c){ return '<option value="' + c + '">'; }).join('');
-        }).withFailureHandler(function(){}).obtenerClientesPorBodega(bodega === 'GYE' ? 'GYE' : 'UIO');
-      } catch (e) {}
-    }
-
     /* ===== EXTRACCIÓN API ===== */
     function extraerDesdeAPI() {
       const cli = $('cliente').value.trim();
@@ -900,10 +844,8 @@
       // pedidas; el filtrado por posición se hace luego en _filtrarPorPosicion().
       const filtros = (estado.modoFiltro === 'posicion') ? '' : $('filtroCodigos').value.trim();
       const incluirVariantes = $('chkIncluirVariantes').checked;
-      const bodega = (estado.bodega === 'GYE') ? 'GYE' : 'UIO';   // FASE 8.71
-      const bodegaLbl = (bodega === 'GYE') ? 'Guayaquil (GYE)' : 'Quito (UIO)';
 
-      $('csv-status-box').innerHTML = '<div class="csv-status">⏳ Conectando con API ITSANET · <b>' + bodegaLbl + '</b> y extrayendo stock...</div>';
+      $('csv-status-box').innerHTML = '<div class="csv-status">⏳ Conectando con API ITSANET y extrayendo stock...</div>';
       $('val-report-box').innerHTML = '';
       var btnRe = document.getElementById('btn-revalidar');
       if (btnRe) btnRe.style.display = 'none';
@@ -936,8 +878,8 @@
         _detectarVariantesYContinuar();
 
       }).withFailureHandler(err => {
-        $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error de conexión API (' + bodegaLbl + '): ' + (err.message || err) + '</div>';
-      }).previsualizarStockItsanet(cli, filtros, incluirVariantes, bodega);
+        $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error de conexión API: ' + (err.message || err) + '</div>';
+      }).previsualizarStockItsanet(cli, filtros, incluirVariantes);
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -1218,11 +1160,8 @@
       if (estado.modoFiltro === 'posicion') {
         var _nPos = (window._posCobertura && window._posCobertura.conStock.length) || 0;
         _hdrLbl = 'Stock por posición extraído · ' + _nPos + ' posición(es) con contenido';
-      } else if (window._fuenteWizard === 'CSV') {
-        _hdrLbl = 'CSV cargado y consolidado';
       } else {
-        // FASE 8.71: la API indica de qué bodega provienen los datos.
-        _hdrLbl = 'Datos de API ITSANET extraídos · ' + (estado.bodega === 'GYE' ? 'Guayaquil (GYE)' : 'Quito (UIO)');
+        _hdrLbl = (window._fuenteWizard === 'CSV') ? 'CSV cargado y consolidado' : 'Datos de API ITSANET extraídos';
       }
 
       $('csv-status-box').innerHTML =
@@ -1264,10 +1203,7 @@
       const txtActual = $('filtroCodigos').value.trim();
       if (txtActual && !confirm('La lista de códigos ya tiene contenido.\n¿Reemplazarla con los códigos programados de ' + mes + '?')) return;
 
-      // FASE 8.73: el cronograma de códigos es POR SEDE. Sólo se usa GYE cuando
-      // la extracción es por API+Guayaquil; en cualquier otro caso, UIO.
-      const bodegaCod = (estado.fuente === 'API' && estado.bodega === 'GYE') ? 'GYE' : 'UIO';
-      $('mes-sugerencia-info').innerHTML = '⏳ Consultando cronograma de códigos (' + (bodegaCod === 'GYE' ? 'Guayaquil' : 'Quito') + ')…';
+      $('mes-sugerencia-info').innerHTML = '⏳ Consultando cronograma de códigos…';
       google.script.run.withSuccessHandler(res => {
         if (!res || !res.existe) {
           estado.mesCodigosSugeridos = null;
@@ -1285,7 +1221,7 @@
         validar();
       }).withFailureHandler(err => {
         $('mes-sugerencia-info').innerHTML = '<span style="color:#fca5a5;">❌ ' + (err.message || err) + '</span>';
-      }).obtenerCodigosProgramados(cli, mes, bodegaCod);
+      }).obtenerCodigosProgramados(cli, mes);
     }
 
     /* ===== FASE 8.56: ventana de variantes fuera de la lista solicitada ===== */
@@ -1351,7 +1287,7 @@
         });
       }).withFailureHandler(() => {
         document.querySelectorAll('.var-mes-info').forEach(el => { el.innerHTML = ''; });
-      }).obtenerMesesDeCodigos(cli, skus, (estado.fuente === 'API' && estado.bodega === 'GYE') ? 'GYE' : 'UIO');  // FASE 8.73
+      }).obtenerMesesDeCodigos(cli, skus);
     }
 
     function aplicarVariantesMes() {
@@ -1422,12 +1358,7 @@
       const item = document.createElement('div');
       item.className = 'folder-item';
       item.dataset.id = id;
-      // FASE 8.74: botón de borrar carpeta (no en la raíz virtual ni en las raíces).
-      const delHtml = (!isRoot && id !== 'VIRTUAL_ROOT')
-        ? '<span class="fold-del" title="Borrar esta carpeta" style="margin-left:auto;padding:0 4px;cursor:pointer;opacity:.45;font-size:12px;">🗑</span>'
-        : '';
-      item.innerHTML = '<span class="arrow">▶</span><span>📁</span>' +
-        '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + name + '</span>' + delHtml;
+      item.innerHTML = '<span class="arrow">▶</span><span>📁</span><span>' + name + '</span>';
       item.onclick = (e) => {
         e.stopPropagation();
         document.querySelectorAll('.folder-item.selected').forEach(x => x.classList.remove('selected'));
@@ -1459,90 +1390,12 @@
           }
         }
       };
-      // FASE 8.74: el 🗑 borra la carpeta (sin disparar el select/expand del nodo).
-      const delEl = item.querySelector('.fold-del');
-      if (delEl) {
-        delEl.onmouseenter = function(){ delEl.style.opacity = '1'; };
-        delEl.onmouseleave = function(){ delEl.style.opacity = '.45'; };
-        delEl.onclick = function(e){ e.stopPropagation(); borrarCarpeta(id, name); };
-      }
       wrap.appendChild(item);
       const sub = document.createElement('div');
       sub.className = 'sub-list';
       wrap.appendChild(sub);
       parent.appendChild(wrap);
       if (isRoot) item.click();
-    }
-
-    /* ===== FASE 8.74: BORRAR CARPETA (con advertencia si tiene archivos) ===== */
-    function borrarCarpeta(folderId, folderName) {
-      setStatus('Revisando "' + folderName + '"…', 'info');
-      google.script.run.withSuccessHandler(function(info){
-        setStatus('');
-        if (info.vacia) {
-          // Carpeta vacía → solo confirmación, sin advertencia.
-          if (confirm('¿Borrar la carpeta VACÍA "' + info.name + '"?\nSe moverá a la Papelera de Drive.')) {
-            window._pendBorrarCarpeta = { id: info.id, name: info.name };
-            _ejecutarBorradoCarpeta();
-          }
-        } else {
-          // Carpeta con contenido → advertencia con conteo y nombres.
-          _modalBorrarCarpeta(info);
-        }
-      }).withFailureHandler(function(e){
-        setStatus('❌ ' + (e.message || e), 'err');
-        alert('No se puede borrar: ' + (e.message || e));
-      }).inspeccionarCarpeta(folderId);
-    }
-
-    function _modalBorrarCarpeta(info) {
-      var prev = document.getElementById('modal-borrar-carpeta'); if (prev) prev.remove();
-      var filas = (info.archivos || []).map(function(n){
-        return '<div style="padding:2px 0;border-bottom:1px solid #131c2e;">📄 ' + escapeHtml(n) + '</div>';
-      }).join('');
-      var masA = (info.numArchivos > (info.archivos || []).length)
-        ? '<div style="color:var(--muted);padding-top:4px;">… y ' + (info.numArchivos - info.archivos.length) + ' archivo(s) más</div>' : '';
-      var subTxt = (info.numSubcarpetas > 0)
-        ? '<div style="margin-top:6px;color:#fbbf24;font-size:11px;">⚠ Incluye <b>' + info.numSubcarpetas + '</b> subcarpeta(s): ' + escapeHtml((info.subcarpetas || []).slice(0, 20).join(', ')) + '</div>' : '';
-      window._pendBorrarCarpeta = { id: info.id, name: info.name };
-      var ov = document.createElement('div');
-      ov.id = 'modal-borrar-carpeta';
-      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
-      ov.innerHTML =
-        '<div style="background:#131c2e;border:1px solid #7f1d1d;border-radius:12px;max-width:520px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">' +
-          '<div style="padding:14px 16px;border-bottom:1px solid #283352;">' +
-            '<div style="font-weight:700;font-size:15px;color:#fca5a5;">🗑 Borrar carpeta “' + escapeHtml(info.name) + '”</div>' +
-            '<div style="font-size:12px;color:var(--muted);margin-top:5px;">Esta carpeta <b style="color:#f59e0b;">NO está vacía</b>: contiene <b>' + info.numArchivos + ' archivo(s)</b>. Si continúas, la carpeta y todo su contenido se moverán a la <b>Papelera de Drive</b> (recuperable ~30 días).</div>' +
-            subTxt +
-          '</div>' +
-          '<div style="padding:8px 16px;overflow-y:auto;flex:1;font-size:11px;font-family:ui-monospace,monospace;">' + filas + masA + '</div>' +
-          '<div style="padding:12px 16px;border-top:1px solid #283352;display:flex;justify-content:flex-end;gap:8px;">' +
-            '<button type="button" onclick="document.getElementById(\'modal-borrar-carpeta\').remove(); window._pendBorrarCarpeta=null;" style="background:#1e293b;color:#e8ecf3;border:1px solid #334155;padding:8px 16px;border-radius:6px;font-size:12px;cursor:pointer;">Cancelar</button>' +
-            '<button type="button" onclick="document.getElementById(\'modal-borrar-carpeta\').remove(); _ejecutarBorradoCarpeta();" style="background:#dc2626;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">🗑 Borrar carpeta y ' + info.numArchivos + ' archivo(s)</button>' +
-          '</div>' +
-        '</div>';
-      document.body.appendChild(ov);
-    }
-
-    function _ejecutarBorradoCarpeta() {
-      var p = window._pendBorrarCarpeta; if (!p) return;
-      window._pendBorrarCarpeta = null;
-      setStatus('Borrando “' + p.name + '”…', 'info');
-      google.script.run.withSuccessHandler(function(res){
-        setStatus('✓ Carpeta “' + p.name + '” movida a la papelera' + (res && res.numArchivos ? ' (' + res.numArchivos + ' archivo[s])' : '') + '.', 'ok');
-        // Quitar el nodo del árbol.
-        var node = document.querySelector('.folder-item[data-id="' + p.id + '"]');
-        if (node && node.parentElement) node.parentElement.remove();
-        // Si era la carpeta seleccionada, limpiar la selección/destino.
-        if (estado.folderId === p.id) {
-          estado.folderId = null; estado.folderName = '';
-          var fi = document.getElementById('folder-info'); if (fi) fi.innerText = '';
-          validar();
-        }
-      }).withFailureHandler(function(e){
-        setStatus('❌ ' + (e.message || e), 'err');
-        alert('Error al borrar la carpeta: ' + (e.message || e));
-      }).eliminarCarpeta(p.id, true);
     }
 
     function crearCarpeta() {
@@ -2064,14 +1917,10 @@
       const csvInfo = estado.csvValidado
         ? ' · CSV: ' + estado.csvValidado.reporte.incluidas + ' filas válidas'
         : '';
-      // FASE 8.71: en fuente API se indica de qué bodega se extrajo.
-      const fuenteTxt = (estado.fuente === 'API')
-        ? ('API ITSANET · ' + (estado.bodega === 'GYE' ? 'Guayaquil (GYE)' : 'Quito (UIO)'))
-        : estado.fuente;
       $('resumen').innerHTML =
         '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">CLIENTE:</span> <b>' + estado.cliente.toUpperCase() + '</b></div>' +
         '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">ARCHIVO:</span> ' + estado.fileName + '</div>' +
-        '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">FUENTE:</span> ' + fuenteTxt + csvInfo + '</div>' +
+        '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">FUENTE:</span> ' + estado.fuente + csvInfo + '</div>' +
         '<div style="margin-bottom: 6px;"><span style="color:var(--muted);">CARPETA:</span> ' + estado.folderName + '</div>' +
         '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">' + vinc + '</div>';
     }
@@ -2229,13 +2078,7 @@
         // Como 'extraerDesdeAPI' ya formatea la matriz a las 17 columnas perfectas,
         // el backend la validará e insertará usando su lógica actual intacta. Cero riesgos.
         dataSource: estado.fuente === 'API' ? 'CSV' : estado.fuente,
-
-        // FASE 8.72: trazabilidad de bodega (solo aplica cuando la fuente REAL es
-        // la API, que es donde se elige Quito/Guayaquil). fuenteReal conserva la
-        // fuente verdadera aunque a dataSource se le mande 'CSV' por el engaño.
-        fuenteReal: estado.fuente,
-        bodega: (estado.fuente === 'API') ? (estado.bodega === 'GYE' ? 'GYE' : 'UIO') : '',
-
+        
         folderId: estado.folderId,
         csvData: datosEnviar,
         codigosNoEncontrados: window._codigosNoEncontrados || [],
@@ -2306,8 +2149,6 @@
     function mostrarModalPostCreacion(res) {
       window.isProcessingFile = false; // FIX FASE 8.54: liberar bandera al terminar
       let resumen = '';
-      // FASE 8.72: confirmar la bodega de origen registrada (trazabilidad).
-      if (res.bodega) resumen += '<div style="color:#60a5fa;font-size:12px;margin-bottom:6px;">🏭 Bodega de origen registrada: <b>' + (res.bodegaLabel || res.bodega) + '</b></div>';
       if (res.vinculo) resumen += '<div style="color:#22c55e;font-size:12px;margin-bottom:6px;">✓ Vinculado al cronograma (' + res.vinculo.tipo + ', fila ' + res.vinculo.fila + ')</div>';
       if (res.vinculoError) resumen += '<div style="color:#fbbf24;font-size:12px;margin-bottom:6px;">⚠ Vinculación al cronograma falló: ' + res.vinculoError + '</div>';
       if (res.calendar && res.calendar.ok) resumen += '<div style="color:#22c55e;font-size:12px;margin-bottom:6px;">✓ Evento agregado a Google Calendar</div>';

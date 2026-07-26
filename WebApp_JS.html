@@ -862,12 +862,8 @@ function pintarPan() {
     // FASE 8.60: columna AVANCE (carga operativa del archivo, en vivo vía batch)
     var avIni = (av.indexOf('entregado') !== -1) ? '<b style="color:#22c55e;">100%</b>'
               : (d.fileId ? '<span style="color:var(--muted);">…</span>' : '—');
-    // FASE 8.74: badge de SEDE (base de datos de origen) — secciona GYE vs Quito.
-    var bdBadge = '';
-    if (d.bd === 'GYE') bdBadge = '<span title="Base Guayaquil" style="font-size:8px;font-weight:700;color:#34d399;background:rgba(16,185,129,.16);border:1px solid rgba(16,185,129,.4);padding:0 4px;border-radius:5px;margin-left:5px;vertical-align:middle;">GYE</span>';
-    else if (d.bd === 'UIO') bdBadge = '<span title="Base Quito" style="font-size:8px;font-weight:700;color:#60a5fa;background:rgba(59,130,246,.16);border:1px solid rgba(59,130,246,.4);padding:0 4px;border-radius:5px;margin-left:5px;vertical-align:middle;">UIO</span>';
     return '<div class="rw" style="grid-template-columns:1.3fr 1.1fr 60px 52px 86px 88px 52px;gap:6px;">'+
-      '<div><div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente)+bdBadge+'</div></div>'+
+      '<div><div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(d.cliente)+'</div></div>'+
       '<div style="font-size:11px;color:#60a5fa;overflow:hidden;"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+resp+'</div>'+apPan+'</div>'+
       '<div>'+fmtNum(d.unidades)+'</div>'+
       '<div style="color:'+efColor+';font-weight:500;">'+ef+'</div>'+
@@ -2443,46 +2439,32 @@ function _crearEventoFinal(datos) {
     .crearEventoCronograma(datos);
 }
 
-/* ===== FASE 8.56 / 8.73: CRONOGRAMA DE CÓDIGOS POR CLIENTE Y SEDE (Coordinador) =====
-   Cada sede (Quito UIO / Guayaquil GYE) tiene su cronograma INDEPENDIENTE. */
-function abrirCronCodigos(bodega) {
-  var bod = (bodega === 'GYE') ? 'GYE' : 'UIO';
-  var bodLbl = (bod === 'GYE') ? 'Guayaquil (GYE)' : 'Quito (UIO)';
-  var hoja = (bod === 'GYE') ? 'CRONOGRAMA_CODIGOS_GYE' : 'CRONOGRAMA_CODIGOS';
-  toast('Cargando resumen ('+bodLbl+')…');
+/* ===== FASE 8.56: CRONOGRAMA DE CÓDIGOS POR CLIENTE (solo Coordinador) ===== */
+function abrirCronCodigos() {
+  toast('Cargando resumen…');
   google.script.run.withSuccessHandler(function(res){
     var resumen = (res && res.length)
       ? res.map(function(r){ return '<span class="pill pill-muted" style="margin:2px;display:inline-block;">'+escapeHtml(r.cliente)+': '+r.codigos+'</span>'; }).join(' ')
-      : '<span style="color:var(--muted);">Aún no hay clientes cargados en esta sede.</span>';
-    // Selector de sede: cambiar re-abre el modal para la otra base (bases separadas).
-    var selSede =
-      '<div class="field"><label>Sede / base de datos *</label>' +
-      '<select id="cc-bodega" onchange="cerrarModal(); abrirCronCodigos(this.value);">' +
-        '<option value="UIO"' + (bod==='UIO'?' selected':'') + '>Quito (UIO)</option>' +
-        '<option value="GYE"' + (bod==='GYE'?' selected':'') + '>Guayaquil (GYE)</option>' +
-      '</select></div>';
-    modalCustom('📅 Cronograma de códigos · ' + bodLbl,
+      : '<span style="color:var(--muted);">Aún no hay clientes cargados.</span>';
+    modalCustom('📅 Cronograma de códigos por cliente',
       'Pega desde el Excel del cliente las columnas <b>ABC | producto_id | ENERO…DICIEMBRE</b> (con X en los meses programados). ' +
-      '<b>REEMPLAZA</b> el bloque de ese cliente <b>en esta sede</b>. La hoja <code>'+hoja+'</code> queda protegida: solo se edita desde aquí. ' +
-      'Quito y Guayaquil son <b>independientes</b> (sin cruces).',
-      selSede +
-      '<div style="margin-bottom:8px;font-size:11px;max-height:64px;overflow-y:auto;"><b>Clientes cargados en '+bodLbl+':</b><br>'+resumen+'</div>'+
+      '<b>REEMPLAZA</b> por completo el bloque de ese cliente. La hoja CRONOGRAMA_CODIGOS queda protegida: solo se edita desde aquí.',
+      '<div style="margin-bottom:8px;font-size:11px;max-height:70px;overflow-y:auto;"><b>Clientes cargados:</b><br>'+resumen+'</div>'+
       '<div class="field"><label>Cliente *</label><input type="text" id="cc-cliente" placeholder="Ej. DEGSO" style="text-transform:uppercase;"></div>'+
       '<div class="field"><label>Códigos (pegar desde Excel) *</label>'+
-      '<textarea id="cc-datos" rows="7" placeholder="A\t3M1161511MX\tX\t\t\t\tX\t\t\t\tX\t\t\t" style="width:100%;font-family:ui-monospace,monospace;font-size:10px;"></textarea>'+
+      '<textarea id="cc-datos" rows="8" placeholder="A\t3M1161511MX\tX\t\t\t\tX\t\t\t\tX\t\t\t" style="width:100%;font-family:ui-monospace,monospace;font-size:10px;"></textarea>'+
       '<div style="font-size:10px;color:var(--muted);margin-top:3px;">Tip: en el Excel selecciona desde la primera fila de datos (sin encabezados) las columnas ABC + producto_id + los 12 meses, copia y pega aquí.</div></div>',
       'Actualizar cronograma', function(){
         var cli = $('cc-cliente').value.trim(), txt = $('cc-datos').value;
-        var bSel = ($('cc-bodega') && $('cc-bodega').value === 'GYE') ? 'GYE' : 'UIO';
         if (!cli || !txt.trim()) { toast('Cliente y códigos obligatorios','error'); return false; }
-        cerrarModal(); toast('Actualizando cronograma de '+cli.toUpperCase()+' ('+bSel+')…');
+        cerrarModal(); toast('Actualizando cronograma de '+cli.toUpperCase()+'…');
         google.script.run.withSuccessHandler(function(r){
-          toast('✓ '+r.cliente+' ('+(r.bodega||bSel)+'): '+r.codigos+' códigos cargados (reemplazó '+r.reemplazadas+' anteriores)','success');
+          toast('✓ '+r.cliente+': '+r.codigos+' códigos cargados (reemplazó '+r.reemplazadas+' anteriores)','success');
         }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
-        .actualizarCronogramaCodigos(cli, txt, bSel);
+        .actualizarCronogramaCodigos(cli, txt);
       });
   }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
-  .obtenerResumenCronCodigos(bod);
+  .obtenerResumenCronCodigos();
 }
 
 /* ===== FASE 8.65 R10: sincronizar cronograma con Google Calendar ===== */
@@ -2512,27 +2494,12 @@ function abrirCredencialesAPI() {
     res = res || { clientes: [], hojaLegacyExiste: false };
     var filas = (res.clientes && res.clientes.length)
       ? res.clientes.map(function(c){
-          // FASE 8.71: badge de bodega (UIO=Quito · GYE=Guayaquil).
-          var bod = (c.bodega === 'GYE') ? 'GYE' : 'UIO';
-          var bodBadge = (bod === 'GYE')
-            ? '<span style="font-size:10px;font-weight:700;color:#34d399;background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.4);padding:1px 6px;border-radius:6px;">GYE</span>'
-            : '<span style="font-size:10px;font-weight:700;color:#60a5fa;background:rgba(59,130,246,.14);border:1px solid rgba(59,130,246,.4);padding:1px 6px;border-radius:6px;">UIO</span>';
-          // FASE 8.76: de dónde viene la credencial (interno seguro / pestaña legacy).
-          var srcTag = (c.fuente === 'legacy')
-            ? '<span title="Está en la pestaña CREDENCIALES_API (recomendado migrar)" style="font-size:9px;color:#fbbf24;">📄 pestaña</span>'
-            : '<span title="Almacenamiento interno del script (seguro)" style="font-size:9px;color:#22c55e;">🔒 interno</span>';
           return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;">' +
-            bodBadge +
-            '<b style="min-width:90px;">' + escapeHtml(c.cliente) + '</b>' +
+            '<b style="min-width:110px;">' + escapeHtml(c.cliente) + '</b>' +
             '<span style="flex:1;color:var(--muted);">usuario: ' + escapeHtml(c.usuario || '—') + ' · clave: ••••••</span>' +
-            srcTag +
-            '<button class="mini-btn" title="Eliminar credencial" onclick="eliminarCredAPI(\'' + escapeHtml(c.cliente) + '\',\'' + bod + '\')">🗑</button></div>';
+            '<button class="mini-btn" title="Eliminar credencial" onclick="eliminarCredAPI(\'' + escapeHtml(c.cliente) + '\')">🗑</button></div>';
         }).join('')
-      : '<div style="color:var(--muted);font-size:12px;">Sin credenciales registradas todavía en ninguna sede.</div>';
-    // FASE 8.76: resumen de conteo por almacenamiento (transparencia del estado real).
-    var _nI = res.nInterno || 0, _nL = res.nLegacy || 0;
-    var conteo = '<div style="font-size:10.5px;color:var(--muted);margin-bottom:6px;">' +
-      'Registradas: <b>' + (_nI + _nL) + '</b> · 🔒 interno: <b>' + _nI + '</b> · 📄 pestaña legacy: <b>' + _nL + '</b></div>';
+      : '<div style="color:var(--muted);font-size:12px;">Sin credenciales registradas todavía.</div>';
     var legacy = res.hojaLegacyExiste
       ? '<div style="background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.3);color:#fde047;padding:7px;border-radius:5px;font-size:11px;margin:8px 0;">' +
         '⚠ Aún existe la pestaña CREDENCIALES_API con claves a la vista de los editores. ' +
@@ -2540,36 +2507,31 @@ function abrirCredencialesAPI() {
       : '';
     modalCustom('🔐 Credenciales API ITSANET',
       'Las claves se guardan en el almacenamiento interno del script — <b>invisibles en el libro</b> para cualquier usuario. ' +
-      'Cada credencial es <b>por bodega</b> (Quito/Guayaquil). Guardar con el mismo cliente y bodega <b>REEMPLAZA</b> su credencial.',
-      conteo + '<div style="max-height:140px;overflow-y:auto;margin-bottom:8px;">' + filas + '</div>' + legacy +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
-        '<div class="field"><label>Cliente *</label><input type="text" id="ca-cliente" placeholder="Ej. BELIA" style="text-transform:uppercase;"></div>' +
-        '<div class="field"><label>Bodega *</label><select id="ca-bodega"><option value="UIO">Quito (UIO)</option><option value="GYE">Guayaquil (GYE)</option></select></div>' +
-      '</div>' +
+      'Guardar con un cliente ya existente <b>REEMPLAZA</b> su credencial.',
+      '<div style="max-height:140px;overflow-y:auto;margin-bottom:8px;">' + filas + '</div>' + legacy +
+      '<div class="field"><label>Cliente *</label><input type="text" id="ca-cliente" placeholder="Ej. BELIA" style="text-transform:uppercase;"></div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
         '<div class="field"><label>Usuario API *</label><input type="text" id="ca-user" autocomplete="off"></div>' +
         '<div class="field"><label>Contraseña API *</label><input type="password" id="ca-pass" autocomplete="new-password"></div>' +
       '</div>',
       'Guardar credencial', function(){
         var cli = $('ca-cliente').value.trim(), us = $('ca-user').value.trim(), pa = $('ca-pass').value;
-        var bod = ($('ca-bodega') && $('ca-bodega').value === 'GYE') ? 'GYE' : 'UIO';   // FASE 8.71
         if (!cli || !us || !pa) { toast('Completa cliente, usuario y contraseña','error'); return false; }
-        cerrarModal(); toast('Guardando credencial de ' + cli.toUpperCase() + ' (' + bod + ')…');
+        cerrarModal(); toast('Guardando credencial de ' + cli.toUpperCase() + '…');
         google.script.run.withSuccessHandler(function(){ toast('✓ Credencial guardada (token renovará con la clave nueva)','success'); })
           .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
-          .guardarCredencialAPI(cli, us, pa, bod);
+          .guardarCredencialAPI(cli, us, pa);
       });
   }).withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
   .listarClientesAPI();
 }
 
-function eliminarCredAPI(cliente, bodega) {
-  var bod = (bodega === 'GYE') ? 'GYE' : 'UIO';   // FASE 8.71
-  if (!confirm('¿Eliminar la credencial API de ' + cliente + ' en ' + (bod === 'GYE' ? 'Guayaquil (GYE)' : 'Quito (UIO)') + '?\nEse cliente dejará de poder extraer stock de esa bodega hasta registrar una nueva.')) return;
+function eliminarCredAPI(cliente) {
+  if (!confirm('¿Eliminar la credencial API de ' + cliente + '?\nEse cliente dejará de poder extraer stock hasta registrar una nueva.')) return;
   toast('Eliminando…');
   google.script.run.withSuccessHandler(function(){ toast('✓ Credencial eliminada','success'); cerrarModal(); abrirCredencialesAPI(); })
     .withFailureHandler(function(e){ toast('Error: ' + (e.message || e),'error'); })
-    .eliminarCredencialAPI(cliente, bod);
+    .eliminarCredencialAPI(cliente);
 }
 
 function migrarCredAPI() {
