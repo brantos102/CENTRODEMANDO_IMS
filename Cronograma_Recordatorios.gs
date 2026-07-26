@@ -8537,14 +8537,20 @@ const CONFIG = {
   INVENTARIO_GLOBAL_NAME: "MATRIZ_INVENTARIOS_UIO",
   INVENTARIO_GLOBAL_ID: "1npxaCwfbwTJ-c8qpcw7qAhVT_CAXi4gUduPe2WuFXK4",
   ROOT_FOLDER_IDS: [
-    "12QkkKJ61AisU7vsNDqSuw03LGd4MSZFY",   // INT
-    "1HAqPpumvBKREO8vLeKp2kD-5WIoNdAsV"    // SLOT
-    // Agrega aquí más IDs de raíz cuando abras nuevos clientes/operativos
+    "12QkkKJ61AisU7vsNDqSuw03LGd4MSZFY",   // INT  (Quito / UIO)
+    "1HAqPpumvBKREO8vLeKp2kD-5WIoNdAsV"    // SLOT (Quito / UIO)
+    // Agrega aquí más IDs de raíz de QUITO cuando abras nuevos operativos
+  ],
+  // FASE 8.75: carpetas RAÍZ de la sede GUAYAQUIL (GYE). Se muestran en el árbol
+  // marcadas como GYE, separadas de las de Quito. Requiere que la carpeta esté
+  // compartida (editor) con la cuenta del proyecto para poder guardar ahí.
+  ROOT_FOLDER_IDS_GYE: [
+    "1vClQh7AOD1oeVaThMH-4H6eTROVv3HJr"    // GYE — INVENTARIOS Guayaquil
   ]
 };
 
 function obtenerEstructuraInicial() {
-  return { id: "VIRTUAL_ROOT", name: " Itsanet (UIO)" };
+  return { id: "VIRTUAL_ROOT", name: " Itsanet · Bodegas (Quito + Guayaquil)" };
 }
 
 // Backend: Obtiene subcarpetas
@@ -8552,9 +8558,10 @@ function obtenerEstructuraInicial() {
 function obtenerSubcarpetas(parentId) {
   var list = [];
 
-  // CASO A: Si estamos en el inicio, mostramos las carpetas configuradas en CONFIG
+  // CASO A: Si estamos en el inicio, mostramos las carpetas RAÍZ configuradas.
   if (parentId === "VIRTUAL_ROOT") {
-    var ids = CONFIG.ROOT_FOLDER_IDS; // Leemos el Array de IDs
+    // 1) Quito (UIO) — como hasta ahora.
+    var ids = CONFIG.ROOT_FOLDER_IDS || [];
     for (var i = 0; i < ids.length; i++) {
       try {
         var f = DriveApp.getFolderById(ids[i]);
@@ -8563,7 +8570,17 @@ function obtenerSubcarpetas(parentId) {
         list.push({ id: "ERROR", name: " Error ID: " + ids[i] });
       }
     }
-    return list; // No ordenamos para respetar tu orden de configuración
+    // 2) FASE 8.75: Guayaquil (GYE) — marcadas para distinguirlas de Quito.
+    var idsG = CONFIG.ROOT_FOLDER_IDS_GYE || [];
+    for (var g = 0; g < idsG.length; g++) {
+      try {
+        var fg = DriveApp.getFolderById(idsG[g]);
+        list.push({ id: fg.getId(), name: "🌴 " + fg.getName() + " · GYE" });
+      } catch (eg) {
+        list.push({ id: "ERROR", name: " Error ID GYE (¿compartida con el proyecto?): " + idsG[g] });
+      }
+    }
+    return list; // No ordenamos para respetar el orden de configuración
   }
 
   // CASO B: Navegación normal dentro de una carpeta real
@@ -8603,7 +8620,11 @@ function crearSubcarpeta(parentId, name) {
    ========================================================================== */
 function _esCarpetaRaizConfig(folderId) {
   try {
-    var ids = (typeof CONFIG !== "undefined" && CONFIG && CONFIG.ROOT_FOLDER_IDS) ? CONFIG.ROOT_FOLDER_IDS : [];
+    var ids = [];
+    if (typeof CONFIG !== "undefined" && CONFIG) {
+      if (CONFIG.ROOT_FOLDER_IDS) ids = ids.concat(CONFIG.ROOT_FOLDER_IDS);
+      if (CONFIG.ROOT_FOLDER_IDS_GYE) ids = ids.concat(CONFIG.ROOT_FOLDER_IDS_GYE);  // FASE 8.75
+    }
     return ids.indexOf(String(folderId)) !== -1;
   } catch (e) { return false; }
 }
