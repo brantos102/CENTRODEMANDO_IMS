@@ -5,3 +5,6 @@
 # parte del proyecto de inventarios). Se mantienen fuera del repo a propósito.
 .agents/
 skills-lock.json
+
+# Binding local de clasp (cada carpeta apunta a su Apps Script: real o copia)
+.clasp.json
