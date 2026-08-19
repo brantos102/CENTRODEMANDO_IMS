@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0b1220; --panel:#131c2e; --border:#283352;
+            --text:#e8ecf3; --muted:#7d8aa8; --danger:#ef4444; --accent:#3b82f6; }
+    * { box-sizing: border-box; }
+    body { font-family:'Inter',system-ui,sans-serif; background:var(--bg);
+           color:var(--text); margin:0; min-height:100vh;
+           display:flex; align-items:center; justify-content:center; padding:20px; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:14px;
+            padding:36px 32px; max-width:540px; width:100%; }
+    .icon { width:64px; height:64px; border-radius:50%; background:rgba(239,68,68,0.15);
+            display:flex; align-items:center; justify-content:center; font-size:30px;
+            margin:0 auto 18px; }
+    h1 { font-size:20px; font-weight:600; margin:0 0 10px; text-align:center; }
+    p.lead { color:var(--muted); font-size:14px; line-height:1.6; margin:0 0 18px; text-align:center; }
+    .email { background:var(--bg); border:1px solid var(--border); border-radius:6px;
+             padding:8px 14px; font-family:ui-monospace,monospace; font-size:13px;
+             color:var(--accent); display:inline-block; }
+    .center { text-align:center; }
+    .diag { background:#1c1009; border-left:4px solid var(--danger); border-radius:6px;
+            padding:14px 16px; margin-top:22px; }
+    .diag-title { font-weight:600; color:#fca5a5; font-size:13px; margin-bottom:8px; }
+    .diag-body { font-size:12px; color:#fecaca; line-height:1.55; }
+    .diag-body b { color:#fff; }
+    .hint { font-size:12px; color:var(--muted); padding-top:20px; margin-top:20px;
+            border-top:1px solid var(--border); text-align:center; line-height:1.5; }
+    .hint a { color:var(--accent); text-decoration:none; }
+    .debug-link { display:inline-block; margin-top:14px; background:transparent;
+                  color:#94a3b8; border:1px solid var(--border); padding:6px 14px;
+                  border-radius:5px; font-size:11px; text-decoration:none; }
+    .debug-link:hover { background:rgba(59,130,246,0.1); color:var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🔒</div>
+    <h1>Acceso restringido</h1>
+    <p class="lead">Tu cuenta no está autorizada para ingresar al Centro de Mando de Inventarios.</p>
+    <div class="center"><div class="email"><?= email ?></div></div>
+
+    <? if (typeof diagnostico !== 'undefined' && diagnostico) { ?>
+      <div class="diag">
+        <div class="diag-title">⚠ <?= diagnostico ?></div>
+        <div class="diag-body"><?!= recomendacion ?></div>
+      </div>
+    <? } ?>
+
+    <div class="hint">
+      Si crees que deberías tener acceso, solicita a un <b>Coordinador</b> que registre tu correo en el sistema.<br>
+      <a class="debug-link" href="?debug=1" target="_top">🔍 Ver diagnóstico técnico</a>
+    </div>
+    <div class="hint" style="border:none;padding-top:0;margin-top:6px;color:#475569;font-size:10px;">
+      Centro de Mando Integral · Itsanet UIO · Acceso controlado por roles
+    </div>
+  </div>
+</body>
+</html>

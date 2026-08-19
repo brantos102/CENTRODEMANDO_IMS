@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <title>Centro de Mando · Itsanet UIO</title>
+
+  <!-- FIX FASE 8.6/8.9: Favicon ITSANET IMS — cubo isométrico azul.
+       Múltiples sizes y formatos para máxima compatibilidad. -->
+  <link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='t' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2360a5fa'/><stop offset='1' stop-color='%233b82f6'/></linearGradient><linearGradient id='l' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231e3a8a'/><stop offset='1' stop-color='%231e40af'/></linearGradient><linearGradient id='r' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%232563eb'/><stop offset='1' stop-color='%231e3a8a'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='%230b1220'/><polygon points='50,12 88,32 50,52 12,32' fill='url(%23t)' stroke='%23bfdbfe' stroke-width='1'/><polygon points='12,32 50,52 50,90 12,68' fill='url(%23l)' stroke='%231e3a8a' stroke-width='0.5'/><polygon points='88,32 50,52 50,90 88,68' fill='url(%23r)' stroke='%231e3a8a' stroke-width='0.5'/><line x1='50' y1='52' x2='50' y2='90' stroke='%2393c5fd' stroke-width='0.8' opacity='0.4'/></svg>">
+  <link rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='t' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2360a5fa'/><stop offset='1' stop-color='%233b82f6'/></linearGradient><linearGradient id='l' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231e3a8a'/><stop offset='1' stop-color='%231e40af'/></linearGradient><linearGradient id='r' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%232563eb'/><stop offset='1' stop-color='%231e3a8a'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='%230b1220'/><polygon points='50,12 88,32 50,52 12,32' fill='url(%23t)' stroke='%23bfdbfe' stroke-width='1'/><polygon points='12,32 50,52 50,90 12,68' fill='url(%23l)'/><polygon points='88,32 50,52 50,90 88,68' fill='url(%23r)'/></svg>">
+  <link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230b1220'/><polygon points='50,12 88,32 50,52 12,32' fill='%233b82f6'/><polygon points='12,32 50,52 50,90 12,68' fill='%231e3a8a'/><polygon points='88,32 50,52 50,90 88,68' fill='%232563eb'/></svg>">
+  <meta name="theme-color" content="#0b1220">
+  <meta name="apple-mobile-web-app-title" content="ITSANET IMS">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:#0b1220; --panel:#131c2e; --panel-2:#1c2740; --border:#283352;
+      --text:#e8ecf3; --muted:#7d8aa8; --accent:#3b82f6; --ok:#22c55e;
+      --warn:#eab308; --danger:#ef4444; --info:#8b5cf6; --teal:#14b8a6;
+    }
+    /* FASE 8.62 R2: MODO DÍA (tema claro). Se activa con data-theme="light" en <html>.
+       Solo reasigna las variables → toda la interfaz cambia sin tocar componentes. */
+    :root[data-theme="light"] {
+      --bg:#f1f5f9; --panel:#ffffff; --panel-2:#eef2f7; --border:#cbd5e6;
+      --text:#0f1e33; --muted:#475569; --accent:#2563eb; --ok:#16a34a;
+      --warn:#b45309; --danger:#dc2626; --info:#7c3aed; --teal:#0d9488;
+    }
+    :root[data-theme="light"] body { background:var(--bg); }
+    /* Sombras/realces suaves en claro para conservar profundidad */
+    :root[data-theme="light"] .card,
+    :root[data-theme="light"] .kpi { box-shadow:0 1px 3px rgba(15,30,51,0.06); }
+
+    /* FASE 8.64 (R2): CONTRASTE del modo día — los pills y colores pensados
+       para fondo oscuro se re-mapean a tonos oscuros legibles sobre claro. */
+    :root[data-theme="light"] .pill-ok     { background:rgba(22,163,74,.14);  color:#166534; }
+    :root[data-theme="light"] .pill-danger { background:rgba(220,38,38,.12);  color:#b91c1c; }
+    :root[data-theme="light"] .pill-warn   { background:rgba(180,83,9,.14);   color:#92400e; }
+    :root[data-theme="light"] .pill-info   { background:rgba(37,99,235,.12);  color:#1d4ed8; }
+    :root[data-theme="light"] .pill-muted  { background:rgba(90,107,133,.14); color:#475569; }
+    /* Colores INLINE (texto claro sobre oscuro) → tonos oscuros. El !important
+       de hoja SÍ pisa el style inline (specificidad de importancia). */
+    :root[data-theme="light"] [style*="color:#60a5fa"] { color:#1d4ed8 !important; }  /* responsable azul */
+    :root[data-theme="light"] [style*="color:#2dd4bf"] { color:#0f766e !important; }  /* apoyo turquesa */
+    :root[data-theme="light"] [style*="color:#fbbf24"] { color:#92400e !important; }  /* ámbar (desde/avisos) */
+    :root[data-theme="light"] [style*="color:#fde047"] { color:#854d0e !important; }  /* amarillo avisos */
+    :root[data-theme="light"] [style*="color:#fca5a5"] { color:#b91c1c !important; }  /* rojo suave */
+    :root[data-theme="light"] [style*="color:#93c5fd"] { color:#1e40af !important; }  /* azul claro */
+    :root[data-theme="light"] [style*="color:#86efac"] { color:#15803d !important; }  /* verde suave */
+    :root[data-theme="light"] [style*="color:#a78bfa"] { color:#6d28d9 !important; }  /* violeta */
+    :root[data-theme="light"] [style*="color:#bfdbfe"] { color:#1e40af !important; }
+    :root[data-theme="light"] [style*="color:#fcd34d"] { color:#92400e !important; }
+    :root[data-theme="light"] [style*="color:#e8ecf3"] { color:#0f1e33 !important; }  /* texto claro fijo */
+    :root[data-theme="light"] [style*="color:#94a3b8"] { color:#5a6b85 !important; }
+    /* Fondos inline oscuros de botones pequeños → claros */
+    :root[data-theme="light"] [style*="background:#1c2740"],
+    :root[data-theme="light"] [style*="background:#1e293b"] { background:#e6ebf3 !important; color:#0f1e33 !important; }
+
+    /* FASE 8.65 (R3): calendario en modo día — barras más sólidas y leyenda con
+       texto oscuro legible (antes texto claro sobre chip claro = ilegible). */
+    :root[data-theme="light"] .cal-bar-prog  { background:rgba(37,99,235,.85); }
+    :root[data-theme="light"] .cal-bar-curso { background:rgba(202,138,4,.9); }
+    :root[data-theme="light"] .cal-bar-ent   { background:rgba(22,163,74,.9); }
+    :root[data-theme="light"] .cal-bar-venc  { background:rgba(220,38,38,.9); }
+    :root[data-theme="light"] .cal-lg-prog  { background:rgba(37,99,235,.14);  color:#1d4ed8; border-color:#93c5fd; }
+    :root[data-theme="light"] .cal-lg-curso { background:rgba(202,138,4,.16);  color:#92400e; border-color:#fcd34d; }
+    :root[data-theme="light"] .cal-lg-ent   { background:rgba(22,163,74,.14);  color:#166534; border-color:#86efac; }
+    :root[data-theme="light"] .cal-lg-venc  { background:rgba(220,38,38,.14);  color:#b91c1c; border-color:#fca5a5; }
+    :root[data-theme="light"] .cal-weekend  { background:rgba(15,30,51,.03); }
+    :root[data-theme="light"] .cal-today    { outline:1px solid #2563eb; }
+    /* Chips de filtro del cronograma (Todos/Urgentes/…) y períodos legibles */
+    :root[data-theme="light"] .chip { color:#334155; }
+    :root[data-theme="light"] .chip.active { color:#fff; }
+    /* FASE 8.65 (E): botones Iniciar/Fin y iconos legibles en modo día (antes
+       texto claro sobre fondo claro = casi invisible). */
+    :root[data-theme="light"] .mini-btn.start { background:rgba(37,99,235,.12); border-color:rgba(37,99,235,.4); color:#1d4ed8; }
+    :root[data-theme="light"] .mini-btn.end   { background:rgba(22,163,74,.12); border-color:rgba(22,163,74,.45); color:#166534; }
+    :root[data-theme="light"] .mini-btn { color:#0f1e33; }
+    :root[data-theme="light"] .icon-btn { color:#475569; }
+    :root[data-theme="light"] .icon-btn:hover { color:#0f1e33; }
+    /* Subtítulos/textos tenues con más contraste en claro (antes casi ilegibles). */
+    :root[data-theme="light"] .kpi .lbl, :root[data-theme="light"] .kpi .sub,
+    :root[data-theme="light"] .card .ttl small, :root[data-theme="light"] .sub { color:#475569 !important; }
+    * { box-sizing:border-box; }
+    body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text);
+           margin:0; font-size:13px; }
+    button { font-family:inherit; cursor:pointer; }
+    input, select, textarea { font-family:inherit; }
+    h1,h2,h3 { font-weight:500; margin:0; }
+
+    /* Topbar */
+    .topbar { display:flex; justify-content:space-between; align-items:center;
+              padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--border);
+              position:sticky; top:0; z-index:50; }
+    .brand { display:flex; align-items:center; gap:10px; }
+    .brand .logo { width:34px; height:34px; display:flex; align-items:center; justify-content:center; }
+    .brand .logo svg { width:100%; height:100%; filter:drop-shadow(0 2px 4px rgba(59,130,246,0.3)); }
+    .brand .name { font-size:14px; font-weight:600; }
+    .brand .sub { font-size:10px; color:var(--muted); }
+    .user-box { display:flex; align-items:center; gap:12px; }
+    .user-info { text-align:right; }
+    .user-info .n { font-size:12px; font-weight:500; }
+    .user-info .r { font-size:10px; color:var(--accent); }
+    .avatar { width:32px; height:32px; border-radius:50%; background:var(--panel-2);
+              border:1px solid var(--border); display:flex; align-items:center;
+              justify-content:center; font-weight:600; font-size:13px; }
+
+    /* Nav */
+    .nav { display:flex; gap:4px; padding:8px 18px; background:var(--panel);
+           border-bottom:1px solid var(--border); position:sticky; top:51px; z-index:49;
+           overflow-x:auto; }
+    .nav button { background:transparent; border:1px solid transparent; color:var(--muted);
+                  padding:7px 14px; border-radius:7px; font-size:12px; font-weight:500;
+                  white-space:nowrap; display:flex; align-items:center; gap:6px; }
+    .nav button:hover { color:var(--text); background:var(--panel-2); }
+    .nav button.active { color:#fff; background:var(--accent); }
+    .nav button.hidden { display:none; }
+
+    /* Layout */
+    .container { padding:14px 18px; max-width:1400px; margin:0 auto; }
+    .section { display:none; }
+    .section.active { display:block; }
+
+    /* KPIs */
+    .kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:10px; }
+    .kpi { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+    .kpi .lbl { font-size:10px; letter-spacing:0.8px; color:var(--muted); text-transform:uppercase; font-weight:500; }
+    .kpi .val { font-size:22px; font-weight:600; margin-top:4px; line-height:1; }
+    .kpi .sub { font-size:10px; color:var(--muted); margin-top:3px; }
+    .kpi.danger .val{color:var(--danger)} .kpi.warn .val{color:var(--warn)}
+    .kpi.info .val{color:var(--accent)} .kpi.ok .val{color:var(--ok)}
+    .kpi.teal .val{color:var(--teal)} .kpi.violet .val{color:var(--info)}
+
+    .grid { display:grid; grid-template-columns:1fr 290px; gap:12px; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+    .card .ttl { font-size:12px; font-weight:600; margin-bottom:10px; display:flex;
+                 align-items:center; gap:6px; justify-content:space-between; }
+    .card .ttl small { color:var(--muted); font-weight:400; font-size:10px; }
+    #chart-wrap { height:200px; position:relative; }
+
+    /* Tablas */
+    .tbl { width:100%; font-size:12px; }
+    .tbl .hd { display:grid; gap:6px; padding:6px 4px; border-bottom:1px solid var(--border);
+               color:var(--muted); font-size:10px; letter-spacing:0.5px; text-transform:uppercase; font-weight:600; }
+    .tbl .rw { display:grid; gap:6px; padding:7px 4px; border-bottom:1px solid rgba(255,255,255,0.04); align-items:center; }
+    .tbl .rw:hover { background:rgba(255,255,255,0.02); }
+    .tbl-cron .hd, .tbl-cron .rw { grid-template-columns:58px 1fr 110px 80px 130px; }
+    .tbl-pan .hd, .tbl-pan .rw { grid-template-columns:1.25fr 88px 58px 50px 78px 46px; }
+    .tbl-usr .hd, .tbl-usr .rw { grid-template-columns:1.4fr 1fr 110px 70px 90px; }
+    .tbl .scroll { max-height:260px; overflow-y:auto; padding-right:2px; }
+    .tbl-pan .scroll { max-height:175px; }
+
+    .pill { font-size:10px; padding:3px 8px; border-radius:10px; font-weight:600; display:inline-block; }
+    .pill-danger{background:rgba(239,68,68,0.15);color:#fca5a5}
+    .pill-warn{background:rgba(234,179,8,0.15);color:#fde047}
+    .pill-info{background:rgba(59,130,246,0.15);color:#93c5fd}
+    .pill-ok{background:rgba(34,197,94,0.15);color:#86efac}
+    .pill-muted{background:rgba(125,138,168,0.15);color:var(--muted)}
+
+    .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
+    .chips { display:flex; gap:4px; flex-wrap:wrap; }
+    .chip { background:var(--panel-2); border:1px solid var(--border); color:var(--muted);
+            padding:4px 10px; border-radius:12px; font-size:11px; cursor:pointer; }
+    .chip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .input-mini { background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+                  padding:4px 8px; border-radius:4px; font-size:11px; min-width:130px; }
+    .input-mini:focus { outline:none; border-color:var(--accent); }
+
+    /* Sidebar acciones */
+    .sidebar { display:flex; flex-direction:column; gap:10px; }
+    .actbox { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+    .actbox .lbl { font-size:10px; font-weight:600; color:var(--muted); letter-spacing:0.8px;
+                   text-transform:uppercase; margin-bottom:7px; }
+    .btn { width:100%; background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+           padding:8px 10px; border-radius:6px; text-align:left; font-size:12px; margin-bottom:4px;
+           transition:all .15s; display:flex; align-items:center; gap:8px; }
+    .btn:hover { background:var(--border); border-color:var(--accent); }
+    .btn:disabled { opacity:0.35; cursor:not-allowed; }
+    .btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .btn-primary:hover { background:#2563eb; }
+    .btn-danger:hover { border-color:var(--danger); color:var(--danger); }
+
+    .act-grp { display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap; }
+    .mini-btn { padding:3px 8px; border-radius:4px; font-size:10px; font-weight:600;
+                border:1px solid var(--border); background:var(--panel-2); color:var(--text); white-space:nowrap; }
+    .mini-btn.start{background:rgba(59,130,246,0.15);border-color:rgba(59,130,246,0.4);color:#93c5fd}
+    .mini-btn.end{background:rgba(34,197,94,0.15);border-color:rgba(34,197,94,0.4);color:#86efac}
+    .mini-btn:disabled{opacity:0.3;cursor:not-allowed}
+    .icon-btn { background:transparent; border:1px solid var(--border); color:var(--muted);
+                width:24px; height:22px; border-radius:4px; display:inline-flex;
+                align-items:center; justify-content:center; font-size:11px; }
+    .icon-btn:hover{color:var(--text);border-color:var(--accent)}
+    .icon-btn:disabled{opacity:0.3;cursor:not-allowed}
+
+    .resp-row { display:flex; justify-content:space-between; padding:5px 0; font-size:11px;
+                border-bottom:1px solid rgba(255,255,255,0.04); }
+    .resp-row:last-child{border-bottom:none} .resp-row b{color:var(--accent)}
+
+    /* Perfil */
+    .profile-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .field { margin-bottom:12px; }
+    .field label { display:block; font-size:10px; color:var(--muted); margin-bottom:4px;
+                   text-transform:uppercase; letter-spacing:0.4px; font-weight:600; }
+    .field input, .field select, .field textarea {
+      width:100%; background:var(--panel-2); color:var(--text); border:1px solid var(--border);
+      padding:8px 10px; border-radius:6px; font-size:13px; }
+    .field input:focus, .field select:focus { outline:none; border-color:var(--accent); }
+    .field input:disabled { opacity:0.6; }
+    .stat-mini { display:flex; gap:12px; }
+    .stat-card { flex:1; background:var(--panel-2); border:1px solid var(--border);
+                 border-radius:8px; padding:14px; text-align:center; }
+    .stat-card .v { font-size:24px; font-weight:600; }
+    .stat-card .l { font-size:10px; color:var(--muted); text-transform:uppercase; margin-top:4px; }
+
+    /* Modal/overlay */
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100;
+                display:none; align-items:center; justify-content:center; padding:20px; }
+    .modal-bg.show { display:flex; }
+    .modal { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+             padding:20px; max-width:520px; width:100%; max-height:88vh; overflow-y:auto; }
+    .modal.wide { max-width:1100px; }
+    .modal h3 { font-size:14px; margin-bottom:10px; }
+    .modal .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+    .modal button.b { padding:8px 16px; border-radius:6px; border:1px solid var(--border);
+                      background:var(--panel-2); color:var(--text); font-size:12px; }
+    .modal button.confirm { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .modal button.danger { background:var(--danger); border-color:var(--danger); color:#fff; }
+
+    #toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+             background:var(--panel); border:1px solid var(--border); color:var(--text);
+             padding:10px 16px; border-radius:6px; font-size:12px; z-index:200; display:none; max-width:480px; }
+    #toast.show{display:block} #toast.success{border-color:var(--ok)} #toast.error{border-color:var(--danger)}
+
+    .empty { text-align:center; padding:24px; color:var(--muted); font-size:11px; }
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+    /* ═════════ FIX FASE 8.19: Tabs Tendencia / Calendario ═════════ */
+    .vt-tabs { display:flex; gap:4px; }
+    .vt-tab { background:transparent; border:1px solid var(--border); color:var(--muted);
+              padding:4px 10px; border-radius:5px; font-size:10px; font-weight:500;
+              cursor:pointer; transition:all 0.15s; font-family:inherit; }
+    .vt-tab:hover { color:var(--text); background:var(--panel-2); }
+    .vt-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .vt-pane { display:none; }
+    .vt-pane.vt-active { display:block; }
+
+    /* Calendario tipo Gantt */
+    .cal-toolbar { display:flex; align-items:center; gap:8px; margin-bottom:10px;
+                   padding-bottom:8px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .cal-nav { background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+               width:24px; height:24px; border-radius:4px; cursor:pointer; font-size:10px;
+               display:flex; align-items:center; justify-content:center; }
+    .cal-nav:hover { background:var(--accent); border-color:var(--accent); }
+    .cal-titulo { font-size:13px; font-weight:600; min-width:140px; text-align:center; }
+    .cal-vt-tabs { display:flex; gap:3px; }
+    .cal-vt { background:transparent; border:1px solid var(--border); color:var(--muted);
+              padding:3px 9px; border-radius:5px; cursor:pointer; font-size:10px; font-weight:500; }
+    .cal-vt:hover { color:var(--text); background:var(--panel-2); }
+    .cal-vt.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .cal-sel { background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+               font-size:10px; padding:3px 6px; border-radius:5px; }
+    .cal-leyenda { display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
+    /* FASE 8.68: los chips de la leyenda son FILTROS clicables (toggle). */
+    .cal-lg { font-size:9px; padding:2px 6px; border-radius:8px; font-weight:500;
+              border:1px solid var(--border); cursor:pointer; user-select:none;
+              transition:transform .1s, box-shadow .15s, opacity .15s; }
+    .cal-lg:hover { transform:translateY(-1px); }
+    .cal-lg-prog { background:rgba(59,130,246,0.15); color:#93c5fd; border-color:#3b82f6; }
+    .cal-lg-curso { background:rgba(250,204,21,0.15); color:#fde047; border-color:#facc15; }
+    .cal-lg-ent { background:rgba(34,197,94,0.15); color:#86efac; border-color:#22c55e; }
+    .cal-lg-venc { background:rgba(239,68,68,0.15); color:#fca5a5; border-color:#ef4444; }
+    /* Chip ACTIVO = filtro aplicado (resalte). Si hay uno activo, los demás se atenúan. */
+    .cal-leyenda.tiene-activo .cal-lg { opacity:0.4; }
+    .cal-leyenda .cal-lg.cal-lg-active { opacity:1; box-shadow:0 0 0 2px currentColor inset, 0 2px 8px rgba(0,0,0,0.35); font-weight:700; }
+
+    .cal-wrap { max-height:320px; overflow-y:auto; overflow-x:auto; }
+    .cal-grid { display:grid; gap:2px; min-width:100%; }
+    .cal-grid-head { display:grid; gap:1px; grid-template-columns:130px repeat(var(--cal-days,31),var(--cal-cw,22px));
+                     position:sticky; top:0; background:var(--panel); z-index:2;
+                     padding-bottom:4px; border-bottom:1px solid var(--border); }
+    .cal-grid-row { display:grid; gap:1px; grid-template-columns:130px repeat(var(--cal-days,31),var(--cal-cw,22px));
+                    align-items:center; padding:2px 0; }
+    .cal-grid-row:hover { background:rgba(59,130,246,0.05); }
+    .cal-cli { font-size:10px; padding:0 6px; overflow:hidden; text-overflow:ellipsis;
+               white-space:nowrap; color:var(--text); font-weight:500; }
+    .cal-cli small { display:block; color:var(--muted); font-size:9px; font-weight:400; }
+    .cal-day-head { font-size:9px; text-align:center; color:var(--muted); padding:2px 0;
+                    font-weight:500; }
+    .cal-day-head.cal-weekend { color:var(--accent); }
+    .cal-cell { height:18px; border-radius:2px; background:transparent; position:relative;
+                cursor:pointer; }
+    .cal-cell.cal-weekend { background:rgba(255,255,255,0.02); }
+    .cal-cell.cal-today { box-shadow:inset 0 0 0 1px var(--accent); }
+    .cal-bar-prog { background:rgba(59,130,246,0.7); }
+    .cal-bar-curso { background:rgba(250,204,21,0.8); }
+    .cal-bar-ent { background:rgba(34,197,94,0.8); }
+    .cal-bar-venc { background:rgba(239,68,68,0.8); }
+    .cal-bar-prog:hover, .cal-bar-curso:hover, .cal-bar-ent:hover, .cal-bar-venc:hover { filter:brightness(1.2); }
+
+    @media (max-width:900px){ .grid{grid-template-columns:1fr} .kpis{grid-template-columns:repeat(2,1fr)} .profile-grid{grid-template-columns:1fr} }
+    /* FASE 8.61: móvil — modales a pantalla completa, tablas con scroll propio,
+       botones táctiles; la operación se audita también desde el celular. */
+    @media (max-width:640px){
+      .modal{width:96vw;max-width:96vw;padding:14px;max-height:92vh;overflow-y:auto}
+      .kpis{grid-template-columns:repeat(2,1fr)}
+      .tbl{overflow-x:auto}
+      .tbl .hd,.tbl .rw{font-size:10px}
+      #cal-body{overflow-x:auto}
+      .mini-btn,.icon-btn{min-height:30px;min-width:30px}
+      .actbox .btn{padding:10px 12px}
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo" title="ITSANET IMS">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="cube-top" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#60a5fa"/>
+              <stop offset="1" stop-color="#3b82f6"/>
+            </linearGradient>
+            <linearGradient id="cube-left" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#1e3a8a"/>
+              <stop offset="1" stop-color="#1e40af"/>
+            </linearGradient>
+            <linearGradient id="cube-right" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#2563eb"/>
+              <stop offset="1" stop-color="#1e3a8a"/>
+            </linearGradient>
+          </defs>
+          <polygon points="32,4 60,18 32,32 4,18" fill="url(#cube-top)" stroke="#1e3a8a" stroke-width="0.5"/>
+          <polygon points="4,18 32,32 32,60 4,46" fill="url(#cube-left)"/>
+          <polygon points="60,18 32,32 32,60 60,46" fill="url(#cube-right)"/>
+          <line x1="32" y1="32" x2="32" y2="60" stroke="#93c5fd" stroke-width="0.6" opacity="0.5"/>
+        </svg>
+      </div>
+      <div>
+        <div class="name">Centro de Mando Integral</div>
+        <div class="sub">Itsanet UIO · inventarios auditables</div>
+      </div>
+    </div>
+    <div class="user-box">
+      <!-- FASE 8.65 R5: usuarios activos ahora mismo (hover = nombres) -->
+      <div id="activos-box" title="Cargando…"
+           style="display:flex;align-items:center;gap:5px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;cursor:default;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e;"></span>
+        <b id="activos-num">—</b><span style="color:var(--muted);">activos</span>
+      </div>
+      <!-- FASE 8.62 R2: interruptor de tema día/noche -->
+      <button id="theme-toggle" onclick="toggleTema()" title="Cambiar tema día / noche"
+              style="background:var(--panel-2);border:1px solid var(--border);color:var(--text);width:34px;height:34px;border-radius:8px;font-size:16px;cursor:pointer;">🌙</button>
+      <div class="user-info">
+        <div class="n" id="u-nombre">—</div>
+        <div class="r" id="u-rol">—</div>
+      </div>
+      <div class="avatar" id="u-avatar">?</div>
+    </div>
+  </div>
+
+  <!-- NAV -->
+  <div class="nav">
+    <button class="active" data-sec="dashboard" onclick="nav('dashboard')">📊 Dashboard</button>
+    <button data-sec="perfil" onclick="nav('perfil')">👤 Mi Perfil</button>
+    <button data-sec="usuarios" id="nav-usuarios" onclick="nav('usuarios')">👥 Usuarios</button>
+    <button data-sec="analytics" id="nav-analytics" onclick="nav('analytics')">📈 Analytics</button>
+  </div>
+
+  <div class="container">
+
+    <!-- ===== SECCIÓN DASHBOARD ===== -->
+    <div class="section active" id="sec-dashboard">
+      <div class="kpis">
+        <!-- FASE 8.63 R7: KPIs clicables → modal con detalle filtrable -->
+        <div class="kpi danger" style="cursor:pointer;" title="Ver vencidos" onclick="abrirKpiDetalle('venc')"><div class="lbl">Vencidos 🔍</div><div class="val" id="kpi-venc">—</div><div class="sub">cronograma</div></div>
+        <div class="kpi warn" style="cursor:pointer;" title="Ver los de hoy" onclick="abrirKpiDetalle('hoy')"><div class="lbl">Hoy 🔍</div><div class="val" id="kpi-hoy">—</div><div class="sub">programados</div></div>
+        <div class="kpi info" style="cursor:pointer;" title="Ver próximos 7 días" onclick="abrirKpiDetalle('prox7')"><div class="lbl">Próx. 7 días 🔍</div><div class="val" id="kpi-prox7">—</div><div class="sub">en agenda</div></div>
+        <div class="kpi ok" style="cursor:pointer;" title="Ver entregados" onclick="abrirKpiDetalle('entreg')"><div class="lbl">Entregados año 🔍</div><div class="val" id="kpi-entr-anio">—</div><div class="sub">en panel</div></div>
+        <div class="kpi violet" style="cursor:pointer;" title="Ver clientes activos del mes" onclick="abrirKpiDetalle('clientes')"><div class="lbl">Clientes activos 🔍</div><div class="val" id="kpi-cli-act">—</div><div class="sub">mes en curso</div></div>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><div class="lbl">Unidades</div><div class="val" id="kpi-unid">—</div><div class="sub">año</div></div>
+        <div class="kpi"><div class="lbl">Referencias</div><div class="val" id="kpi-refs">—</div><div class="sub">año</div></div>
+        <div class="kpi"><div class="lbl">Posiciones</div><div class="val" id="kpi-pos">—</div><div class="sub">año</div></div>
+        <div class="kpi teal"><div class="lbl">Avance mes</div><div class="val" id="kpi-avance-mes">—</div><div class="sub">entregados/total</div></div>
+        <div class="kpi info"><div class="lbl">Cumplimiento año</div><div class="val" id="kpi-cumpl">—</div><div class="sub">prog. vs ejec.</div></div>
+      </div>
+
+      <div class="grid">
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div class="card">
+            <div class="ttl" style="justify-content:space-between;">
+              <span id="tend-titulo">📅 Calendario operativo <small id="chart-anio"> · vista por semana</small></span>
+              <div class="vt-tabs">
+                <button type="button" class="vt-tab active" data-vt="cal" onclick="cambiarVistaTendencia('cal')">📅 Calendario</button>
+                <button type="button" class="vt-tab" data-vt="chart" onclick="cambiarVistaTendencia('chart')">📈 Tendencia</button>
+              </div>
+            </div>
+            <!-- Vista 1: Calendario tipo Gantt (por defecto: semana en curso) -->
+            <div id="vt-cal" class="vt-pane vt-active">
+              <div class="cal-toolbar">
+                <button type="button" class="cal-nav" onclick="calMover(-1)">◀</button>
+                <div class="cal-titulo" id="cal-mes-titulo">—</div>
+                <button type="button" class="cal-nav" onclick="calMover(1)">▶</button>
+                <div class="cal-vt-tabs">
+                  <button type="button" class="cal-vt active" data-cv="semana" onclick="calSetVista('semana')">Semana</button>
+                  <button type="button" class="cal-vt" data-cv="mes" onclick="calSetVista('mes')">Mes</button>
+                </div>
+                <button type="button" class="cal-nav" style="width:auto;padding:0 8px;" onclick="calHoy()" title="Ir a hoy">Hoy</button>
+                <select id="cal-estado" class="cal-sel" onchange="calSetEstado(this.value)" title="Filtrar por estado">
+                  <option value="all">Todos</option>
+                  <option value="prog">Programado</option>
+                  <option value="curso">En curso</option>
+                  <option value="ent">Entregado</option>
+                  <option value="venc">Vencido</option>
+                </select>
+                <div class="cal-leyenda" id="cal-leyenda">
+                  <span class="cal-lg cal-lg-prog" data-est="prog" role="button" tabindex="0" onclick="calToggleEstado('prog')" title="Filtrar sólo PROGRAMADOS (clic de nuevo para quitar)">Programado</span>
+                  <span class="cal-lg cal-lg-curso" data-est="curso" role="button" tabindex="0" onclick="calToggleEstado('curso')" title="Filtrar sólo EN CURSO (clic de nuevo para quitar)">En curso</span>
+                  <span class="cal-lg cal-lg-ent" data-est="ent" role="button" tabindex="0" onclick="calToggleEstado('ent')" title="Filtrar sólo ENTREGADOS (clic de nuevo para quitar)">Entregado</span>
+                  <span class="cal-lg cal-lg-venc" data-est="venc" role="button" tabindex="0" onclick="calToggleEstado('venc')" title="Filtrar sólo VENCIDOS (clic de nuevo para quitar)">Vencido</span>
+                </div>
+              </div>
+              <div id="cal-body" class="cal-wrap">
+                <div class="empty">Cargando calendario…</div>
+              </div>
+            </div>
+            <!-- Vista 2: Tendencia (chart) -->
+            <div id="vt-chart" class="vt-pane">
+              <div id="chart-wrap"><canvas id="chart-anual"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ttl"><span>📅 Cronograma operativo <small id="cron-resumen">—</small></span></div>
+            <div class="filters">
+              <div class="chips">
+                <span class="chip active" data-f="all" onclick="setF(this,'all')">Todos</span>
+                <span class="chip" data-f="urgent" onclick="setF(this,'urgent')">Urgentes</span>
+                <span class="chip" data-f="upcoming" onclick="setF(this,'upcoming')">Próx. 7d</span>
+                <span class="chip" data-f="pending" onclick="setF(this,'pending')">Pendientes</span>
+                <span class="chip" data-f="sinfile" onclick="setF(this,'sinfile')">Sin archivo</span>
+              </div>
+              <select id="cron-periodo" class="cal-sel" onchange="setCronPeriodo(this.value)" title="Período mostrado">
+                <option value="semana">Esta semana</option>
+                <option value="mes">Este mes</option>
+                <option value="all">Todos</option>
+              </select>
+              <input class="input-mini" id="f-cliente" placeholder="Buscar cliente…" oninput="pintarCron()">
+            </div>
+            <div class="tbl tbl-cron">
+              <div class="hd"><div>Fecha</div><div>Cliente / Tarea</div><div>Responsable</div><div>Estado</div><div></div></div>
+              <div class="scroll" id="cron-body"><div class="empty">Cargando…</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ttl"><span>📊 Actividades actuales <small id="pan-resumen">—</small></span></div>
+            <div class="tbl tbl-pan">
+              <!-- FASE 8.60: columna AVANCE (carga operativa en vivo) -->
+              <div class="hd" style="grid-template-columns:1.3fr 1.1fr 60px 52px 86px 88px 52px;gap:6px;"><div>Cliente</div><div>Responsable / Apoyos</div><div>Unidades</div><div>Efect.</div><div>Avance</div><div>Estado</div><div></div></div>
+              <div class="scroll" id="pan-body"><div class="empty">Cargando…</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar">
+          <div class="actbox">
+            <div class="lbl">📦 Operación</div>
+            <button class="btn btn-primary" id="b-crear" onclick="abrirWizard()"><span>＋</span> Crear inventario</button>
+            <button class="btn" id="b-evento" onclick="abrirFormEvento()"><span>📅</span> Nuevo evento</button>
+            <button class="btn" id="b-wms" onclick="abrirTerminalWMS()"><span>📦</span> Abrir Terminal WMS</button>
+            <button class="btn" id="b-metricas" onclick="ejecutar('Actualizando…','dash_actualizarMetricas')"><span>🔄</span> Actualizar métricas</button>
+            <button class="btn" id="b-libro" onclick="abrirLibro()"><span>📗</span> Abrir libro Excel</button>
+          </div>
+          <div class="actbox">
+            <div class="lbl">🗂️ Base de datos</div>
+            <button class="btn btn-danger" id="b-consolidar" onclick="confirmar('consolidar')"><span>📥</span> Consolidar con auditoría</button>
+            <!-- FASE 8.56: cronograma de códigos por cliente (solo Coordinador) -->
+            <button class="btn" id="b-cron-codigos" onclick="abrirCronCodigos()"><span>📅</span> Cronograma de códigos</button>
+            <!-- FASE 8.57: credenciales API fuera de la vista (solo Coordinador) -->
+            <button class="btn" id="b-cred-api" onclick="abrirCredencialesAPI()"><span>🔐</span> Credenciales API</button>
+            <!-- FASE 8.62 R1: garantizar accesos del equipo a los archivos hijos -->
+            <button class="btn" id="b-accesos" onclick="garantizarAccesos()"><span>🔒</span> Garantizar accesos equipo</button>
+            <!-- FIX FASE 8.25: Pre-validar y Limpiar duplicados removidos del menú.
+                 Esa funcionalidad ya está cubierta por los modos del Consolidar:
+                 - "Reporte solo" pre-valida sin escribir
+                 - "Tolerante" consolida y limpia duplicados/vacíos automáticamente -->
+          </div>
+          <div class="actbox">
+            <div class="lbl">📤 Reportes y notif.</div>
+            <button class="btn" id="b-exportar" onclick="abrirSelectorExportarCliente()"><span>📄</span> Exportar cliente</button>
+            <button class="btn" id="b-record" onclick="ejecutar('Enviando…','enviarRecordatoriosCronograma')"><span>📨</span> Enviar recordatorios</button>
+            <button class="btn" id="b-sinc" onclick="ejecutar('Sincronizando…','sincronizarEstadoCronogramaConPanel')"><span>⇄</span> Sincronizar c/Panel</button>
+            <button class="btn" id="b-syncQ" onclick="ejecutarSyncQ()"><span>🔗</span> Vincular archivos a Q</button>
+            <!-- FASE 8.65 R10: sincronizar cronograma con Google Calendar -->
+            <button class="btn" id="b-cal" onclick="sincronizarCalendario()"><span>📅</span> Sincronizar Calendar</button>
+            <button class="btn" id="b-zip" onclick="abrirSelectorDescargarZip()"><span>📦</span> Descargar ZIP</button>
+          </div>
+          <div class="actbox">
+            <div class="lbl">👥 Carga por operario</div>
+            <div id="carga-resp"><div class="empty">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECCIÓN PERFIL ===== -->
+    <div class="section" id="sec-perfil">
+      <div class="card" style="max-width:760px;margin:0 auto;">
+        <div class="ttl"><span>👤 Mi Perfil</span></div>
+        <div class="profile-grid">
+          <div>
+            <div class="field"><label>Email (no editable)</label><input type="text" id="p-email" disabled></div>
+            <div class="field"><label>Rol (asignado por coordinador)</label><input type="text" id="p-rol" disabled></div>
+            <div class="field"><label>Nombre</label><input type="text" id="p-nombre"></div>
+            <div class="field"><label>Teléfono</label><input type="text" id="p-telefono"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-primary" style="width:auto;" onclick="guardarPerfil()">Guardar cambios</button>
+              <!-- FASE 8.65 R7: cambiar contraseña + foto -->
+              <button class="btn" style="width:auto;" onclick="abrirCambioPassword()">🔑 Cambiar contraseña</button>
+              <button class="btn" style="width:auto;" onclick="abrirCambioFoto()">🖼 Foto de perfil</button>
+            </div>
+          </div>
+          <div>
+            <div class="field"><label>Mi actividad</label></div>
+            <div class="stat-mini" style="flex-direction:column;gap:10px;">
+              <div class="stat-card"><div class="v" id="p-iniciados" style="color:var(--accent)">—</div><div class="l">Inventarios iniciados</div></div>
+              <div class="stat-card"><div class="v" id="p-finalizados" style="color:var(--ok)">—</div><div class="l">Inventarios finalizados</div></div>
+              <div class="stat-card"><div class="v" id="p-creados" style="color:var(--info)">—</div><div class="l">Archivos creados</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECCIÓN USUARIOS ===== -->
+    <div class="section" id="sec-usuarios">
+      <div class="card">
+        <div class="ttl">
+          <span>👥 Gestión de usuarios</span>
+          <button class="btn btn-primary" id="b-nuevo-usr" style="width:auto;margin:0;" onclick="abrirNuevoUsuario()">＋ Nuevo usuario</button>
+        </div>
+        <div class="tbl tbl-usr">
+          <div class="hd"><div>Nombre / Email</div><div>Rol</div><div>Teléfono</div><div>Estado</div><div></div></div>
+          <div class="scroll" id="usr-body" style="max-height:400px;"><div class="empty">Cargando…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECCIÓN ANALYTICS ===== -->
+    <div class="section" id="sec-analytics">
+      <div class="card">
+        <div class="ttl"><span>📈 Analytics de actividad del equipo</span></div>
+        <div class="tbl tbl-usr">
+          <!-- FASE 8.58: nombre visible + apoyos operativos + exclusiones -->
+          <div class="hd" style="grid-template-columns:2fr repeat(6,minmax(52px,1fr));"><div>Operario</div><div>Iniciados</div><div>Finalizados</div><div>Creados</div><div>Apoyos</div><div>Excl.</div><div>Total</div></div>
+          <div class="scroll" id="analytics-body" style="max-height:420px;"><div class="empty">Cargando…</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MODAL GENÉRICO -->
+  <div class="modal-bg" id="modal">
+    <div class="modal" id="modal-inner">
+      <h3 id="modal-titulo">—</h3>
+      <div id="modal-msg" style="color:var(--muted);font-size:12px;margin-bottom:12px;"></div>
+      <div id="modal-body"></div>
+      <div class="actions">
+        <button class="b" onclick="cerrarModal()">Cancelar</button>
+        <button class="b confirm" id="modal-ok">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- El SCRIPT se inyecta abajo en la parte 2 -->
+  <script>
+    window.USUARIO = <?!= usuarioJSON ?>;
+    // FIX FASE 8.3: URL canónica del Web App (no la sandbox googleusercontent.com).
+    // Necesaria para construir el iframe del wizard con ?vista=wizard.
+    window.__WEBAPP_URL__ = "<?= webAppUrl ?>";
+
+    // FIX FASE 8.11: Forzar favicon ITSANET IMS de forma PERMANENTE.
+    // Apps Script Web Apps a veces sobrescriben el favicon con el de Google.
+    // Reinyectamos el SVG cada 2 segundos como link "icon" para forzar al navegador
+    // a usar nuestro cubo. También fija el título del documento.
+    (function forzarBranding() {
+      var SVG_FAVICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='t' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%2360a5fa'/><stop offset='1' stop-color='%233b82f6'/></linearGradient><linearGradient id='l' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%231e3a8a'/><stop offset='1' stop-color='%231e40af'/></linearGradient><linearGradient id='r' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%232563eb'/><stop offset='1' stop-color='%231e3a8a'/></linearGradient></defs><rect width='100' height='100' rx='18' fill='%230b1220'/><polygon points='50,12 88,32 50,52 12,32' fill='url(%23t)' stroke='%23bfdbfe' stroke-width='1'/><polygon points='12,32 50,52 50,90 12,68' fill='url(%23l)'/><polygon points='88,32 50,52 50,90 88,68' fill='url(%23r)'/></svg>";
+      function injectFavicon() {
+        try {
+          // Remover faviconos antiguos
+          var existentes = document.querySelectorAll("link[rel*='icon']");
+          existentes.forEach(function(el){ el.parentNode.removeChild(el); });
+          // Inyectar nuevo
+          var link = document.createElement('link');
+          link.rel = 'icon';
+          link.type = 'image/svg+xml';
+          link.href = SVG_FAVICON + "#" + Date.now();
+          document.head.appendChild(link);
+
+          var apple = document.createElement('link');
+          apple.rel = 'apple-touch-icon';
+          apple.href = SVG_FAVICON;
+          document.head.appendChild(apple);
+
+          // Forzar el título también
+          if (document.title.indexOf('ITSANET') === -1 && document.title.indexOf('Centro de Mando') === -1) {
+            document.title = 'Centro de Mando · ITSANET IMS';
+          }
+        } catch(e){}
+      }
+      injectFavicon();
+      // Reinyectar cada 2 seg porque Apps Script puede sobreescribirlo
+      setInterval(injectFavicon, 2000);
+    })();
+  </script>
+  <?!= include('WebApp_JS'); ?>
+</body>
+</html>
