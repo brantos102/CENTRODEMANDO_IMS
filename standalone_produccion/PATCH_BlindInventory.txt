@@ -1,0 +1,79 @@
+=====================================================================================
+PARCHE PARA EL "BlindInventory.html" DEL TERMINAL WMS (proyecto standalone)
+=====================================================================================
+UN solo cambio: dentro de window.onload, reemplaza el bloque del deep-link.
+Esto hace que, al abrir con ?fileId=..., el WMS:
+  • use el fileId DIRECTO (aunque el archivo no esté aún en la lista),
+  • inicie sesión SOLO con el Gmail actual (misma sesión que el Panel),
+  • cargue los datos del archivo de inmediato (sin quedarse en "Cargando…").
+
+Requiere haber añadido obtenerSesionWMSActual() en Codigo.gs (ver PATCH_Codigo.gs.txt).
+
+-------------------------------------------------------------------------------------
+🔎 BUSCA este bloque (está dentro de window.onload, después de filtrarInventarios()):
+-------------------------------------------------------------------------------------
+        if (DEEPLINK_FILE_ID && DEEPLINK_FILE_ID.length > 10) {
+          const invEncontrado = ALL_INVENTORIES.find(inv => inv.id === DEEPLINK_FILE_ID);
+          if (invEncontrado) {
+            const saved = localStorage.getItem('wms_session');
+            let yaSesionada = false;
+            if (saved) {
+              try {
+                const data = JSON.parse(saved);
+                if (data.rol && data.rol !== 'GUEST' && data.email && data.email !== 'INVITADO') {
+                  USER_EMAIL = data.email;
+                  USER_ROLE = data.rol;
+                  CURRENT_FILE_ID = DEEPLINK_FILE_ID;
+                  localStorage.setItem('wms_session', JSON.stringify({
+                    email: data.email, rol: data.rol, fileId: DEEPLINK_FILE_ID,
+                    invName: invEncontrado.link, userName: data.userName
+                  }));
+                  yaSesionada = true;
+                  if (DEEPLINK_CLIENTE) cargarBaseEAN(DEEPLINK_CLIENTE);
+                  iniciarSesionExitosa(data.userName, invEncontrado.link);
+                }
+              } catch(e) {}
+            }
+            if (!yaSesionada) {
+              if (DEEPLINK_CLIENTE) document.getElementById('clientSelector').value = DEEPLINK_CLIENTE;
+              filtrarInventarios();
+              document.getElementById('fileSelector').value = DEEPLINK_FILE_ID;
+              document.getElementById('userSelector').value = 'AUDITOR';
+              try { google.script.run.registrarAccesoWMS(DEEPLINK_FILE_ID, DEEPLINK_CLIENTE, true); } catch(e) {}
+              setTimeout(() => confirmarUsuario(), 300);
+            }
+            return;
+          }
+        }
+
+-------------------------------------------------------------------------------------
+✅ REEMPLÁZALO por este (mismo lugar):
+-------------------------------------------------------------------------------------
+        if (DEEPLINK_FILE_ID && DEEPLINK_FILE_ID.length > 10) {
+          // FIX 8.37: deep-link robusto + auto-login con el Gmail actual.
+          CURRENT_FILE_ID = DEEPLINK_FILE_ID;
+          const invEnc = ALL_INVENTORIES.find(inv => inv.id === DEEPLINK_FILE_ID);
+          const invName = invEnc ? invEnc.link : (DEEPLINK_CLIENTE || "Inventario");
+          if (DEEPLINK_CLIENTE) cargarBaseEAN(DEEPLINK_CLIENTE);
+          try { google.script.run.registrarAccesoWMS(DEEPLINK_FILE_ID, DEEPLINK_CLIENTE, true); } catch(e) {}
+          google.script.run.withSuccessHandler(function(s){
+            if (s && s.autenticado && s.registrado && (s.rol === 'ADMIN' || s.rol === 'OPERADOR')) {
+              USER_EMAIL = s.email; USER_ROLE = s.rol;
+              iniciarSesionExitosa(s.nombre, invName);
+            } else if (s && s.autenticado) {
+              USER_EMAIL = s.email; USER_ROLE = 'GUEST';
+              iniciarSesionExitosa(s.nombre + " (lectura)", invName);
+            } else {
+              USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST";
+              iniciarSesionExitosa("Auditor", invName);
+            }
+          }).withFailureHandler(function(){
+            USER_EMAIL = "INVITADO"; USER_ROLE = "GUEST";
+            iniciarSesionExitosa("Auditor", invName);
+          }).obtenerSesionWMSActual();
+          return;
+        }
+
+=====================================================================================
+NOTA: si registrarAccesoWMS no existe en tu Codigo.gs, no pasa nada (va en try/catch).
+=====================================================================================

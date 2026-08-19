@@ -1,0 +1,7 @@
+# Artefactos de empaquetado para Apps Script (regenerables desde el código)
+*.zip
+
+# Skills instaladas por el CLI externo "skills" (código de terceros; no forma
+# parte del proyecto de inventarios). Se mantienen fuera del repo a propósito.
+.agents/
+skills-lock.json

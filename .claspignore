@@ -1,0 +1,7 @@
+# Archivos que NO forman parte del proyecto Apps Script.
+# clasp NO los sube; el codigo real (.js .gs .html y appsscript.json) se sube normal.
+**/*.md
+**/*.txt
+standalone_produccion/**
+.gitignore
+.claspignore
