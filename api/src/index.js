@@ -291,6 +291,87 @@ app.get("/analitica", requireToken, async (req, res) => {
   });
 });
 
+/* ── Calidad y precisión: lee las vistas SQL ya agregadas ─────────────────
+   Las vistas viven en Supabase (supabase/vistas_calidad.sql), así que aquí
+   solo llegan decenas de filas en vez de las 125k de inventarios. */
+const META = 99.5;   // meta de exactitud, igual que en Power BI
+
+app.get("/calidad", requireToken, async (req, res) => {
+  const base = req.query.base;
+  const anio = parseInt(req.query.anio, 10) || new Date().getFullYear();
+  const f = (q) => (base ? q.eq("base", base) : q);
+
+  const [mensual, cliente, motivos, justif, discrep] = await Promise.all([
+    f(db.from("v_calidad_mensual").select("*").eq("anio", anio).order("num_mes")),
+    f(db.from("v_calidad_cliente").select("*").limit(200)),
+    f(db.from("v_motivos").select("*").limit(30)),
+    f(db.from("v_justificaciones").select("*").limit(30)),
+    f(db.from("v_discrepancias").select("*").eq("anio", anio).limit(300))
+  ]);
+
+  const falla = [mensual, cliente, motivos, justif, discrep].find((r) => r.error);
+  if (falla) {
+    return res.status(400).json({
+      error: falla.error.message,
+      pista: "¿Ejecutaste supabase/vistas_calidad.sql en el SQL Editor?"
+    });
+  }
+
+  const p = (ok, tot) => (tot ? (ok / tot) * 100 : null);
+  const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+  // Consolida por mes (si no se filtró sede, puede venir una fila por base).
+  const porMes = {};
+  for (const r of mensual.data || []) {
+    const m = (porMes[r.num_mes] ||= {
+      mes: MESES[r.num_mes - 1], num_mes: r.num_mes,
+      codigos: 0, codigos_ok: 0, unidades: 0, unidades_ok: 0,
+      posiciones: 0, posiciones_ok: 0, lineas: 0, lineas_ok: 0, desfase: 0
+    });
+    m.codigos += +r.codigos || 0;         m.codigos_ok += +r.codigos_ok || 0;
+    m.unidades += +r.unidades || 0;       m.unidades_ok += +r.unidades_ok || 0;
+    m.posiciones += +r.posiciones || 0;   m.posiciones_ok += +r.posiciones_ok || 0;
+    m.lineas += +r.lineas || 0;           m.lineas_ok += +r.lineas_ok || 0;
+    m.desfase += +r.desfase_total || 0;
+  }
+  const meses = Object.values(porMes).sort((a, b) => a.num_mes - b.num_mes).map((m) => ({
+    ...m,
+    ef_codigos: p(m.codigos_ok, m.codigos),
+    ef_unidades: p(m.unidades_ok, m.unidades),
+    ef_posiciones: p(m.posiciones_ok, m.posiciones)
+  }));
+
+  const tot = meses.reduce((a, m) => ({
+    codigos: a.codigos + m.codigos, codigos_ok: a.codigos_ok + m.codigos_ok,
+    unidades: a.unidades + m.unidades, unidades_ok: a.unidades_ok + m.unidades_ok,
+    posiciones: a.posiciones + m.posiciones, posiciones_ok: a.posiciones_ok + m.posiciones_ok,
+    lineas: a.lineas + m.lineas, lineas_ok: a.lineas_ok + m.lineas_ok, desfase: a.desfase + m.desfase
+  }), { codigos:0, codigos_ok:0, unidades:0, unidades_ok:0, posiciones:0, posiciones_ok:0, lineas:0, lineas_ok:0, desfase:0 });
+
+  const clientes = (cliente.data || []).map((c) => ({
+    ...c,
+    ef_codigos: p(c.codigos_ok, c.codigos),
+    ef_unidades: p(c.unidades_ok, c.unidades)
+  })).sort((a, b) => (b.unidades || 0) - (a.unidades || 0));
+
+  res.json({
+    anio, meta: META, meses,
+    totales: {
+      ...tot,
+      ef_codigos: p(tot.codigos_ok, tot.codigos),
+      ef_unidades: p(tot.unidades_ok, tot.unidades),
+      ef_posiciones: p(tot.posiciones_ok, tot.posiciones),
+      discrepancia: tot.unidades ? (tot.desfase / tot.unidades) * 100 : null,
+      bajoMeta: clientes.filter((c) => c.ef_unidades !== null && c.ef_unidades < META).length
+    },
+    clientes,
+    motivos: motivos.data || [],
+    justificaciones: justif.data || [],
+    discrepancias: discrep.data || [],
+    actualizado: new Date().toISOString()
+  });
+});
+
 /* ── Puente de acciones: dispara funciones del Apps Script ───────────────
    El secreto vive aquí, nunca en el navegador. Apps Script ejecuta la acción
    con los permisos de Drive/Calendar/Sheets que solo él tiene. */

@@ -26,6 +26,7 @@ function destinoDe(ruta) {
   if (ruta === "resumen") return "/resumen";
   if (ruta === "analitica") return "/analitica";
   if (ruta === "acciones") return "/acciones";
+  if (ruta === "calidad") return "/calidad";
   if (ruta.indexOf("accion/") === 0) {
     const id = ruta.slice(7);
     return /^[a-z_]+$/.test(id) ? "/accion/" + id : null;

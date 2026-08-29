@@ -84,6 +84,14 @@
           white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;color:var(--dim)}
   .salida.ok{border-color:#1d4a2e;color:#86efac}
   .salida.err{border-color:#4a1d1d;color:#fca5a5}
+  .medidor{display:flex;align-items:baseline;gap:9px;margin-bottom:4px}
+  .medidor .v{font-size:29px;font-weight:650;letter-spacing:-.8px}
+  .medidor .m{font-size:11px;color:var(--dim2)}
+  .tmini{width:100%;border-collapse:collapse;font-size:12.5px}
+  .tmini th{background:transparent;padding:5px 6px;font-size:10px;position:static}
+  .tmini td{padding:5px 6px;border-top:1px solid var(--line);white-space:nowrap}
+  .tmini td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .ok-t{color:var(--ok)} .bad-t{color:var(--bad)} .warn-t{color:var(--warn)}
   @media(max-width:640px){ main{padding:12px} .kpi .n{font-size:21px} }
 </style>
 </head>
@@ -105,6 +113,7 @@
   <div class="tabs">
     <button class="tab on" data-v="resumen">Resumen ejecutivo</button>
     <button class="tab" data-v="clientes">Clientes y efectividad</button>
+    <button class="tab" data-v="calidad">Calidad y precisión</button>
     <button class="tab" data-v="operacion">Operación y cumplimiento</button>
     <button class="tab" data-v="datos">Explorar datos</button>
     <button class="tab" data-v="acciones">Acciones</button>
@@ -112,6 +121,7 @@
 
   <section id="v-resumen"><div class="grid" id="g-resumen"></div></section>
   <section id="v-clientes" hidden><div class="grid" id="g-clientes"></div></section>
+  <section id="v-calidad" hidden><div class="grid" id="g-calidad"></div></section>
   <section id="v-operacion" hidden><div class="grid" id="g-operacion"></div></section>
 
   <section id="v-acciones" hidden><div class="grid" id="g-acciones"></div></section>
@@ -319,6 +329,79 @@ async function cargarTabla() {
   }
 }
 
+/* ── Calidad y precisión (equivalente a los tableros de Power BI) ── */
+let calidadCargada = false;
+
+function medidor(titulo, valor, meta) {
+  const c = valor === null ? "" : valor >= meta ? "ok-t" : valor >= meta - 1 ? "warn-t" : "bad-t";
+  const dif = valor === null ? "" :
+    (valor >= meta ? "+" : "") + (valor - meta).toFixed(2) + " vs meta";
+  return `<div class="card"><h3>${titulo}<span>meta ${meta}%</span></h3>
+    <div class="medidor"><span class="v ${c}">${valor === null ? "—" : valor.toFixed(2) + "%"}</span>
+    <span class="m">${dif}</span></div>
+    <span class="bar ${c === "ok-t" ? "ok" : c === "bad-t" ? "bad" : "warn"}">
+      <i style="width:${valor === null ? 0 : Math.max(0, Math.min(100, (valor - 95) * 20))}%"></i></span></div>`;
+}
+
+function tablaMeses(meses, meta) {
+  if (!meses.length) return `<div class="card"><h3>Exactitud mensual</h3><p class="mini">Sin datos del año.</p></div>`;
+  const fila = (m) => {
+    const c = (v) => v === null ? "" : v >= meta ? "ok-t" : "bad-t";
+    return `<tr><td>${m.mes}</td>
+      <td class="n">${num(m.codigos)}</td><td class="n ${c(m.ef_codigos)}">${m.ef_codigos === null ? "—" : m.ef_codigos.toFixed(2) + "%"}</td>
+      <td class="n">${num(Math.round(m.unidades))}</td><td class="n ${c(m.ef_unidades)}">${m.ef_unidades === null ? "—" : m.ef_unidades.toFixed(2) + "%"}</td>
+      <td class="n ${c(m.ef_posiciones)}">${m.ef_posiciones === null ? "—" : m.ef_posiciones.toFixed(2) + "%"}</td></tr>`;
+  };
+  return `<div class="card"><h3>Exactitud mensual<span>códigos · unidades · ubicación</span></h3>
+    <div style="overflow-x:auto"><table class="tmini"><thead><tr>
+      <th>Mes</th><th style="text-align:right">Códigos</th><th style="text-align:right">% Cód.</th>
+      <th style="text-align:right">Unidades</th><th style="text-align:right">% Und.</th>
+      <th style="text-align:right">% Ubic.</th></tr></thead>
+      <tbody>${meses.map(fila).join("")}</tbody></table></div></div>`;
+}
+
+async function cargarCalidad() {
+  if (calidadCargada) return;
+  const base = $("#base").value;
+  $("#g-calidad").innerHTML = '<div class="card"><p class="mini">Calculando…</p></div>';
+  try {
+    const d = await api(`/api/proxy?ruta=calidad${base ? "&base=" + base : ""}`);
+    const t = d.totales, meta = d.meta;
+
+    $("#g-calidad").innerHTML =
+      medidor("Fidelidad de unidades", t.ef_unidades, meta) +
+      medidor("Fidelidad de SKU", t.ef_codigos, meta) +
+      medidor("Fidelidad de ubicación", t.ef_posiciones, meta) +
+      `<div class="card"><h3>Discrepancia acumulada<span>${d.anio}</span></h3>
+        <div class="medidor"><span class="v ${t.discrepancia > 0.5 ? "bad-t" : "ok-t"}">
+        ${t.discrepancia === null ? "—" : t.discrepancia.toFixed(2) + "%"}</span>
+        <span class="m">${num(Math.round(t.desfase))} und. de desfase</span></div>
+        <div class="fila"><span>Clientes bajo la meta</span><b class="${t.bajoMeta ? "bad-t" : "ok-t"}">${t.bajoMeta}</b></div>
+        <div class="fila"><span>Líneas con discrepancia</span><b>${num(t.lineas - t.lineas_ok)}</b></div></div>` +
+      tablaMeses(d.meses, meta) +
+      grafico("Evolución de unidades auditadas", [
+        { campo: "unidades", nombre: "Unidades", color: "#3b82f6" }
+      ], d.meses.map((m) => ({ ...m, unidades: Math.round(m.unidades) })), d.anio) +
+      lista("Causas de discrepancia", d.motivos,
+        { valor: (f) => f.incidencias, etiq: (f) => f.motivo, clase: () => "bad",
+          nota: "análisis histórico", limite: 14 }) +
+      lista("Estado de gestión", d.justificaciones,
+        { valor: (f) => f.incidencias, etiq: (f) => f.justificacion, clase: () => "warn" }) +
+      lista("Clientes bajo la meta", d.clientes.filter((c) => c.ef_unidades !== null && c.ef_unidades < meta)
+        .sort((a, b) => a.ef_unidades - b.ef_unidades),
+        { valor: (f) => Number(f.ef_unidades.toFixed(2)), etiq: (f) => f.cliente, suf: "%",
+          max: 100, clase: () => "bad", nota: "exactitud por unidades" }) +
+      lista("Confiabilidad por cliente", d.clientes.filter((c) => c.ef_unidades !== null)
+        .sort((a, b) => b.ef_unidades - a.ef_unidades),
+        { valor: (f) => Number(f.ef_unidades.toFixed(2)), etiq: (f) => f.cliente, suf: "%", max: 100,
+          clase: (f) => (f.ef_unidades >= meta ? "ok" : "bad"), limite: 20 });
+    calidadCargada = true;
+  } catch (e) {
+    $("#g-calidad").innerHTML =
+      `<div class="card"><h3>Error</h3><p class="mini">${esc(e.message)}</p></div>`;
+  }
+}
+
 /* ── Acciones remotas (se ejecutan en Apps Script) ── */
 let accionesCargadas = false;
 
@@ -379,14 +462,17 @@ document.querySelectorAll(".tab").forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === b));
     vista = b.dataset.v;
-    ["resumen", "clientes", "operacion", "datos", "acciones"].forEach(
+    ["resumen", "clientes", "calidad", "operacion", "datos", "acciones"].forEach(
       (v) => ($("#v-" + v).hidden = v !== vista));
     if (vista === "datos" && !datos) cargarTabla();
     if (vista === "acciones") cargarAcciones();
+    if (vista === "calidad") cargarCalidad();
   };
 });
-$("#base").onchange = () => { offset = 0; cargarAnalitica(); if (vista === "datos") cargarTabla(); };
-$("#refrescar").onclick = () => { cargarAnalitica(); if (vista === "datos") cargarTabla(); };
+$("#base").onchange = () => { offset = 0; calidadCargada = false; cargarAnalitica();
+  if (vista === "datos") cargarTabla(); if (vista === "calidad") cargarCalidad(); };
+$("#refrescar").onclick = () => { calidadCargada = false; cargarAnalitica();
+  if (vista === "datos") cargarTabla(); if (vista === "calidad") cargarCalidad(); };
 $("#buscar").onclick = () => { offset = 0; cargarTabla(); };
 $("#limpiar").onclick = () => { $("#cliente").value = ""; offset = 0; cargarTabla(); };
 $("#tabla").onchange = () => { offset = 0; cargarTabla(); };
