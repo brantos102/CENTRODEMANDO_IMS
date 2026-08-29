@@ -18,7 +18,11 @@
  * doGet lo habría sobrescrito y roto la operación.
  */
 
-/** Acciones permitidas. Solo estas pueden dispararse desde fuera. */
+/**
+ * Acciones permitidas. Solo estas pueden dispararse desde fuera.
+ * Cada una recibe `p` (los parámetros enviados por el panel); las que no
+ * necesitan nada simplemente lo ignoran.
+ */
 var PUENTE_ACCIONES = {
   actualizar_metricas:   function () { return dash_actualizarMetricas(); },
   consolidar_todo:       function () { return dash_consolidarTodo(); },
@@ -33,7 +37,44 @@ var PUENTE_ACCIONES = {
   garantizar_accesos:    function () { return dash_garantizarAccesosTodos(); },
   // Sincronización con Supabase (definidas en SUPABASE.gs)
   sync_supabase:         function () { return sincronizarTodoSupabase(); },
-  estado_sync:           function () { return estadoSyncSupabase(); }
+  estado_sync:           function () { return estadoSyncSupabase(); },
+
+  /* ── Acciones CON parámetros ─────────────────────────────────────────── */
+
+  /** Crea el archivo de inventario completo (el mismo flujo del asistente). */
+  crear_inventario: function (p) {
+    if (!p || !p.datos) throw new Error("Faltan los datos del inventario.");
+    return procesarCreacionArchivoIntegral(p.datos);
+  },
+
+  /** Extrae stock del ERP para previsualizar antes de crear. */
+  previsualizar_stock: function (p) {
+    if (!p || !p.cliente) throw new Error("Indica el cliente.");
+    return previsualizarStockItsanet(p.cliente, p.codigos || null, !!p.variantes);
+  },
+
+  /** Códigos programados del cliente para un mes. */
+  codigos_programados: function (p) {
+    if (!p || !p.cliente || !p.mes) throw new Error("Indica cliente y mes.");
+    return obtenerCodigosProgramados(p.cliente, p.mes);
+  },
+
+  /** Carpetas disponibles en Drive para elegir destino. */
+  subcarpetas: function (p) {
+    return obtenerSubcarpetas((p && p.parentId) || null);
+  },
+
+  /** Eventos del cronograma de un cliente (para vincular el archivo). */
+  eventos_cliente: function (p) {
+    if (!p || !p.cliente) throw new Error("Indica el cliente.");
+    return obtenerEventosCronogramaPorCliente(p.cliente);
+  },
+
+  /** Crea un evento nuevo en el cronograma. */
+  crear_evento: function (p) {
+    if (!p || !p.datos) throw new Error("Faltan los datos del evento.");
+    return crearEventoCronograma(p.datos);
+  }
 };
 
 /** Comprueba el secreto compartido con Railway. */
@@ -72,7 +113,7 @@ function doPost(e) {
 
   var t0 = new Date().getTime();
   try {
-    var r = fn();
+    var r = fn(cuerpo.params || {});
     try {
       if (typeof _registrarActividad === "function") {
         _registrarActividad("panel-web", "accion_remota", "", nombre);

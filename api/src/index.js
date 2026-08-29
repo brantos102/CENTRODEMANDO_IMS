@@ -388,11 +388,23 @@ const ACCIONES = [
   { id: "sincronizar_calendario", nombre: "Sincronizar calendario",  grupo: "Operación" },
   { id: "sincronizar_panel",    nombre: "Sincronizar cronograma/panel", grupo: "Operación" },
   { id: "enviar_recordatorios", nombre: "Enviar recordatorios",      grupo: "Operación" },
-  { id: "garantizar_accesos",   nombre: "Garantizar accesos equipo", grupo: "Operación" }
+  { id: "garantizar_accesos",   nombre: "Garantizar accesos equipo", grupo: "Operación" },
+  // Con parámetros: las usa el asistente de creación del panel.
+  { id: "crear_inventario",     nombre: "Crear inventario",          grupo: "Asistente", params: true },
+  { id: "previsualizar_stock",  nombre: "Extraer stock del ERP",     grupo: "Asistente", params: true },
+  { id: "codigos_programados",  nombre: "Códigos programados",       grupo: "Asistente", params: true },
+  { id: "subcarpetas",          nombre: "Carpetas de Drive",         grupo: "Asistente", params: true },
+  { id: "eventos_cliente",      nombre: "Eventos del cliente",       grupo: "Asistente", params: true },
+  { id: "crear_evento",         nombre: "Crear evento",              grupo: "Asistente", params: true }
 ];
 
 app.get("/acciones", requireToken, (_req, res) => {
-  res.json({ disponible: !!(PUENTE_URL && PUENTE_SECRETO), acciones: ACCIONES });
+  res.json({
+    disponible: !!(PUENTE_URL && PUENTE_SECRETO),
+    // Los botones sueltos son los sin parámetros; el resto los usa el asistente.
+    acciones: ACCIONES.filter((a) => !a.params),
+    conParametros: ACCIONES.filter((a) => a.params).map((a) => a.id)
+  });
 });
 
 app.post("/accion/:id", requireToken, async (req, res) => {
@@ -407,7 +419,7 @@ app.post("/accion/:id", requireToken, async (req, res) => {
     const r = await fetch(PUENTE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secreto: PUENTE_SECRETO, accion: id }),
+      body: JSON.stringify({ secreto: PUENTE_SECRETO, accion: id, params: req.body || {} }),
       redirect: "follow"
     });
     const txt = await r.text();
