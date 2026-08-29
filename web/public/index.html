@@ -73,6 +73,17 @@
   svg.chart{width:100%;height:190px;display:block}
   .leyenda{display:flex;gap:14px;font-size:11px;color:var(--dim);margin-top:8px;flex-wrap:wrap}
   .leyenda i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+  .acc-btn{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;
+           padding:10px 12px;margin-bottom:7px;text-align:left;border-radius:8px;
+           background:var(--panel2);border:1px solid var(--line);color:var(--txt);font-size:13px}
+  .acc-btn:hover{border-color:var(--acc)}
+  .acc-btn .go{color:var(--dim2);font-size:16px}
+  .acc-btn.run{opacity:.6;cursor:wait}
+  .salida{margin-top:10px;padding:10px 12px;border-radius:8px;background:#0f1622;
+          border:1px solid var(--line);font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
+          white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;color:var(--dim)}
+  .salida.ok{border-color:#1d4a2e;color:#86efac}
+  .salida.err{border-color:#4a1d1d;color:#fca5a5}
   @media(max-width:640px){ main{padding:12px} .kpi .n{font-size:21px} }
 </style>
 </head>
@@ -96,11 +107,14 @@
     <button class="tab" data-v="clientes">Clientes y efectividad</button>
     <button class="tab" data-v="operacion">Operación y cumplimiento</button>
     <button class="tab" data-v="datos">Explorar datos</button>
+    <button class="tab" data-v="acciones">Acciones</button>
   </div>
 
   <section id="v-resumen"><div class="grid" id="g-resumen"></div></section>
   <section id="v-clientes" hidden><div class="grid" id="g-clientes"></div></section>
   <section id="v-operacion" hidden><div class="grid" id="g-operacion"></div></section>
+
+  <section id="v-acciones" hidden><div class="grid" id="g-acciones"></div></section>
 
   <section id="v-datos" hidden>
     <div class="barra">
@@ -305,14 +319,70 @@ async function cargarTabla() {
   }
 }
 
+/* ── Acciones remotas (se ejecutan en Apps Script) ── */
+let accionesCargadas = false;
+
+async function cargarAcciones() {
+  if (accionesCargadas) return;
+  $("#g-acciones").innerHTML = '<div class="card"><p class="mini">Cargando…</p></div>';
+  try {
+    const d = await api("/api/proxy?ruta=acciones");
+    if (!d.disponible) {
+      $("#g-acciones").innerHTML =
+        '<div class="card"><h3>Puente no configurado</h3><p class="mini">' +
+        'Falta definir PUENTE_URL y PUENTE_SECRETO en Railway. Mientras tanto, ' +
+        'estas acciones se ejecutan desde el Centro de Mando en Apps Script.</p></div>';
+      accionesCargadas = true;
+      return;
+    }
+    const grupos = {};
+    for (const a of d.acciones) (grupos[a.grupo] ||= []).push(a);
+    $("#g-acciones").innerHTML = Object.entries(grupos).map(([g, lista]) =>
+      `<div class="card"><h3>${esc(g)}</h3>` +
+      lista.map((a) =>
+        `<button class="acc-btn" data-id="${esc(a.id)}">${esc(a.nombre)}<span class="go">›</span></button>`
+      ).join("") +
+      `<div class="salida" id="out-${esc(g).replace(/\s/g, "")}" hidden></div></div>`
+    ).join("");
+
+    document.querySelectorAll(".acc-btn").forEach((b) => {
+      b.onclick = async () => {
+        const salida = b.closest(".card").querySelector(".salida");
+        const etiqueta = b.textContent.replace("›", "").trim();
+        b.classList.add("run"); b.disabled = true;
+        salida.hidden = false; salida.className = "salida";
+        salida.textContent = `Ejecutando "${etiqueta}"…`;
+        try {
+          const r = await fetch(`/api/proxy?ruta=accion/${b.dataset.id}`, { method: "POST" });
+          const j = await r.json().catch(() => null);
+          const bien = r.ok && j && j.ok !== false;
+          salida.className = "salida " + (bien ? "ok" : "err");
+          salida.textContent = (bien ? "✓ " : "✕ ") + etiqueta + "\n" +
+            JSON.stringify(j && (j.resultado ?? j), null, 2).slice(0, 2000);
+          if (bien) { datos = null; cargarAnalitica(); }
+        } catch (e) {
+          salida.className = "salida err";
+          salida.textContent = "✕ " + e.message;
+        } finally { b.classList.remove("run"); b.disabled = false; }
+      };
+    });
+    accionesCargadas = true;
+  } catch (e) {
+    $("#g-acciones").innerHTML =
+      `<div class="card"><h3>Error</h3><p class="mini">${esc(e.message)}</p></div>`;
+  }
+}
+
 /* ── Navegación ── */
 let vista = "resumen";
 document.querySelectorAll(".tab").forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === b));
     vista = b.dataset.v;
-    ["resumen", "clientes", "operacion", "datos"].forEach((v) => ($("#v-" + v).hidden = v !== vista));
+    ["resumen", "clientes", "operacion", "datos", "acciones"].forEach(
+      (v) => ($("#v-" + v).hidden = v !== vista));
     if (vista === "datos" && !datos) cargarTabla();
+    if (vista === "acciones") cargarAcciones();
   };
 });
 $("#base").onchange = () => { offset = 0; cargarAnalitica(); if (vista === "datos") cargarTabla(); };

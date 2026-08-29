@@ -25,6 +25,11 @@ const TABLAS = new Set(["panel_de_control", "inventarios", "registro", "clientes
 function destinoDe(ruta) {
   if (ruta === "resumen") return "/resumen";
   if (ruta === "analitica") return "/analitica";
+  if (ruta === "acciones") return "/acciones";
+  if (ruta.indexOf("accion/") === 0) {
+    const id = ruta.slice(7);
+    return /^[a-z_]+$/.test(id) ? "/accion/" + id : null;
+  }
   const [tabla, id] = String(ruta).split("/");
   if (!TABLAS.has(tabla)) return null;
   if (id !== undefined && !/^\d+$/.test(id)) return null;

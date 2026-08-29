@@ -21,6 +21,8 @@ const {
   SUPABASE_SERVICE_ROLE_KEY,
   API_TOKEN,
   CORS_ORIGINS = "",
+  PUENTE_URL,
+  PUENTE_SECRETO,
   PORT = 3000
 } = process.env;
 
@@ -287,6 +289,52 @@ app.get("/analitica", requireToken, async (req, res) => {
     },
     actualizado: new Date().toISOString()
   });
+});
+
+/* ── Puente de acciones: dispara funciones del Apps Script ───────────────
+   El secreto vive aquí, nunca en el navegador. Apps Script ejecuta la acción
+   con los permisos de Drive/Calendar/Sheets que solo él tiene. */
+const ACCIONES = [
+  { id: "actualizar_metricas",  nombre: "Actualizar métricas",       grupo: "Datos" },
+  { id: "sync_supabase",        nombre: "Sincronizar con Supabase",  grupo: "Datos" },
+  { id: "estado_sync",          nombre: "Estado de sincronización",  grupo: "Datos" },
+  { id: "consolidar_todo",      nombre: "Consolidar todo",           grupo: "Consolidación" },
+  { id: "consolidar_inventarios", nombre: "Consolidar inventarios",  grupo: "Consolidación" },
+  { id: "consolidar_registro",  nombre: "Consolidar registro",       grupo: "Consolidación" },
+  { id: "estado_consolidacion", nombre: "Estado de consolidación",   grupo: "Consolidación" },
+  { id: "continuar_consolidacion", nombre: "Continuar consolidación",grupo: "Consolidación" },
+  { id: "limpiar_duplicados",   nombre: "Limpiar duplicados",        grupo: "Consolidación" },
+  { id: "sincronizar_calendario", nombre: "Sincronizar calendario",  grupo: "Operación" },
+  { id: "sincronizar_panel",    nombre: "Sincronizar cronograma/panel", grupo: "Operación" },
+  { id: "enviar_recordatorios", nombre: "Enviar recordatorios",      grupo: "Operación" },
+  { id: "garantizar_accesos",   nombre: "Garantizar accesos equipo", grupo: "Operación" }
+];
+
+app.get("/acciones", requireToken, (_req, res) => {
+  res.json({ disponible: !!(PUENTE_URL && PUENTE_SECRETO), acciones: ACCIONES });
+});
+
+app.post("/accion/:id", requireToken, async (req, res) => {
+  if (!PUENTE_URL || !PUENTE_SECRETO) {
+    return res.status(503).json({ error: "El puente de acciones no está configurado." });
+  }
+  const id = req.params.id;
+  if (!ACCIONES.some((a) => a.id === id)) {
+    return res.status(404).json({ error: `Acción no permitida: ${id}` });
+  }
+  try {
+    const r = await fetch(PUENTE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secreto: PUENTE_SECRETO, accion: id }),
+      redirect: "follow"
+    });
+    const txt = await r.text();
+    let j; try { j = JSON.parse(txt); } catch { j = { ok: false, error: txt.slice(0, 300) }; }
+    res.status(j.ok === false ? 400 : 200).json(j);
+  } catch (e) {
+    res.status(502).json({ error: "No se pudo contactar el Apps Script", detalle: e.message });
+  }
 });
 
 app.use((_req, res) => res.status(404).json({ error: "Ruta no encontrada" }));
