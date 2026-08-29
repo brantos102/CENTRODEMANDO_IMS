@@ -19,11 +19,12 @@ const { API_BASE_URL, API_TOKEN } = process.env;
 // (un pegado accidental duplicado o con espacios invalida toda la petición).
 const TOKEN = String(API_TOKEN || "").trim().split(/\s+/)[0];
 
-const TABLAS = new Set(["panel_de_control", "inventarios", "registro", "clientes"]);
+const TABLAS = new Set(["panel_de_control", "inventarios", "registro", "clientes", "cronograma", "equipo"]);
 
 /** Traduce la ruta pedida a la de Railway; null si no está permitida. */
 function destinoDe(ruta) {
   if (ruta === "resumen") return "/resumen";
+  if (ruta === "analitica") return "/analitica";
   const [tabla, id] = String(ruta).split("/");
   if (!TABLAS.has(tabla)) return null;
   if (id !== undefined && !/^\d+$/.test(id)) return null;

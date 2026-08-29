@@ -59,7 +59,7 @@ app.get("/", (_req, res) => {
   res.json({
     servicio: "itsanet-ims-api",
     rutas: ["/health", "/resumen", "/api/:tabla"],
-    tablas: ["panel_de_control", "inventarios", "registro", "clientes"]
+    tablas: ["panel_de_control", "inventarios", "registro", "clientes", "cronograma", "equipo"]
   });
 });
 
@@ -74,7 +74,7 @@ app.use("/api", requireToken);
 /* ── Lectura genérica con filtros, orden y paginación ─────────────────────
    GET /api/:tabla?cliente=FLUKE&limit=100&offset=0&order=creado_en.desc
    Cualquier otro parámetro se aplica como filtro de igualdad.            */
-const TABLAS = new Set(["panel_de_control", "inventarios", "registro", "clientes"]);
+const TABLAS = new Set(["panel_de_control", "inventarios", "registro", "clientes", "cronograma", "equipo"]);
 
 app.get("/api/:tabla", async (req, res) => {
   const { tabla } = req.params;
@@ -129,10 +129,89 @@ app.get("/resumen", requireToken, async (_req, res) => {
     const { count } = await db.from(t).select("id", { count: "exact", head: true });
     return count ?? 0;
   };
-  const [panel, inventarios, registro, clientes] = await Promise.all(
-    ["panel_de_control", "inventarios", "registro", "clientes"].map(cuenta)
+  const [panel, inventarios, registro, clientes, cronograma] = await Promise.all(
+    ["panel_de_control", "inventarios", "registro", "clientes", "cronograma"].map(cuenta)
   );
-  res.json({ panel, inventarios, registro, clientes, actualizado: new Date().toISOString() });
+  res.json({ panel, inventarios, registro, clientes, cronograma, actualizado: new Date().toISOString() });
+});
+
+/* ── Analítica: indicadores calculados en el servidor ─────────────────────
+   Se agrega aquí (y no en el navegador) para no bajar 125k filas al cliente. */
+app.get("/analitica", requireToken, async (req, res) => {
+  const base = req.query.base;
+  const filtra = (q) => (base ? q.eq("base", base) : q);
+
+  // Panel: efectividad y volumen por cliente
+  const { data: panel, error: e1 } = await filtra(
+    db.from("panel_de_control").select(
+      "cliente, avance, responsable, fecha_inicio, fecha_fin, unidades_contadas," +
+      "referencias_contadas, posiciones_contadas, efectividad_unidades," +
+      "efectividad_referencias, efectividad_posiciones")
+  );
+  if (e1) return res.status(400).json({ error: e1.message });
+
+  // Cronograma: cumplimiento y carga por responsable
+  const { data: crono } = await filtra(
+    db.from("cronograma").select("cliente, categoria, responsable, estado, fecha, fecha_entrega, porcentaje")
+  );
+
+  const nOr0 = (x) => (typeof x === "number" && !isNaN(x) ? x : 0);
+  const prom = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null);
+
+  // Por cliente
+  const porCliente = {};
+  for (const r of panel || []) {
+    const k = r.cliente || "—";
+    const c = (porCliente[k] ||= { cliente: k, inventarios: 0, unidades: 0, referencias: 0, posiciones: 0, efec: [] });
+    c.inventarios++;
+    c.unidades += nOr0(r.unidades_contadas);
+    c.referencias += nOr0(r.referencias_contadas);
+    c.posiciones += nOr0(r.posiciones_contadas);
+    if (typeof r.efectividad_unidades === "number") c.efec.push(r.efectividad_unidades);
+  }
+  const clientes = Object.values(porCliente)
+    .map((c) => ({ ...c, efectividad: prom(c.efec), efec: undefined }))
+    .sort((a, b) => b.unidades - a.unidades);
+
+  // Estados del panel y del cronograma
+  const cuentaPor = (arr, campo) => {
+    const o = {};
+    for (const r of arr || []) { const k = String(r[campo] || "—").trim() || "—"; o[k] = (o[k] || 0) + 1; }
+    return Object.entries(o).map(([nombre, n]) => ({ nombre, n })).sort((a, b) => b.n - a.n);
+  };
+
+  // Carga y cumplimiento por responsable (cronograma)
+  const porResp = {};
+  const hoy = new Date();
+  for (const r of crono || []) {
+    const k = r.responsable || "Sin asignar";
+    const p = (porResp[k] ||= { responsable: k, total: 0, entregados: 0, atrasados: 0, pendientes: 0 });
+    p.total++;
+    const est = String(r.estado || "").toLowerCase();
+    if (est.includes("entregad")) p.entregados++;
+    else {
+      p.pendientes++;
+      if (r.fecha && new Date(r.fecha) < hoy) p.atrasados++;
+    }
+  }
+  const responsables = Object.values(porResp)
+    .map((p) => ({ ...p, cumplimiento: p.total ? Math.round((p.entregados / p.total) * 100) : null }))
+    .sort((a, b) => b.total - a.total);
+
+  res.json({
+    clientes,
+    estadosPanel: cuentaPor(panel, "avance"),
+    estadosCronograma: cuentaPor(crono, "estado"),
+    categorias: cuentaPor(crono, "categoria"),
+    responsables,
+    totales: {
+      inventarios: (panel || []).length,
+      eventos: (crono || []).length,
+      unidades: (panel || []).reduce((s, r) => s + nOr0(r.unidades_contadas), 0),
+      efectividadMedia: prom((panel || []).map((r) => r.efectividad_unidades).filter((x) => typeof x === "number"))
+    },
+    actualizado: new Date().toISOString()
+  });
 });
 
 app.use((_req, res) => res.status(404).json({ error: "Ruta no encontrada" }));

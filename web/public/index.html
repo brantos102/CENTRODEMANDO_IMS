@@ -45,6 +45,22 @@
        color:var(--dim);font-size:12px;flex-wrap:wrap;gap:10px}
   .aviso{padding:26px;text-align:center;color:var(--dim)}
   .aviso.err{color:#fca5a5}
+  .tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .tab{padding:8px 15px;border-radius:8px;border:1px solid var(--line);
+       background:var(--panel);cursor:pointer;font-size:13px;color:var(--dim)}
+  .tab.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .card h3{margin:0 0 13px;font-size:12px;color:var(--dim);
+           text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+  .fila{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:center;
+        padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+  .fila:first-of-type{border-top:0}
+  .fila b{font-variant-numeric:tabular-nums;font-weight:600}
+  .barra-v{height:5px;border-radius:3px;background:#243049;overflow:hidden;grid-column:1/-1}
+  .barra-v>i{display:block;height:100%;background:var(--accent)}
+  .barra-v.ok>i{background:var(--ok)} .barra-v.bad>i{background:var(--bad)}
+  .mini{font-size:11px;color:var(--dim)}
 </style>
 </head>
 <body>
@@ -57,10 +73,21 @@
 <main>
   <section class="tiles" id="tiles"></section>
 
+  <div class="tabs">
+    <button class="tab on" data-v="datos">Datos</button>
+    <button class="tab" data-v="analisis">Análisis de resultados</button>
+    <button class="tab" data-v="operacion">Operación y cumplimiento</button>
+  </div>
+
+  <section id="vista-analisis" hidden><div class="grid" id="grid-analisis"></div></section>
+  <section id="vista-operacion" hidden><div class="grid" id="grid-operacion"></div></section>
+
+  <div id="vista-datos">
   <div class="barra">
     <select id="tabla">
       <option value="panel_de_control">Panel de Control</option>
       <option value="inventarios">Inventarios (conteos)</option>
+      <option value="cronograma">Cronograma (eventos)</option>
       <option value="registro">Registro (bitácora)</option>
       <option value="clientes">Clientes</option>
     </select>
@@ -83,6 +110,7 @@
         <button class="sec" id="next">Siguiente ›</button>
       </span>
     </div>
+  </div>
   </div>
 </main>
 
@@ -110,7 +138,7 @@ async function cargarResumen() {
     $("#estado-txt").textContent = "conectado a Supabase";
     $("#tiles").innerHTML = [
       ["Inventarios en curso", d.panel], ["Líneas contadas", d.inventarios],
-      ["Movimientos", d.registro], ["Clientes", d.clientes]
+      ["Movimientos", d.registro], ["Eventos cronograma", d.cronograma], ["Clientes", d.clientes]
     ].map(([l, n]) => `<div class="tile"><div class="n">${num(n)}</div><div class="l">${l}</div></div>`).join("");
   } catch (e) {
     $("#punto").className = "punto bad";
@@ -163,11 +191,87 @@ $("#tabla").onchange = () => { offset = 0; cargarTabla(); };
 $("#base").onchange  = () => {
   const b = $("#base").value;
   $("#sede-chip").textContent = b === "GYE" ? "Guayaquil (GYE)" : b === "UIO" ? "Quito (UIO)" : "Todas las sedes";
-  offset = 0; cargarTabla();
+  offset = 0; analisisCargado = false; cargarTabla();
+  if (!$("#vista-analisis").hidden || !$("#vista-operacion").hidden) cargarAnalisis();
 };
 $("#cliente").onkeydown = (e) => { if (e.key === "Enter") { offset = 0; cargarTabla(); } };
 $("#prev").onclick = () => { offset = Math.max(0, offset - LIMITE); cargarTabla(); };
 $("#next").onclick = () => { if (offset + LIMITE < total) { offset += LIMITE; cargarTabla(); } };
+
+/* ── Análisis (los cálculos llegan ya hechos desde la API) ──────────────── */
+let analisisCargado = false;
+
+const pct = (v) => (v === null || v === undefined ? "—" : Math.round(v) + "%");
+
+function listaCard(titulo, filas, opciones = {}) {
+  const { valor = (f) => f.n, etiqueta = (f) => f.nombre, sufijo = "", barra = true } = opciones;
+  if (!filas || !filas.length) return `<div class="card"><h3>${titulo}</h3><p class="mini">Sin datos.</p></div>`;
+  const max = Math.max(...filas.map((f) => Number(valor(f)) || 0), 1);
+  const cuerpo = filas.slice(0, 12).map((f) => {
+    const v = Number(valor(f)) || 0;
+    const clase = opciones.clase ? opciones.clase(f) : "";
+    return `<div class="fila"><span>${etiqueta(f)}</span><b>${num(v)}${sufijo}</b>` +
+           (barra ? `<span class="barra-v ${clase}"><i style="width:${(v / max) * 100}%"></i></span>` : "") +
+           `</div>`;
+  }).join("");
+  return `<div class="card"><h3>${titulo}</h3>${cuerpo}</div>`;
+}
+
+async function cargarAnalisis() {
+  if (analisisCargado) return;
+  const base = $("#base").value;
+  $("#grid-analisis").innerHTML = '<div class="card"><p class="mini">Calculando…</p></div>';
+  $("#grid-operacion").innerHTML = '<div class="card"><p class="mini">Calculando…</p></div>';
+  try {
+    const d = await api(`/api/proxy?ruta=analitica${base ? "&base=" + base : ""}`);
+    const t = d.totales || {};
+
+    $("#grid-analisis").innerHTML =
+      `<div class="card"><h3>Totales</h3>
+        <div class="fila"><span>Unidades contadas</span><b>${num(t.unidades)}</b></div>
+        <div class="fila"><span>Inventarios</span><b>${num(t.inventarios)}</b></div>
+        <div class="fila"><span>Eventos programados</span><b>${num(t.eventos)}</b></div>
+        <div class="fila"><span>Efectividad media</span><b>${pct(t.efectividadMedia)}</b></div>
+      </div>` +
+      listaCard("Unidades por cliente", d.clientes,
+        { valor: (f) => f.unidades, etiqueta: (f) => f.cliente }) +
+      listaCard("Efectividad por cliente", (d.clientes || []).filter((c) => c.efectividad !== null)
+        .sort((a, b) => b.efectividad - a.efectividad),
+        { valor: (f) => Math.round(f.efectividad), etiqueta: (f) => f.cliente, sufijo: "%",
+          clase: (f) => (f.efectividad >= 95 ? "ok" : f.efectividad < 80 ? "bad" : "") }) +
+      listaCard("Inventarios por estado", d.estadosPanel);
+
+    $("#grid-operacion").innerHTML =
+      listaCard("Carga por responsable", d.responsables,
+        { valor: (f) => f.total, etiqueta: (f) => f.responsable }) +
+      listaCard("Cumplimiento por responsable", (d.responsables || [])
+        .filter((r) => r.cumplimiento !== null).sort((a, b) => b.cumplimiento - a.cumplimiento),
+        { valor: (f) => f.cumplimiento, etiqueta: (f) => f.responsable, sufijo: "%",
+          clase: (f) => (f.cumplimiento >= 90 ? "ok" : f.cumplimiento < 60 ? "bad" : "") }) +
+      listaCard("Atrasados por responsable", (d.responsables || [])
+        .filter((r) => r.atrasados > 0).sort((a, b) => b.atrasados - a.atrasados),
+        { valor: (f) => f.atrasados, etiqueta: (f) => f.responsable, clase: () => "bad" }) +
+      listaCard("Eventos por estado", d.estadosCronograma) +
+      listaCard("Eventos por categoría", d.categorias);
+
+    analisisCargado = true;
+  } catch (e) {
+    const err = `<div class="card"><h3>Error</h3><p class="mini">${e.message}</p></div>`;
+    $("#grid-analisis").innerHTML = err;
+    $("#grid-operacion").innerHTML = err;
+  }
+}
+
+document.querySelectorAll(".tab").forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === b));
+    const v = b.dataset.v;
+    $("#vista-datos").hidden     = v !== "datos";
+    $("#vista-analisis").hidden  = v !== "analisis";
+    $("#vista-operacion").hidden = v !== "operacion";
+    if (v !== "datos") cargarAnalisis();
+  };
+});
 
 cargarResumen();
 cargarTabla();

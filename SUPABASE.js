@@ -468,6 +468,9 @@ function sincronizarTodoSupabase() {
   try { res.panel = migrarPanelASupabase(); }           catch (e) { res.panel = { error: e.message }; }
   try { res.inventarios = sincronizarInventariosSupabase(); } catch (e) { res.inventarios = { error: e.message }; }
   try { res.registro = sincronizarRegistroSupabase(); } catch (e) { res.registro = { error: e.message }; }
+  // El cronograma cambia en filas existentes (estado, entrega, %), así que va completo.
+  try { res.cronograma = migrarCronogramaASupabase(); } catch (e) { res.cronograma = { error: e.message }; }
+  try { migrarEquipoASupabase(); } catch (e) {}
   try { migrarClientesASupabase(); } catch (e) {}
   Logger.log("SYNC: " + JSON.stringify(res));
   return res;
@@ -515,4 +518,97 @@ function estadoSyncSupabase() {
                        " pendientes=" + Math.max(0, sh.getLastRow() - vis));
   });
   return { activo: activo };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CRONOGRAMA Y EQUIPO OPERATIVO → Supabase
+   ---------------------------------------------------------------------------
+   El cronograma es la fuente de las mediciones de cumplimiento (programado vs
+   ejecutado, atrasos, carga por operario). Se lee por POSICIÓN de columna
+   porque su cabecera está en la fila 8 y los datos empiezan en la 9.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Hoja CRONOGRAMA - 2026 → tabla cronograma (refresco completo). */
+function migrarCronogramaASupabase() {
+  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+  var nombre = (typeof CRON_CFG === "object" && CRON_CFG.HOJA_CRONOGRAMA) || "CRONOGRAMA - 2026";
+  var sh = ss.getSheetByName(nombre);
+  if (!sh) throw new Error("No existe la hoja " + nombre + ".");
+
+  var filaIni = (typeof CRON_CFG === "object" && CRON_CFG.CR_FILA_INI) || 9;
+  var ultima = sh.getLastRow();
+  if (ultima < filaIni) return { ok: true, migradas: 0, mensaje: "Cronograma vacío." };
+
+  var v = sh.getRange(filaIni, 1, ultima - filaIni + 1, 20).getValues();
+  var filas = [];
+  for (var i = 0; i < v.length; i++) {
+    var r = v[i];
+    var cli = _sbTxt(r[4]);                       // E cliente
+    var tit = _sbTxt(r[3]);                       // D título
+    if (!cli && !tit) continue;                   // fila vacía
+    filas.push({
+      numero:      _sbNum(r[1]),                  // B
+      anio:        _sbNum(r[2]),                  // C
+      titulo:      tit,                           // D
+      cliente:     cli,                           // E
+      categoria:   _sbTxt(r[5]),                  // F
+      mes:         _sbTxt(r[6]),                  // G
+      frecuencia:  _sbTxt(r[7]),                  // H
+      responsable: _sbTxt(r[8]),                  // I
+      prioridad:   _sbTxt(r[9]),                  // J
+      observacion: _sbTxt(r[10]),                 // K
+      fecha:       _sbFecha(r[11]),               // L programada
+      estado:      _sbTxt(r[12]),                 // M
+      fecha_entrega: _sbFecha(r[13]),             // N
+      duracion:    _sbNum(r[14]),                 // O
+      porcentaje:  _sbNum(r[15]),                 // P
+      archivo_id:  _sbTxt(r[16]),                 // Q
+      base: "UIO",
+      fila_origen: filaIni + i
+    });
+  }
+  if (!filas.length) return { ok: true, migradas: 0, mensaje: "Sin eventos." };
+
+  var del = _supabaseFetch("cronograma?id=gt.0", "delete", null, "return=minimal");
+  if (del.code >= 300) return { ok: false, error: "DELETE HTTP " + del.code + " " + del.body.substring(0, 150) };
+
+  var total = 0, errores = [];
+  for (var k = 0; k < filas.length; k += 200) {
+    var lote = filas.slice(k, k + 200);
+    var res = _supabaseFetch("cronograma", "post", lote, "return=minimal");
+    if (res.code >= 200 && res.code < 300) total += lote.length;
+    else errores.push("Lote " + k + ": HTTP " + res.code + " " + res.body.substring(0, 140));
+  }
+  Logger.log("CRONOGRAMA migrado: " + total + "/" + filas.length +
+             (errores.length ? ("\nERRORES:\n" + errores.join("\n")) : ""));
+  return { ok: errores.length === 0, migradas: total, total: filas.length, errores: errores };
+}
+
+/** Hoja EQUIPO_OPERATIVO → tabla equipo (refresco completo). */
+function migrarEquipoASupabase() {
+  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+  var nombre = (typeof CRON_CFG === "object" && CRON_CFG.HOJA_EQUIPO) || "EQUIPO_OPERATIVO";
+  var sh = ss.getSheetByName(nombre);
+  if (!sh) return { ok: true, migradas: 0, mensaje: "No existe " + nombre + "." };
+  if (sh.getLastRow() < 2) return { ok: true, migradas: 0, mensaje: "Equipo vacío." };
+
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
+  var filas = [];
+  for (var i = 0; i < v.length; i++) {
+    var n = _sbTxt(v[i][0]);
+    if (!n) continue;
+    filas.push({
+      nombre: n, email: _sbTxt(v[i][1]), rol: _sbTxt(v[i][2]),
+      telefono: _sbTxt(v[i][3]),
+      activo: !/^(no|false|0)$/i.test(String(v[i][4] || "").trim()),
+      base: "UIO", fila_origen: i + 2
+    });
+  }
+  if (!filas.length) return { ok: true, migradas: 0, mensaje: "Sin integrantes." };
+
+  var del = _supabaseFetch("equipo?id=gt.0", "delete", null, "return=minimal");
+  if (del.code >= 300) return { ok: false, error: "DELETE HTTP " + del.code };
+  var res = _supabaseFetch("equipo", "post", filas, "return=minimal");
+  Logger.log("EQUIPO migrado -> HTTP " + res.code + " (" + filas.length + ")");
+  return { ok: res.code >= 200 && res.code < 300, migradas: filas.length, code: res.code };
 }
