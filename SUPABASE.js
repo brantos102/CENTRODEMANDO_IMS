@@ -220,13 +220,32 @@ function _sbMigrarHoja(nombreHoja, tabla, propProgreso, colsFn, mapFn) {
     }
     if (lote.length) {
       var res = _supabaseFetch(tabla, "post", lote, "return=minimal");
-      if (res.code >= 200 && res.code < 300) enviadas += lote.length;
-      else {
-        errores.push("Fila " + desde + ": HTTP " + res.code + " " + res.body.substring(0, 120));
-        if (errores.length >= 3) {
-          sp.setProperty(propProgreso, String(desde));
-          Logger.log("ERRORES en " + nombreHoja + ":\n" + errores.join("\n"));
-          return { ok: false, errores: errores, siguienteFila: desde };
+      if (res.code >= 200 && res.code < 300) {
+        enviadas += lote.length;
+      } else {
+        // El lote falló por alguna fila puntual: reintenta en sub-lotes y luego
+        // fila a fila, para no perder 500 filas por un solo dato inválido.
+        var rescatadas = 0, fallidas = [];
+        for (var s1 = 0; s1 < lote.length; s1 += 50) {
+          var sub = lote.slice(s1, s1 + 50);
+          var r2 = _supabaseFetch(tabla, "post", sub, "return=minimal");
+          if (r2.code >= 200 && r2.code < 300) { rescatadas += sub.length; continue; }
+          for (var s2 = 0; s2 < sub.length; s2++) {
+            var r3 = _supabaseFetch(tabla, "post", [sub[s2]], "return=minimal");
+            if (r3.code >= 200 && r3.code < 300) rescatadas++;
+            else {
+              fallidas.push(sub[s2].fila_origen);
+              if (errores.length < 10) {
+                errores.push("Fila " + sub[s2].fila_origen + ": HTTP " + r3.code + " " +
+                             r3.body.substring(0, 140));
+              }
+            }
+          }
+        }
+        enviadas += rescatadas;
+        if (fallidas.length) {
+          Logger.log("Filas NO migradas de " + nombreHoja + " (" + fallidas.length + "): " +
+                     fallidas.slice(0, 40).join(", ") + (fallidas.length > 40 ? " ..." : ""));
         }
       }
     }
