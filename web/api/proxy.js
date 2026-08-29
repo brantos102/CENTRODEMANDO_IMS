@@ -32,6 +32,22 @@ function destinoDe(ruta) {
 }
 
 export default async function handler(req, res) {
+  // Diagnóstico: compara la longitud del token de Vercel con la de Railway.
+  // No revela el valor; si los números difieren, las variables no coinciden.
+  if ((req.query || {}).ruta === "diag") {
+    let salud = null;
+    try {
+      const base0 = String(API_BASE_URL || "").trim().replace(/\/+$/, "");
+      const b = /^https?:\/\//i.test(base0) ? base0 : "https://" + base0;
+      salud = await (await fetch(b + "/health")).json();
+    } catch (e) { salud = { error: e.message }; }
+    return res.json({
+      vercel: { apiBaseUrl: API_BASE_URL || null, tokenConfigurado: !!TOKEN, tokenLen: TOKEN.length },
+      railway: salud,
+      coinciden: !!salud && salud.tokenLen === TOKEN.length
+    });
+  }
+
   if (!API_BASE_URL) {
     return res.status(500).json({ error: "Falta API_BASE_URL en el servidor." });
   }

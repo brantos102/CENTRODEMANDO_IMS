@@ -66,7 +66,12 @@ app.get("/", (_req, res) => {
 /* ── Salud (sin token: Railway la usa para saber si el servicio vive) ─────── */
 app.get("/health", async (_req, res) => {
   const { error } = await db.from("panel_de_control").select("id").limit(1);
-  res.json({ ok: !error, servicio: "itsanet-ims-api", error: error?.message ?? null });
+  // tokenLen permite comparar con el del proxy sin revelar el valor.
+  res.json({
+    ok: !error, servicio: "itsanet-ims-api",
+    tokenConfigurado: !!TOKEN, tokenLen: TOKEN.length,
+    error: error?.message ?? null
+  });
 });
 
 app.use("/api", requireToken);
