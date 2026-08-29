@@ -143,17 +143,35 @@ function migrarPanelASupabase() {
 var SB_LOTE      = 500;      // filas por request a Supabase
 var SB_MAX_SEG   = 280;      // ~4.6 min: corta antes del límite de 6 min
 
-/** Detecta el índice de una columna por palabras clave en el encabezado. */
+/** Índice de columna por nombre EXACTO de encabezado (normalizado). */
+function _sbNorm(t) {
+  return String(t === null || t === undefined ? "" : t)
+    .toUpperCase().replace(/\s+/g, " ").trim()
+    .replace(/[ÁÀÄÂ]/g, "A").replace(/[ÉÈËÊ]/g, "E").replace(/[ÍÌÏÎ]/g, "I")
+    .replace(/[ÓÒÖÔ]/g, "O").replace(/[ÚÙÜÛ]/g, "U").replace(/Ñ/g, "N");
+}
 function _sbCol(head, keys) {
-  for (var i = 0; i < head.length; i++) {
-    for (var k = 0; k < keys.length; k++) {
-      if (head[i].indexOf(keys[k]) !== -1) return i;
-    }
+  var H = head.map(_sbNorm);
+  for (var k = 0; k < keys.length; k++) {          // 1) coincidencia EXACTA
+    var K = _sbNorm(keys[k]);
+    for (var i = 0; i < H.length; i++) if (H[i] === K) return i;
+  }
+  for (var k2 = 0; k2 < keys.length; k2++) {       // 2) respaldo: empieza por
+    var K2 = _sbNorm(keys[k2]);
+    for (var j = 0; j < H.length; j++) if (H[j].indexOf(K2) === 0) return j;
   }
   return -1;
 }
 function _sbTxt(x) { var s = String(x === null || x === undefined ? "" : x).trim(); return s ? s : null; }
-function _sbNum(x) { var n = parseFloat(String(x).replace(",", ".")); return isNaN(n) ? null : n; }
+function _sbNum(x) {
+  if (x === null || x === undefined || x === "") return null;
+  if (typeof x === "number") return isNaN(x) ? null : x;
+  var s = String(x).trim(); if (!s) return null;
+  s = s.replace(/[%\s]/g, "");
+  if (s.indexOf(",") !== -1 && s.indexOf(".") !== -1) s = s.replace(/\./g, "").replace(",", ".");
+  else if (s.indexOf(",") !== -1) s = s.replace(",", ".");
+  var n = parseFloat(s); return isNaN(n) ? null : n;
+}
 function _sbFecha(x) {
   if (x instanceof Date) return x.toISOString();
   var s = String(x || "").trim(); if (!s) return null;
@@ -226,20 +244,20 @@ function migrarInventariosASupabase() {
     function (head) {
       return {
         fIni: _sbCol(head, ["FECHA INICIO"]), fFin: _sbCol(head, ["FECHA FINAL"]),
-        id: _sbCol(head, ["ID"]), linea: _sbCol(head, ["N DE L\u00cdNEA", "N DE LINEA", "L\u00cdNEA", "LINEA"]),
+        id: _sbCol(head, ["ID"]), linea: _sbCol(head, ["N DE LINEA"]),
         cli: _sbCol(head, ["CLIENTE"]), abc: _sbCol(head, ["ABC"]),
-        sku: _sbCol(head, ["PRODUCTO"]), desc: _sbCol(head, ["DESCRIPCI"]),
+        sku: _sbCol(head, ["PRODUCTO"]), desc: _sbCol(head, ["DESCRIPCION DEL PRODUCTO"]),
         serie: _sbCol(head, ["SERIE"]), lote: _sbCol(head, ["LOTE"]),
-        desp: _sbCol(head, ["DESPACHO"]), part: _sbCol(head, ["PARTIDA"]),
-        cat: _sbCol(head, ["CAT_LOG", "CAT"]), est: _sbCol(head, ["EST_MER", "EST"]),
-        pos: _sbCol(head, ["POSICI"]), uni: _sbCol(head, ["UNI"]), depot: _sbCol(head, ["DEPOT"]),
-        cFis: _sbCol(head, ["CONTEO FISICO", "CONTEO F\u00cdSICO"]), desf: _sbCol(head, ["DESFASE"]),
+        desp: _sbCol(head, ["N DESPACHO"]), part: _sbCol(head, ["N PARTIDA"]),
+        cat: _sbCol(head, ["CAT_LOG"]), est: _sbCol(head, ["EST_MER"]),
+        pos: _sbCol(head, ["POSICION"]), uni: _sbCol(head, ["UNI"]), depot: _sbCol(head, ["DEPOT"]),
+        cFis: _sbCol(head, ["CONTEO FISICO"]), desf: _sbCol(head, ["DESFASE"]),
         rUni: _sbCol(head, ["RESULTADO UNIDADES"]), rSer: _sbCol(head, ["RESULTADO SERIES"]),
-        c1: _sbCol(head, ["CONTEO No. 1", "CONTEO NO. 1"]), c2: _sbCol(head, ["CONTEO No. 2", "CONTEO NO. 2"]),
+        c1: _sbCol(head, ["CONTEO NO. 1"]), c2: _sbCol(head, ["CONTEO NO. 2"]),
         cFin2: _sbCol(head, ["CONTEO FINAL"]), aju: _sbCol(head, ["AJUSTE"]),
-        mot: _sbCol(head, ["MOTIVO"]), jus: _sbCol(head, ["JUSTIFICACION", "JUSTIFICACI"]),
-        obs: _sbCol(head, ["OBSERVACION", "OBSERVACI"]), nPos: _sbCol(head, ["NUEVA POSICI"]),
-        aDep: _sbCol(head, ["ACTUALIZACION DEPOT", "ACTUALIZACI"])
+        mot: _sbCol(head, ["MOTIVO"]), jus: _sbCol(head, ["JUSTIFICACION"]),
+        obs: _sbCol(head, ["OBSERVACION"]), nPos: _sbCol(head, ["NUEVA POSICION"]),
+        aDep: _sbCol(head, ["ACTUALIZACION DEPOT"])
       };
     },
     function (r, head, c) {
@@ -269,8 +287,8 @@ function migrarRegistroASupabase() {
       return {
         act: _sbCol(head, ["ACTUADOR"]), fec: _sbCol(head, ["FECHA"]), hora: _sbCol(head, ["HORA"]),
         usr: _sbCol(head, ["USUARIO"]), mail: _sbCol(head, ["CORREO"]), id: _sbCol(head, ["ID"]),
-        cli: _sbCol(head, ["CLIENTE"]), cod: _sbCol(head, ["CODIGO", "C\u00d3DIGO"]),
-        pos: _sbCol(head, ["POSICION", "POSICI"]), cFis: _sbCol(head, ["CONTEO FISICO", "CONTEO F\u00cdSICO"]),
+        cli: _sbCol(head, ["CLIENTE"]), cod: _sbCol(head, ["CODIGO"]),
+        pos: _sbCol(head, ["POSICION"]), cFis: _sbCol(head, ["CONTEO FISICO"]),
         rCon: _sbCol(head, ["RESULTADO CONTEO"]), c1: _sbCol(head, ["CONTEO N1"]),
         c2: _sbCol(head, ["CONTEO N2"]), c3: _sbCol(head, ["CONTEO N3"]), link: _sbCol(head, ["LINK"])
       };
@@ -307,5 +325,49 @@ function diagnosticoHojasSupabase() {
     var head = sh.getLastColumn() ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0] : [];
     Logger.log(n + ": filas con datos=" + sh.getLastRow() + " columnas=" + sh.getLastColumn() +
                "\n   encabezados: " + head.join(" | "));
+  });
+}
+
+/**
+ * VERIFICADOR: muestra a qué columna real quedó apuntando cada campo y un
+ * valor de ejemplo (fila 2). Ejecútalo ANTES de migrar para confirmar el mapeo.
+ */
+function verificarMapeoSupabase() {
+  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+
+  function chequear(hoja, mapa) {
+    var sh = ss.getSheetByName(hoja);
+    if (!sh) { Logger.log(hoja + ": NO EXISTE"); return; }
+    var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var ej   = sh.getLastRow() > 1 ? sh.getRange(2, 1, 1, sh.getLastColumn()).getValues()[0] : [];
+    var out = ["── " + hoja + " ──"];
+    for (var campo in mapa) {
+      var i = _sbCol(head, mapa[campo]);
+      out.push("  " + campo + ": " + (i < 0 ? "*** NO ENCONTRADA ***"
+        : ('col ' + (i + 1) + ' "' + head[i] + '" | ej: ' + JSON.stringify(ej[i]))));
+    }
+    Logger.log(out.join("\n"));
+  }
+
+  chequear("INVENTARIOS", {
+    fecha_inicio: ["FECHA INICIO"], fecha_final: ["FECHA FINAL"], archivo_id: ["ID"],
+    n_linea: ["N DE LINEA"], cliente: ["CLIENTE"], abc: ["ABC"], sku: ["PRODUCTO"],
+    descripcion: ["DESCRIPCION DEL PRODUCTO"], serie: ["SERIE"], lote: ["LOTE"],
+    despacho: ["N DESPACHO"], partida: ["N PARTIDA"], categoria: ["CAT_LOG"],
+    estado: ["EST_MER"], posicion: ["POSICION"], unidad: ["UNI"], depot: ["DEPOT"],
+    conteo_fisico: ["CONTEO FISICO"], desfase: ["DESFASE"],
+    resultado_unidades: ["RESULTADO UNIDADES"], resultado_series: ["RESULTADO SERIES"],
+    conteo_n1: ["CONTEO NO. 1"], conteo_n2: ["CONTEO NO. 2"], conteo_final: ["CONTEO FINAL"],
+    ajuste: ["AJUSTE"], motivo: ["MOTIVO"], justificacion: ["JUSTIFICACION"],
+    observacion: ["OBSERVACION"], nueva_posicion: ["NUEVA POSICION"],
+    actualizacion_depot: ["ACTUALIZACION DEPOT"]
+  });
+
+  chequear("REGISTRO", {
+    actuador: ["ACTUADOR"], fecha: ["FECHA"], hora: ["HORA"], usuario: ["USUARIO"],
+    correo: ["CORREO"], archivo_id: ["ID"], cliente: ["CLIENTE"], sku: ["CODIGO"],
+    posicion: ["POSICION"], conteo_fisico: ["CONTEO FISICO"],
+    resultado_conteo: ["RESULTADO CONTEO"], conteo_n1: ["CONTEO N1"],
+    conteo_n2: ["CONTEO N2"], conteo_n3: ["CONTEO N3"], link: ["LINK"]
   });
 }
