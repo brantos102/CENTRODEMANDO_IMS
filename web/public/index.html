@@ -105,7 +105,7 @@ async function api(ruta) {
 
 async function cargarResumen() {
   try {
-    const d = await api("/api/resumen");
+    const d = await api("/api/proxy?ruta=resumen");
     $("#punto").className = "punto ok";
     $("#estado-txt").textContent = "conectado a Supabase";
     $("#tiles").innerHTML = [
@@ -135,7 +135,7 @@ async function cargarTabla() {
   $("#contenido").className = "aviso";
   $("#contenido").textContent = "Cargando…";
   try {
-    const d = await api(`/api/api/${tabla}?${p}`);
+    const d = await api(`/api/proxy?ruta=${tabla}&${p}`);
     total = d.total ?? 0;
     const filas = d.datos || [];
     if (!filas.length) {

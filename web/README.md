@@ -21,5 +21,6 @@ Vercel → Add New Project → importar el repo → **Root Directory: `web`**.
 Framework preset: **Other**. No hace falta build.
 
 ## Rutas del proxy
-Solo se permiten `resumen` y `api/{panel_de_control,inventarios,registro,clientes}`;
+El front llama `/api/proxy?ruta=resumen` o `?ruta=<tabla>`; solo se permiten
+esas rutas,
 cualquier otra devuelve 404 (el proxy no es un pasamanos abierto).
