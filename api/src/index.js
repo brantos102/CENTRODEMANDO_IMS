@@ -14,6 +14,7 @@
 import express from "express";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
+import ws from "ws";
 
 const {
   SUPABASE_URL,
@@ -28,8 +29,11 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
+// Node 20 no trae WebSocket nativo y supabase-js lo exige al construir el
+// cliente (aunque esta API no usa Realtime): se le pasa el paquete `ws`.
 const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false }
+  auth: { persistSession: false },
+  realtime: { transport: ws }
 });
 
 const app = express();
@@ -47,6 +51,15 @@ function requireToken(req, res, next) {
   if (tok !== API_TOKEN) return res.status(401).json({ error: "No autorizado" });
   next();
 }
+
+/* ── Raíz: pequeño índice para saber que el servicio responde ────────────── */
+app.get("/", (_req, res) => {
+  res.json({
+    servicio: "itsanet-ims-api",
+    rutas: ["/health", "/resumen", "/api/:tabla"],
+    tablas: ["panel_de_control", "inventarios", "registro", "clientes"]
+  });
+});
 
 /* ── Salud (sin token: Railway la usa para saber si el servicio vive) ─────── */
 app.get("/health", async (_req, res) => {
