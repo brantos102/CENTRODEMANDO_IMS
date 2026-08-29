@@ -584,34 +584,6 @@ function migrarCronogramaASupabase() {
   return { ok: errores.length === 0, migradas: total, total: filas.length, errores: errores };
 }
 
-/** Hoja EQUIPO_OPERATIVO → tabla equipo (refresco completo). */
-function migrarEquipoASupabase() {
-  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
-  var nombre = (typeof CRON_CFG === "object" && CRON_CFG.HOJA_EQUIPO) || "EQUIPO_OPERATIVO";
-  var sh = ss.getSheetByName(nombre);
-  if (!sh) return { ok: true, migradas: 0, mensaje: "No existe " + nombre + "." };
-  if (sh.getLastRow() < 2) return { ok: true, migradas: 0, mensaje: "Equipo vacío." };
-
-  var v = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues();
-  var filas = [];
-  for (var i = 0; i < v.length; i++) {
-    var n = _sbTxt(v[i][0]);
-    if (!n) continue;
-    filas.push({
-      nombre: n, email: _sbTxt(v[i][1]), rol: _sbTxt(v[i][2]),
-      telefono: _sbTxt(v[i][3]),
-      activo: !/^(no|false|0)$/i.test(String(v[i][4] || "").trim()),
-      base: "UIO", fila_origen: i + 2
-    });
-  }
-  if (!filas.length) return { ok: true, migradas: 0, mensaje: "Sin integrantes." };
-
-  var del = _supabaseFetch("equipo?id=gt.0", "delete", null, "return=minimal");
-  if (del.code >= 300) return { ok: false, error: "DELETE HTTP " + del.code };
-  var res = _supabaseFetch("equipo", "post", filas, "return=minimal");
-  Logger.log("EQUIPO migrado -> HTTP " + res.code + " (" + filas.length + ")");
-  return { ok: res.code >= 200 && res.code < 300, migradas: filas.length, code: res.code };
-}
 
 /**
  * DIAGNÓSTICO: lista TODAS las hojas del libro con su tamaño y primera fila.
@@ -635,23 +607,25 @@ function listarHojasSupabase() {
 }
 
 /**
- * Migra el equipo desde la hoja que le indiques (por si el nombre difiere).
- * Uso desde el editor: cambia NOMBRE y ejecuta.
+ * Hoja USUARIOS → tabla equipo. Estructura real del libro:
+ *   A Email · B Nombre · C Rol · D Fecha Ingreso · G Notas · H Rol WMS · I Contraseña
+ * La columna Contraseña NO se migra (no debe salir del libro).
  */
-function migrarEquipoDesdeHoja() {
-  var NOMBRE = "EQUIPO_OPERATIVO";   // <-- cámbialo por el nombre real de tu hoja
+function migrarEquipoASupabase() {
   var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
-  var sh = ss.getSheetByName(NOMBRE);
-  if (!sh) throw new Error('No existe la hoja "' + NOMBRE + '". Ejecuta listarHojasSupabase() para ver los nombres reales.');
-  if (sh.getLastRow() < 2) throw new Error('La hoja "' + NOMBRE + '" no tiene filas de datos.');
+  var sh = ss.getSheetByName("USUARIOS") ||
+           ss.getSheetByName("EQUIPO_OPERATIVO");   // respaldo por si se renombra
+  if (!sh) return { ok: false, mensaje: 'No existe la hoja "USUARIOS".' };
+  if (sh.getLastRow() < 2) return { ok: true, migradas: 0, mensaje: "Hoja sin filas de datos." };
 
   var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-  var cNom = _sbCol(head, ["NOMBRE", "NOMBRE (IGUAL AL CRONOGRAMA)", "OPERARIO", "RESPONSABLE"]);
   var cMail = _sbCol(head, ["EMAIL", "CORREO"]);
-  var cRol = _sbCol(head, ["ROL", "CARGO"]);
-  var cTel = _sbCol(head, ["TELEFONO", "TELÉFONO", "CELULAR"]);
-  var cAct = _sbCol(head, ["ACTIVO", "ESTADO"]);
-  if (cNom < 0) cNom = 0;   // si no se reconoce, se asume la primera columna
+  var cNom  = _sbCol(head, ["NOMBRE"]);
+  var cRol  = _sbCol(head, ["ROL"]);
+  var cIng  = _sbCol(head, ["FECHA INGRESO"]);
+  var cNot  = _sbCol(head, ["NOTAS"]);
+  var cWms  = _sbCol(head, ["ROL WMS"]);
+  if (cNom < 0) return { ok: false, mensaje: "No encontré la columna NOMBRE en USUARIOS." };
 
   var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
   var filas = [];
@@ -659,19 +633,23 @@ function migrarEquipoDesdeHoja() {
     var n = _sbTxt(v[i][cNom]);
     if (!n) continue;
     filas.push({
-      nombre: n,
+      nombre:   n,
       email:    cMail >= 0 ? _sbTxt(v[i][cMail]) : null,
       rol:      cRol  >= 0 ? _sbTxt(v[i][cRol])  : null,
-      telefono: cTel  >= 0 ? _sbTxt(v[i][cTel])  : null,
-      activo:   cAct  >= 0 ? !/^(no|false|0|inactivo)$/i.test(String(v[i][cAct] || "").trim()) : true,
-      base: "UIO", fila_origen: i + 2
+      rol_wms:  cWms  >= 0 ? _sbTxt(v[i][cWms])  : null,
+      fecha_ingreso: cIng >= 0 ? _sbFecha(v[i][cIng]) : null,
+      notas:    cNot  >= 0 ? _sbTxt(v[i][cNot])  : null,
+      activo:   true,
+      base: "UIO",
+      fila_origen: i + 2
     });
   }
-  if (!filas.length) throw new Error("No se reconoció ninguna fila con nombre en " + NOMBRE + ".");
+  if (!filas.length) return { ok: true, migradas: 0, mensaje: "Sin usuarios con nombre." };
 
-  _supabaseFetch("equipo?id=gt.0", "delete", null, "return=minimal");
+  var del = _supabaseFetch("equipo?id=gt.0", "delete", null, "return=minimal");
+  if (del.code >= 300) return { ok: false, error: "DELETE HTTP " + del.code + " " + del.body.substring(0, 150) };
   var res = _supabaseFetch("equipo", "post", filas, "return=minimal");
-  Logger.log("EQUIPO desde \"" + NOMBRE + "\" -> HTTP " + res.code + " (" + filas.length + " personas)" +
-             (res.code >= 300 ? ("\n" + res.body.substring(0, 200)) : ""));
+  Logger.log("EQUIPO (USUARIOS) -> HTTP " + res.code + " (" + filas.length + " personas)" +
+             (res.code >= 300 ? ("\n" + res.body.substring(0, 250)) : ""));
   return { ok: res.code >= 200 && res.code < 300, migradas: filas.length, code: res.code };
 }
