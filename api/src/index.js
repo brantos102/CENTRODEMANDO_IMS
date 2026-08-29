@@ -44,11 +44,13 @@ const origins = CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
 app.use(cors({ origin: origins.length ? origins : true }));
 
 /** Exige el token propio en las rutas de datos (no en /health). */
+const TOKEN = String(API_TOKEN || "").trim().split(/\s+/)[0];
+
 function requireToken(req, res, next) {
-  if (!API_TOKEN) return next();               // sin token configurado: abierto
+  if (!TOKEN) return next();                   // sin token configurado: abierto
   const h = req.get("authorization") || "";
-  const tok = h.startsWith("Bearer ") ? h.slice(7) : req.get("x-api-token");
-  if (tok !== API_TOKEN) return res.status(401).json({ error: "No autorizado" });
+  const tok = (h.startsWith("Bearer ") ? h.slice(7) : req.get("x-api-token") || "").trim();
+  if (tok !== TOKEN) return res.status(401).json({ error: "No autorizado" });
   next();
 }
 

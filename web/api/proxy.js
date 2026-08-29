@@ -15,6 +15,10 @@
 
 const { API_BASE_URL, API_TOKEN } = process.env;
 
+// El token viaja en una cabecera HTTP: se limpian espacios y saltos de línea
+// (un pegado accidental duplicado o con espacios invalida toda la petición).
+const TOKEN = String(API_TOKEN || "").trim().split(/\s+/)[0];
+
 const TABLAS = new Set(["panel_de_control", "inventarios", "registro", "clientes"]);
 
 /** Traduce la ruta pedida a la de Railway; null si no está permitida. */
@@ -52,7 +56,7 @@ export default async function handler(req, res) {
       method: metodo,
       headers: {
         "Content-Type": "application/json",
-        ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {})
+        ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {})
       },
       body: metodo === "GET" ? undefined : JSON.stringify(req.body ?? {})
     });
