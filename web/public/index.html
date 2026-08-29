@@ -95,8 +95,12 @@ const num = (n) => (n ?? 0).toLocaleString("es-EC");
 
 async function api(ruta) {
   const r = await fetch(ruta, { headers: { "Accept": "application/json" } });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
-  return r.json();
+  const cuerpo = await r.json().catch(() => null);
+  if (!r.ok) {
+    const m = cuerpo && (typeof cuerpo.error === "string" ? cuerpo.error : JSON.stringify(cuerpo.error));
+    throw new Error(m || `HTTP ${r.status}`);
+  }
+  return cuerpo;
 }
 
 async function cargarResumen() {

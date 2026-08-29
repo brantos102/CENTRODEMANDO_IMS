@@ -21,9 +21,12 @@ export default async function handler(req, res) {
   }
 
   const partes = Array.isArray(req.query.ruta) ? req.query.ruta : [req.query.ruta];
-  const ruta = partes.filter(Boolean).join("/");
+  // El front llama /api/resumen y /api/api/<tabla>; Vercel entrega la ruta ya
+  // sin su propio prefijo /api, pero se normaliza por si viniera incluido.
+  let ruta = partes.filter(Boolean).join("/").replace(/^api\//, "");
+  if (ruta !== "resumen") ruta = "api/" + ruta;
   if (!RUTAS.test(ruta)) {
-    return res.status(404).json({ error: "Ruta no permitida" });
+    return res.status(404).json({ error: "Ruta no permitida: " + ruta });
   }
 
   // Reconstruye la query string sin el parámetro interno de la ruta.
