@@ -403,7 +403,9 @@ app.get("/acciones", requireToken, (_req, res) => {
     disponible: !!(PUENTE_URL && PUENTE_SECRETO),
     // Los botones sueltos son los sin parámetros; el resto los usa el asistente.
     acciones: ACCIONES.filter((a) => !a.params),
-    conParametros: ACCIONES.filter((a) => a.params).map((a) => a.id)
+    conParametros: ACCIONES.filter((a) => a.params).map((a) => a.id),
+    // Ayuda a detectar la confusión más común entre las dos formas de URL.
+    urlRestringidaAlDominio: /\/a\/macros\//.test(PUENTE_URL || "")
   });
 });
 
@@ -423,7 +425,23 @@ app.post("/accion/:id", requireToken, async (req, res) => {
       redirect: "follow"
     });
     const txt = await r.text();
-    let j; try { j = JSON.parse(txt); } catch { j = { ok: false, error: txt.slice(0, 300) }; }
+    let j;
+    try {
+      j = JSON.parse(txt);
+    } catch {
+      // Google devolvió HTML: es su pantalla de acceso, no el puente.
+      const dominio = /\/a\/macros\//.test(PUENTE_URL);
+      j = {
+        ok: false,
+        error: dominio
+          ? "PUENTE_URL apunta a la URL restringida al dominio (contiene /a/macros/itsanet.com/). " +
+            "Usa la URL corta del despliegue abierto: https://script.google.com/macros/s/…/exec"
+          : "Apps Script respondió con su pantalla de acceso en vez del puente. " +
+            "El despliegue debe tener 'Quién tiene acceso: Cualquier usuario' " +
+            "(no 'con cuenta de Google' ni 'dentro de itsanet.com'), y PUENTE_URL " +
+            "debe ser la URL /exec de ESE despliegue."
+      };
+    }
     res.status(j.ok === false ? 400 : 200).json(j);
   } catch (e) {
     res.status(502).json({ error: "No se pudo contactar el Apps Script", detalle: e.message });
