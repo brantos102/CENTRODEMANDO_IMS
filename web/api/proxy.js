@@ -37,7 +37,10 @@ export default async function handler(req, res) {
 
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(resto)) qs.append(k, v);
-  const url = `${API_BASE_URL.replace(/\/+$/, "")}${destino}${qs.toString() ? "?" + qs : ""}`;
+  // Tolera que la variable venga sin protocolo o con barra final.
+  let base = String(API_BASE_URL).trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(base)) base = "https://" + base;
+  const url = `${base}${destino}${qs.toString() ? "?" + qs : ""}`;
 
   const metodo = req.method || "GET";
   if (!["GET", "POST", "PATCH"].includes(metodo)) {
@@ -58,6 +61,10 @@ export default async function handler(req, res) {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     return res.send(texto);
   } catch (e) {
-    return res.status(502).json({ error: "No se pudo contactar la API", detalle: e.message });
+    // El destino es el dominio público de Railway: incluirlo ayuda a ver de
+    // inmediato si la variable API_BASE_URL está mal escrita.
+    return res.status(502).json({
+      error: `No se pudo contactar la API (${e.message}) al llamar ${url}`
+    });
   }
 }
