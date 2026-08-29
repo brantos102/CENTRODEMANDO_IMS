@@ -3,5 +3,8 @@
 **/*.md
 **/*.txt
 standalone_produccion/**
+api/**
+web/**
+node_modules/**
 .gitignore
 .claspignore
