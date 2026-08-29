@@ -146,7 +146,6 @@ app.get("/analitica", requireToken, async (req, res) => {
   const base = req.query.base;
   const filtra = (q) => (base ? q.eq("base", base) : q);
 
-  // Panel: efectividad y volumen por cliente
   const { data: panel, error: e1 } = await filtra(
     db.from("panel_de_control").select(
       "cliente, avance, responsable, fecha_inicio, fecha_fin, unidades_contadas," +
@@ -155,16 +154,56 @@ app.get("/analitica", requireToken, async (req, res) => {
   );
   if (e1) return res.status(400).json({ error: e1.message });
 
-  // Cronograma: cumplimiento y carga por responsable
   const { data: crono } = await filtra(
-    db.from("cronograma").select("cliente, categoria, responsable, estado, fecha, fecha_entrega, porcentaje")
+    db.from("cronograma").select(
+      "cliente, categoria, responsable, estado, fecha, fecha_entrega, porcentaje, titulo")
   );
 
   const nOr0 = (x) => (typeof x === "number" && !isNaN(x) ? x : 0);
   const prom = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null);
+  const dia = (d) => (d ? new Date(d) : null);
 
-  // Por cliente
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const finHoy = new Date(hoy); finHoy.setHours(23, 59, 59, 999);
+  const en7 = new Date(hoy); en7.setDate(en7.getDate() + 7);
+  const anio = hoy.getFullYear();
+  const mesAct = hoy.getMonth();
+  const entregado = (e) => /entregad|complet|finaliz/i.test(String(e || ""));
+
+  /* ── KPIs operativos (equivalentes a los del Centro de Mando) ── */
+  let vencidos = 0, deHoy = 0, prox7 = 0, entregadosAnio = 0,
+      progMes = 0, entrMes = 0, progAnio = 0, sinResponsable = 0;
+  const atrasadosDetalle = [];
+
+  for (const r of crono || []) {
+    const f = dia(r.fecha);
+    const est = String(r.estado || "");
+    const ent = entregado(est);
+    if (!r.responsable) sinResponsable++;
+    if (f && f.getFullYear() === anio) {
+      progAnio++;
+      if (f.getMonth() === mesAct) { progMes++; if (ent) entrMes++; }
+    }
+    if (ent) {
+      const fe = dia(r.fecha_entrega) || f;
+      if (fe && fe.getFullYear() === anio) entregadosAnio++;
+      continue;
+    }
+    if (!f) continue;
+    if (f < hoy) {
+      vencidos++;
+      atrasadosDetalle.push({
+        cliente: r.cliente, titulo: r.titulo, responsable: r.responsable || "Sin asignar",
+        fecha: r.fecha, dias: Math.floor((hoy - f) / 86400000)
+      });
+    } else if (f <= finHoy) deHoy++;
+    else if (f <= en7) prox7++;
+  }
+  atrasadosDetalle.sort((a, b) => b.dias - a.dias);
+
+  /* ── Por cliente (volumen y efectividad) ── */
   const porCliente = {};
+  let unidadesAnio = 0, referenciasAnio = 0, posicionesAnio = 0;
   for (const r of panel || []) {
     const k = r.cliente || "—";
     const c = (porCliente[k] ||= { cliente: k, inventarios: 0, unidades: 0, referencias: 0, posiciones: 0, efec: [] });
@@ -173,30 +212,52 @@ app.get("/analitica", requireToken, async (req, res) => {
     c.referencias += nOr0(r.referencias_contadas);
     c.posiciones += nOr0(r.posiciones_contadas);
     if (typeof r.efectividad_unidades === "number") c.efec.push(r.efectividad_unidades);
+    const fi = dia(r.fecha_inicio);
+    if (fi && fi.getFullYear() === anio) {
+      unidadesAnio += nOr0(r.unidades_contadas);
+      referenciasAnio += nOr0(r.referencias_contadas);
+      posicionesAnio += nOr0(r.posiciones_contadas);
+    }
   }
   const clientes = Object.values(porCliente)
     .map((c) => ({ ...c, efectividad: prom(c.efec), efec: undefined }))
     .sort((a, b) => b.unidades - a.unidades);
 
-  // Estados del panel y del cronograma
+  /* ── Tendencia mensual del año (inventarios y unidades) ── */
+  const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  const tendencia = MESES.map((m) => ({ mes: m, inventarios: 0, unidades: 0, programados: 0, entregados: 0 }));
+  for (const r of panel || []) {
+    const f = dia(r.fecha_inicio);
+    if (f && f.getFullYear() === anio) {
+      tendencia[f.getMonth()].inventarios++;
+      tendencia[f.getMonth()].unidades += nOr0(r.unidades_contadas);
+    }
+  }
+  for (const r of crono || []) {
+    const f = dia(r.fecha);
+    if (f && f.getFullYear() === anio) {
+      tendencia[f.getMonth()].programados++;
+      if (entregado(r.estado)) tendencia[f.getMonth()].entregados++;
+    }
+  }
+
   const cuentaPor = (arr, campo) => {
     const o = {};
     for (const r of arr || []) { const k = String(r[campo] || "—").trim() || "—"; o[k] = (o[k] || 0) + 1; }
     return Object.entries(o).map(([nombre, n]) => ({ nombre, n })).sort((a, b) => b.n - a.n);
   };
 
-  // Carga y cumplimiento por responsable (cronograma)
+  /* ── Carga y cumplimiento por responsable ── */
   const porResp = {};
-  const hoy = new Date();
   for (const r of crono || []) {
     const k = r.responsable || "Sin asignar";
     const p = (porResp[k] ||= { responsable: k, total: 0, entregados: 0, atrasados: 0, pendientes: 0 });
     p.total++;
-    const est = String(r.estado || "").toLowerCase();
-    if (est.includes("entregad")) p.entregados++;
+    if (entregado(r.estado)) p.entregados++;
     else {
       p.pendientes++;
-      if (r.fecha && new Date(r.fecha) < hoy) p.atrasados++;
+      const f = dia(r.fecha);
+      if (f && f < hoy) p.atrasados++;
     }
   }
   const responsables = Object.values(porResp)
@@ -204,7 +265,17 @@ app.get("/analitica", requireToken, async (req, res) => {
     .sort((a, b) => b.total - a.total);
 
   res.json({
+    kpis: {
+      vencidos, hoy: deHoy, prox7, entregadosAnio, sinResponsable,
+      clientesActivos: clientes.length,
+      unidadesAnio, referenciasAnio, posicionesAnio,
+      avanceMes: progMes ? Math.round((entrMes / progMes) * 100) : null,
+      cumplimientoAnio: progAnio ? Math.round((entregadosAnio / progAnio) * 100) : null,
+      efectividadMedia: prom((panel || []).map((r) => r.efectividad_unidades).filter((x) => typeof x === "number"))
+    },
+    tendencia,
     clientes,
+    atrasados: atrasadosDetalle.slice(0, 25),
     estadosPanel: cuentaPor(panel, "avance"),
     estadosCronograma: cuentaPor(crono, "estado"),
     categorias: cuentaPor(crono, "categoria"),
@@ -212,8 +283,7 @@ app.get("/analitica", requireToken, async (req, res) => {
     totales: {
       inventarios: (panel || []).length,
       eventos: (crono || []).length,
-      unidades: (panel || []).reduce((s, r) => s + nOr0(r.unidades_contadas), 0),
-      efectividadMedia: prom((panel || []).map((r) => r.efectividad_unidades).filter((x) => typeof x === "number"))
+      unidades: (panel || []).reduce((s, r) => s + nOr0(r.unidades_contadas), 0)
     },
     actualizado: new Date().toISOString()
   });
