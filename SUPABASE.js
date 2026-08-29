@@ -257,10 +257,8 @@ function _sbMigrarHoja(nombreHoja, tabla, propProgreso, colsFn, mapFn) {
   return { ok: errores.length === 0, completado: true, enviadas: enviadas, errores: errores };
 }
 
-/** Hoja INVENTARIOS (30 col reales) -> tabla inventarios_detalle. */
-function migrarInventariosASupabase() {
-  return _sbMigrarHoja("INVENTARIOS", "inventarios_detalle", "SB_PROG_INV",
-    function (head) {
+/* Mapeos compartidos por la migración y la sincronización automática. */
+function _sbColsInventarios(head) {
       return {
         fIni: _sbCol(head, ["FECHA INICIO"]), fFin: _sbCol(head, ["FECHA FINAL"]),
         id: _sbCol(head, ["ID"]), linea: _sbCol(head, ["N DE LINEA"]),
@@ -278,8 +276,9 @@ function migrarInventariosASupabase() {
         obs: _sbCol(head, ["OBSERVACION"]), nPos: _sbCol(head, ["NUEVA POSICION"]),
         aDep: _sbCol(head, ["ACTUALIZACION DEPOT"])
       };
-    },
-    function (r, head, c) {
+    }
+
+function _sbMapInventarios(r, head, c) {
       function T(i) { return i >= 0 ? _sbTxt(r[i]) : null; }
       function N(i) { return i >= 0 ? _sbNum(r[i]) : null; }
       function F(i) { return i >= 0 ? _sbFecha(r[i]) : null; }
@@ -294,15 +293,11 @@ function migrarInventariosASupabase() {
         motivo: T(c.mot), justificacion: T(c.jus), observacion: T(c.obs),
         nueva_posicion: T(c.nPos), actualizacion_depot: T(c.aDep), base: "UIO"
       };
-      if (!o.sku && !o.serie && !o.cliente) return null;
-      return o;
-    });
+  if (!o.sku && !o.serie && !o.cliente) return null;
+  return o;
 }
 
-/** Hoja REGISTRO (16 col reales) -> tabla registro. */
-function migrarRegistroASupabase() {
-  return _sbMigrarHoja("REGISTRO", "registro", "SB_PROG_REG",
-    function (head) {
+function _sbColsRegistro(head) {
       return {
         act: _sbCol(head, ["ACTUADOR"]), fec: _sbCol(head, ["FECHA"]), hora: _sbCol(head, ["HORA"]),
         usr: _sbCol(head, ["USUARIO"]), mail: _sbCol(head, ["CORREO"]), id: _sbCol(head, ["ID"]),
@@ -311,8 +306,9 @@ function migrarRegistroASupabase() {
         rCon: _sbCol(head, ["RESULTADO CONTEO"]), c1: _sbCol(head, ["CONTEO N1"]),
         c2: _sbCol(head, ["CONTEO N2"]), c3: _sbCol(head, ["CONTEO N3"]), link: _sbCol(head, ["LINK"])
       };
-    },
-    function (r, head, c) {
+    }
+
+function _sbMapRegistro(r, head, c) {
       function T(i) { return i >= 0 ? _sbTxt(r[i]) : null; }
       function N(i) { return i >= 0 ? _sbNum(r[i]) : null; }
       var o = {
@@ -324,8 +320,19 @@ function migrarRegistroASupabase() {
       };
       var vacio = true;
       for (var k in o) { if (k !== "base" && o[k] !== null) { vacio = false; break; } }
-      return vacio ? null : o;
-    });
+  return vacio ? null : o;
+}
+
+/** Hoja INVENTARIOS (30 col reales) -> tabla inventarios_detalle. */
+function migrarInventariosASupabase() {
+  return _sbMigrarHoja("INVENTARIOS", "inventarios_detalle", "SB_PROG_INV",
+    _sbColsInventarios, _sbMapInventarios);
+}
+
+/** Hoja REGISTRO (16 col reales) -> tabla registro. */
+function migrarRegistroASupabase() {
+  return _sbMigrarHoja("REGISTRO", "registro", "SB_PROG_REG",
+    _sbColsRegistro, _sbMapRegistro);
 }
 
 /** Reinicia el progreso si quieres volver a migrar desde cero. */
@@ -389,4 +396,123 @@ function verificarMapeoSupabase() {
     resultado_conteo: ["RESULTADO CONTEO"], conteo_n1: ["CONTEO N1"],
     conteo_n2: ["CONTEO N2"], conteo_n3: ["CONTEO N3"], link: ["LINK"]
   });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SINCRONIZACIÓN AUTOMÁTICA (INCREMENTAL) — Sheets → Supabase
+   ---------------------------------------------------------------------------
+   NO modifica ninguna función existente del sistema. Un disparador horario
+   revisa si las hojas crecieron y envía SOLO las filas nuevas.
+   El PANEL (313 filas) se refresca completo porque también cambia en filas
+   existentes (avance, efectividad, fechas).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Envía a Supabase solo las filas añadidas desde la última sincronización. */
+function _sbSyncIncremental(nombreHoja, tabla, propUltimaFila, colsFn, mapFn) {
+  var sp = PropertiesService.getScriptProperties();
+  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(nombreHoja);
+  if (!sh) return { ok: false, mensaje: nombreHoja + " no existe." };
+
+  var ultima = sh.getLastRow(), ancho = sh.getLastColumn();
+  var yaVisto = parseInt(sp.getProperty(propUltimaFila) || "1", 10);
+  if (ultima <= yaVisto) return { ok: true, nuevas: 0 };   // nada nuevo
+
+  var head = sh.getRange(1, 1, 1, ancho).getValues()[0]
+               .map(function (h) { return String(h || "").trim().toUpperCase(); });
+  var cols = colsFn(head);
+
+  var desde = yaVisto + 1, enviadas = 0, fallidas = 0;
+  while (desde <= ultima) {
+    var n = Math.min(SB_LOTE, ultima - desde + 1);
+    var vals = sh.getRange(desde, 1, n, ancho).getValues();
+    var lote = [];
+    for (var i = 0; i < vals.length; i++) {
+      var obj = mapFn(vals[i], head, cols);
+      if (obj) { obj.fila_origen = desde + i; lote.push(obj); }
+    }
+    if (lote.length) {
+      var res = _supabaseFetch(tabla, "post", lote, "return=minimal");
+      if (res.code >= 200 && res.code < 300) enviadas += lote.length;
+      else {
+        for (var j = 0; j < lote.length; j++) {   // rescate fila a fila
+          var r1 = _supabaseFetch(tabla, "post", [lote[j]], "return=minimal");
+          if (r1.code >= 200 && r1.code < 300) enviadas++; else fallidas++;
+        }
+      }
+    }
+    desde += n;
+  }
+  sp.setProperty(propUltimaFila, String(ultima));
+  return { ok: true, nuevas: enviadas, fallidas: fallidas, hasta: ultima };
+}
+
+/** Sincroniza INVENTARIOS (solo filas nuevas). */
+function sincronizarInventariosSupabase() {
+  return _sbSyncIncremental("INVENTARIOS", "inventarios_detalle", "SB_SYNC_INV",
+    _sbColsInventarios, _sbMapInventarios);
+}
+
+/** Sincroniza REGISTRO (solo filas nuevas). */
+function sincronizarRegistroSupabase() {
+  return _sbSyncIncremental("REGISTRO", "registro", "SB_SYNC_REG",
+    _sbColsRegistro, _sbMapRegistro);
+}
+
+/**
+ * TAREA HORARIA: sincroniza todo. La ejecuta el disparador.
+ * PANEL completo (cambia en filas existentes) + INVENTARIOS/REGISTRO incremental.
+ */
+function sincronizarTodoSupabase() {
+  var res = { hora: new Date().toISOString() };
+  try { res.panel = migrarPanelASupabase(); }           catch (e) { res.panel = { error: e.message }; }
+  try { res.inventarios = sincronizarInventariosSupabase(); } catch (e) { res.inventarios = { error: e.message }; }
+  try { res.registro = sincronizarRegistroSupabase(); } catch (e) { res.registro = { error: e.message }; }
+  try { migrarClientesASupabase(); } catch (e) {}
+  Logger.log("SYNC: " + JSON.stringify(res));
+  return res;
+}
+
+/** Instala el disparador horario (ejecutar UNA vez desde el editor). */
+function instalarSyncSupabase() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === "sincronizarTodoSupabase") ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger("sincronizarTodoSupabase").timeBased().everyHours(1).create();
+  // Punto de partida: lo ya migrado, para no reenviar el histórico.
+  var sp = PropertiesService.getScriptProperties();
+  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+  ["INVENTARIOS", "REGISTRO"].forEach(function (n) {
+    var sh = ss.getSheetByName(n);
+    if (sh) sp.setProperty(n === "INVENTARIOS" ? "SB_SYNC_INV" : "SB_SYNC_REG", String(sh.getLastRow()));
+  });
+  Logger.log("✓ Sincronización automática instalada (cada hora).");
+  return { ok: true };
+}
+
+/** Desinstala el disparador horario. */
+function desinstalarSyncSupabase() {
+  var n = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === "sincronizarTodoSupabase") { ScriptApp.deleteTrigger(t); n++; }
+  });
+  Logger.log("Disparadores eliminados: " + n);
+  return { ok: true, eliminados: n };
+}
+
+/** Estado de la sincronización: hasta qué fila se envió y cuántas faltan. */
+function estadoSyncSupabase() {
+  var sp = PropertiesService.getScriptProperties();
+  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+  var activo = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === "sincronizarTodoSupabase";
+  });
+  Logger.log("Disparador horario: " + (activo ? "ACTIVO" : "NO instalado"));
+  [["INVENTARIOS", "SB_SYNC_INV"], ["REGISTRO", "SB_SYNC_REG"]].forEach(function (p) {
+    var sh = ss.getSheetByName(p[0]);
+    var vis = parseInt(sp.getProperty(p[1]) || "1", 10);
+    if (sh) Logger.log("  " + p[0] + ": hoja=" + sh.getLastRow() + " sincronizado=" + vis +
+                       " pendientes=" + Math.max(0, sh.getLastRow() - vis));
+  });
+  return { activo: activo };
 }
