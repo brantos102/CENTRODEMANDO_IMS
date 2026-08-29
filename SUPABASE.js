@@ -39,13 +39,13 @@ function _supabaseFetch(path, method, body, prefer) {
 
 /* ── PRUEBAS DE CONECTIVIDAD ──────────────────────────────────────────────── */
 function probarSupabase() {
-  var r = _supabaseFetch("inventarios", "post",
+  var r = _supabaseFetch("panel_de_control", "post",
     { cliente: "PRUEBA_CONEXION", responsable: "bespinoza", avance: "test", base: "UIO" });
   Logger.log("INSERT -> HTTP " + r.code + "\n" + r.body);
   return r;
 }
 function leerInventariosSupabase() {
-  var r = _supabaseFetch("inventarios?select=*&order=creado_en.desc", "get");
+  var r = _supabaseFetch("panel_de_control?select=*&order=creado_en.desc", "get");
   Logger.log("SELECT -> HTTP " + r.code + "\n" + r.body);
   return r;
 }
@@ -82,8 +82,12 @@ function migrarPanelASupabase() {
   var head = v[0].map(function (h) { return String(h || "").trim().toUpperCase(); });
   function col(keys) { for (var i = 0; i < head.length; i++) { for (var k = 0; k < keys.length; k++) { if (head[i].indexOf(keys[k]) !== -1) return i; } } return -1; }
   var cCli = col(["CLIENTE"]), cLink = col(["LINK", "ENLACE", "URL"]), cId = col(["ID"]),
-      cIni = col(["INICIO"]), cFin = col(["FIN", "ENTREGA"]), cBase = col(["BASE", "BODEGA", "SEDE"]),
-      cAva = col(["AVANCE", "ESTADO"]), cResp = col(["RESPONSABLE"]);
+      cIni = col(["INICIO"]), cFin = col(["FINAL", "FIN", "ENTREGA"]), cBase = col(["SEDE", "BASE", "BODEGA"]),
+      cAva = col(["AVANCE", "ESTADO"]), cResp = col(["RESPONSABLE"]),
+      cOrd = col(["ORDEN"]), cUC = col(["UNIDADES CONTADAS"]), cRC = col(["REFERENCIAS CONTADAS"]),
+      cPC = col(["POSICIONES CONTADAS"]), cEU = col(["EFECTIVIDAD UNIDADES"]),
+      cER = col(["EFECTIVIDAD REFERENCIAS"]), cEP = col(["EFECTIVIDAD POSICIONES"]),
+      cObs = col(["OBSERVACIONES"]);
   if (cCli < 0) throw new Error("No encontré la columna CLIENTE en el PANEL.");
 
   function fecha(x) { return (x instanceof Date) ? Utilities.formatDate(x, "GMT-5", "yyyy-MM-dd") : null; }
@@ -100,19 +104,28 @@ function migrarPanelASupabase() {
       fecha_fin:   cFin  >= 0 ? fecha(row[cFin]): null,
       base:       (cBase >= 0 ? txt(row[cBase]) : null) || "UIO",
       avance:      cAva  >= 0 ? txt(row[cAva])  : null,
-      responsable: cResp >= 0 ? txt(row[cResp]) : null
+      responsable: cResp >= 0 ? txt(row[cResp]) : null,
+      orden_email: cOrd >= 0 ? txt(row[cOrd]) : null,
+      unidades_contadas:       cUC >= 0 ? _sbNum(row[cUC]) : null,
+      referencias_contadas:    cRC >= 0 ? _sbNum(row[cRC]) : null,
+      posiciones_contadas:     cPC >= 0 ? _sbNum(row[cPC]) : null,
+      efectividad_unidades:    cEU >= 0 ? _sbNum(row[cEU]) : null,
+      efectividad_referencias: cER >= 0 ? _sbNum(row[cER]) : null,
+      efectividad_posiciones:  cEP >= 0 ? _sbNum(row[cEP]) : null,
+      observaciones: cObs >= 0 ? txt(row[cObs]) : null,
+      fila_origen: r + 1
     });
   }
   if (!filas.length) return { ok: true, migradas: 0, mensaje: "No hay filas con cliente." };
 
   // Refresco completo: borra todo y reinserta (re-ejecutable sin duplicar)
-  var del = _supabaseFetch("inventarios?id=gt.0", "delete", null, "return=minimal");
+  var del = _supabaseFetch("panel_de_control?id=gt.0", "delete", null, "return=minimal");
   if (del.code >= 300) return { ok: false, error: "DELETE HTTP " + del.code + " " + del.body.substring(0, 150) };
 
   var total = 0, errores = [];
   for (var i = 0; i < filas.length; i += 200) {
     var lote = filas.slice(i, i + 200);
-    var res = _supabaseFetch("inventarios", "post", lote, "return=minimal");
+    var res = _supabaseFetch("panel_de_control", "post", lote, "return=minimal");
     if (res.code >= 200 && res.code < 300) total += lote.length;
     else errores.push("Lote " + i + ": HTTP " + res.code + " " + res.body.substring(0, 120));
   }
@@ -207,61 +220,70 @@ function _sbMigrarHoja(nombreHoja, tabla, propProgreso, colsFn, mapFn) {
   return { ok: errores.length === 0, completado: true, enviadas: enviadas, errores: errores };
 }
 
-/** Hoja INVENTARIOS (17 col formato rM) -> tabla inventarios_detalle. */
+/** Hoja INVENTARIOS (30 col reales) -> tabla inventarios_detalle. */
 function migrarInventariosASupabase() {
   return _sbMigrarHoja("INVENTARIOS", "inventarios_detalle", "SB_PROG_INV",
     function (head) {
       return {
-        archivo: _sbCol(head, ["ARCHIVO", "ID ARCHIVO"]),
-        cli: _sbCol(head, ["CLIENTE"]), sku: _sbCol(head, ["COD. PRODUCTO", "SKU", "CODIGO", "PRODUCTO"]),
-        desc: _sbCol(head, ["DESCRIPCION"]), serie: _sbCol(head, ["SERIE"]), lote: _sbCol(head, ["LOTE"]),
-        desp: _sbCol(head, ["DESPACHO"]), part: _sbCol(head, ["PARTIDA"]), cat: _sbCol(head, ["CAT"]),
-        est: _sbCol(head, ["EST"]), pos: _sbCol(head, ["POSICION", "UBICACION"]),
-        uni: _sbCol(head, ["UNIDAD"]), cant: _sbCol(head, ["CANTIDAD"])
+        fIni: _sbCol(head, ["FECHA INICIO"]), fFin: _sbCol(head, ["FECHA FINAL"]),
+        id: _sbCol(head, ["ID"]), linea: _sbCol(head, ["N DE L\u00cdNEA", "N DE LINEA", "L\u00cdNEA", "LINEA"]),
+        cli: _sbCol(head, ["CLIENTE"]), abc: _sbCol(head, ["ABC"]),
+        sku: _sbCol(head, ["PRODUCTO"]), desc: _sbCol(head, ["DESCRIPCI"]),
+        serie: _sbCol(head, ["SERIE"]), lote: _sbCol(head, ["LOTE"]),
+        desp: _sbCol(head, ["DESPACHO"]), part: _sbCol(head, ["PARTIDA"]),
+        cat: _sbCol(head, ["CAT_LOG", "CAT"]), est: _sbCol(head, ["EST_MER", "EST"]),
+        pos: _sbCol(head, ["POSICI"]), uni: _sbCol(head, ["UNI"]), depot: _sbCol(head, ["DEPOT"]),
+        cFis: _sbCol(head, ["CONTEO FISICO", "CONTEO F\u00cdSICO"]), desf: _sbCol(head, ["DESFASE"]),
+        rUni: _sbCol(head, ["RESULTADO UNIDADES"]), rSer: _sbCol(head, ["RESULTADO SERIES"]),
+        c1: _sbCol(head, ["CONTEO No. 1", "CONTEO NO. 1"]), c2: _sbCol(head, ["CONTEO No. 2", "CONTEO NO. 2"]),
+        cFin2: _sbCol(head, ["CONTEO FINAL"]), aju: _sbCol(head, ["AJUSTE"]),
+        mot: _sbCol(head, ["MOTIVO"]), jus: _sbCol(head, ["JUSTIFICACION", "JUSTIFICACI"]),
+        obs: _sbCol(head, ["OBSERVACION", "OBSERVACI"]), nPos: _sbCol(head, ["NUEVA POSICI"]),
+        aDep: _sbCol(head, ["ACTUALIZACION DEPOT", "ACTUALIZACI"])
       };
     },
     function (r, head, c) {
-      // Formato rM por posición cuando los encabezados no se reconocen.
-      var usarRm = (c.sku < 0 && r.length >= 17);
-      var o = usarRm ? {
-        cliente: _sbTxt(r[4]), sku: _sbTxt(r[6]), descripcion: _sbTxt(r[7]), serie: _sbTxt(r[8]),
-        lote: _sbTxt(r[9]), despacho: _sbTxt(r[10]), partida: _sbTxt(r[11]), categoria: _sbTxt(r[12]),
-        estado: _sbTxt(r[13]), posicion: _sbTxt(r[14]), unidad: _sbTxt(r[15]), cantidad: _sbNum(r[16])
-      } : {
-        archivo_id: c.archivo >= 0 ? _sbTxt(r[c.archivo]) : null,
-        cliente: c.cli >= 0 ? _sbTxt(r[c.cli]) : null, sku: c.sku >= 0 ? _sbTxt(r[c.sku]) : null,
-        descripcion: c.desc >= 0 ? _sbTxt(r[c.desc]) : null, serie: c.serie >= 0 ? _sbTxt(r[c.serie]) : null,
-        lote: c.lote >= 0 ? _sbTxt(r[c.lote]) : null, despacho: c.desp >= 0 ? _sbTxt(r[c.desp]) : null,
-        partida: c.part >= 0 ? _sbTxt(r[c.part]) : null, categoria: c.cat >= 0 ? _sbTxt(r[c.cat]) : null,
-        estado: c.est >= 0 ? _sbTxt(r[c.est]) : null, posicion: c.pos >= 0 ? _sbTxt(r[c.pos]) : null,
-        unidad: c.uni >= 0 ? _sbTxt(r[c.uni]) : null, cantidad: c.cant >= 0 ? _sbNum(r[c.cant]) : null
+      function T(i) { return i >= 0 ? _sbTxt(r[i]) : null; }
+      function N(i) { return i >= 0 ? _sbNum(r[i]) : null; }
+      function F(i) { return i >= 0 ? _sbFecha(r[i]) : null; }
+      var o = {
+        fecha_inicio: F(c.fIni), fecha_final: F(c.fFin), archivo_id: T(c.id),
+        n_linea: N(c.linea), cliente: T(c.cli), abc: T(c.abc), sku: T(c.sku),
+        descripcion: T(c.desc), serie: T(c.serie), lote: T(c.lote), despacho: T(c.desp),
+        partida: T(c.part), categoria: T(c.cat), estado: T(c.est), posicion: T(c.pos),
+        unidad: T(c.uni), depot: T(c.depot), conteo_fisico: N(c.cFis), desfase: N(c.desf),
+        resultado_unidades: T(c.rUni), resultado_series: T(c.rSer),
+        conteo_n1: N(c.c1), conteo_n2: N(c.c2), conteo_final: N(c.cFin2), ajuste: N(c.aju),
+        motivo: T(c.mot), justificacion: T(c.jus), observacion: T(c.obs),
+        nueva_posicion: T(c.nPos), actualizacion_depot: T(c.aDep), base: "UIO"
       };
-      if (!o.sku && !o.serie && !o.cliente) return null;   // fila vacía
-      o.base = "UIO";
+      if (!o.sku && !o.serie && !o.cliente) return null;
       return o;
     });
 }
 
-/** Hoja REGISTRO (bitácora) -> tabla registro. */
+/** Hoja REGISTRO (16 col reales) -> tabla registro. */
 function migrarRegistroASupabase() {
   return _sbMigrarHoja("REGISTRO", "registro", "SB_PROG_REG",
     function (head) {
       return {
-        archivo: _sbCol(head, ["ARCHIVO", "ID ARCHIVO"]), cli: _sbCol(head, ["CLIENTE"]),
-        usr: _sbCol(head, ["USUARIO", "OPERARIO", "RESPONSABLE"]), acc: _sbCol(head, ["ACCION", "EVENTO", "TIPO"]),
-        sku: _sbCol(head, ["COD. PRODUCTO", "SKU", "CODIGO", "PRODUCTO"]), serie: _sbCol(head, ["SERIE"]),
-        pos: _sbCol(head, ["POSICION", "UBICACION"]), cant: _sbCol(head, ["CANTIDAD"]),
-        fec: _sbCol(head, ["FECHA", "TIMESTAMP", "HORA"]), det: _sbCol(head, ["DETALLE", "OBSERV", "NOTA"])
+        act: _sbCol(head, ["ACTUADOR"]), fec: _sbCol(head, ["FECHA"]), hora: _sbCol(head, ["HORA"]),
+        usr: _sbCol(head, ["USUARIO"]), mail: _sbCol(head, ["CORREO"]), id: _sbCol(head, ["ID"]),
+        cli: _sbCol(head, ["CLIENTE"]), cod: _sbCol(head, ["CODIGO", "C\u00d3DIGO"]),
+        pos: _sbCol(head, ["POSICION", "POSICI"]), cFis: _sbCol(head, ["CONTEO FISICO", "CONTEO F\u00cdSICO"]),
+        rCon: _sbCol(head, ["RESULTADO CONTEO"]), c1: _sbCol(head, ["CONTEO N1"]),
+        c2: _sbCol(head, ["CONTEO N2"]), c3: _sbCol(head, ["CONTEO N3"]), link: _sbCol(head, ["LINK"])
       };
     },
     function (r, head, c) {
+      function T(i) { return i >= 0 ? _sbTxt(r[i]) : null; }
+      function N(i) { return i >= 0 ? _sbNum(r[i]) : null; }
       var o = {
-        archivo_id: c.archivo >= 0 ? _sbTxt(r[c.archivo]) : null,
-        cliente: c.cli >= 0 ? _sbTxt(r[c.cli]) : null, usuario: c.usr >= 0 ? _sbTxt(r[c.usr]) : null,
-        accion: c.acc >= 0 ? _sbTxt(r[c.acc]) : null, sku: c.sku >= 0 ? _sbTxt(r[c.sku]) : null,
-        serie: c.serie >= 0 ? _sbTxt(r[c.serie]) : null, posicion: c.pos >= 0 ? _sbTxt(r[c.pos]) : null,
-        cantidad: c.cant >= 0 ? _sbNum(r[c.cant]) : null, fecha: c.fec >= 0 ? _sbFecha(r[c.fec]) : null,
-        detalle: c.det >= 0 ? _sbTxt(r[c.det]) : null, base: "UIO"
+        actuador: T(c.act), fecha: c.fec >= 0 ? _sbFecha(r[c.fec]) : null, hora: T(c.hora),
+        usuario: T(c.usr), correo: T(c.mail), archivo_id: T(c.id), cliente: T(c.cli),
+        sku: T(c.cod), posicion: T(c.pos), conteo_fisico: N(c.cFis),
+        resultado_conteo: T(c.rCon), conteo_n1: N(c.c1), conteo_n2: N(c.c2), conteo_n3: N(c.c3),
+        link: T(c.link), base: "UIO"
       };
       var vacio = true;
       for (var k in o) { if (k !== "base" && o[k] !== null) { vacio = false; break; } }
