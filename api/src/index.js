@@ -9,6 +9,10 @@
  *   SUPABASE_SERVICE_ROLE_KEY  llave service_role (SECRETA)
  *   API_TOKEN                  token propio que exigimos a quien llame
  *   CORS_ORIGINS               orígenes permitidos, separados por coma
+ *
+ * SOLO LECTURA: la operación (crear inventarios, consolidar, permisos) vive en
+ * el Centro de Mando de Apps Script, con su login y su arbol de roles. Esta API
+ * unicamente consulta, para no exponer escritura en un panel sin autenticacion.
  */
 
 import express from "express";
@@ -21,8 +25,6 @@ const {
   SUPABASE_SERVICE_ROLE_KEY,
   API_TOKEN,
   CORS_ORIGINS = "",
-  PUENTE_URL,
-  PUENTE_SECRETO,
   PORT = 3000
 } = process.env;
 
@@ -104,30 +106,6 @@ app.get("/api/:tabla", async (req, res) => {
   const { data, error, count } = await q;
   if (error) return res.status(400).json({ error: error.message });
   res.json({ datos: data, total: count, limit: lim, offset: off });
-});
-
-/* ── Inserción (una fila o un arreglo) ───────────────────────────────────── */
-app.post("/api/:tabla", async (req, res) => {
-  const { tabla } = req.params;
-  if (!TABLAS.has(tabla)) return res.status(404).json({ error: "Tabla no disponible" });
-
-  const filas = Array.isArray(req.body) ? req.body : [req.body];
-  if (!filas.length) return res.status(400).json({ error: "Sin datos" });
-
-  const { data, error } = await db.from(tabla).insert(filas).select();
-  if (error) return res.status(400).json({ error: error.message });
-  res.status(201).json({ insertadas: data.length, datos: data });
-});
-
-/* ── Actualización por id ─────────────────────────────────────────────────── */
-app.patch("/api/:tabla/:id", async (req, res) => {
-  const { tabla, id } = req.params;
-  if (!TABLAS.has(tabla)) return res.status(404).json({ error: "Tabla no disponible" });
-
-  const { data, error } = await db.from(tabla).update(req.body).eq("id", id).select();
-  if (error) return res.status(400).json({ error: error.message });
-  if (!data.length) return res.status(404).json({ error: "No encontrado" });
-  res.json({ datos: data[0] });
 });
 
 /* ── Resumen para el tablero del frontend ────────────────────────────────── */
@@ -370,82 +348,6 @@ app.get("/calidad", requireToken, async (req, res) => {
     discrepancias: discrep.data || [],
     actualizado: new Date().toISOString()
   });
-});
-
-/* ── Puente de acciones: dispara funciones del Apps Script ───────────────
-   El secreto vive aquí, nunca en el navegador. Apps Script ejecuta la acción
-   con los permisos de Drive/Calendar/Sheets que solo él tiene. */
-const ACCIONES = [
-  { id: "actualizar_metricas",  nombre: "Actualizar métricas",       grupo: "Datos" },
-  { id: "sync_supabase",        nombre: "Sincronizar con Supabase",  grupo: "Datos" },
-  { id: "estado_sync",          nombre: "Estado de sincronización",  grupo: "Datos" },
-  { id: "consolidar_todo",      nombre: "Consolidar todo",           grupo: "Consolidación" },
-  { id: "consolidar_inventarios", nombre: "Consolidar inventarios",  grupo: "Consolidación" },
-  { id: "consolidar_registro",  nombre: "Consolidar registro",       grupo: "Consolidación" },
-  { id: "estado_consolidacion", nombre: "Estado de consolidación",   grupo: "Consolidación" },
-  { id: "continuar_consolidacion", nombre: "Continuar consolidación",grupo: "Consolidación" },
-  { id: "limpiar_duplicados",   nombre: "Limpiar duplicados",        grupo: "Consolidación" },
-  { id: "sincronizar_calendario", nombre: "Sincronizar calendario",  grupo: "Operación" },
-  { id: "sincronizar_panel",    nombre: "Sincronizar cronograma/panel", grupo: "Operación" },
-  { id: "enviar_recordatorios", nombre: "Enviar recordatorios",      grupo: "Operación" },
-  { id: "garantizar_accesos",   nombre: "Garantizar accesos equipo", grupo: "Operación" },
-  // Con parámetros: las usa el asistente de creación del panel.
-  { id: "crear_inventario",     nombre: "Crear inventario",          grupo: "Asistente", params: true },
-  { id: "previsualizar_stock",  nombre: "Extraer stock del ERP",     grupo: "Asistente", params: true },
-  { id: "codigos_programados",  nombre: "Códigos programados",       grupo: "Asistente", params: true },
-  { id: "subcarpetas",          nombre: "Carpetas de Drive",         grupo: "Asistente", params: true },
-  { id: "eventos_cliente",      nombre: "Eventos del cliente",       grupo: "Asistente", params: true },
-  { id: "crear_evento",         nombre: "Crear evento",              grupo: "Asistente", params: true }
-];
-
-app.get("/acciones", requireToken, (_req, res) => {
-  res.json({
-    disponible: !!(PUENTE_URL && PUENTE_SECRETO),
-    // Los botones sueltos son los sin parámetros; el resto los usa el asistente.
-    acciones: ACCIONES.filter((a) => !a.params),
-    conParametros: ACCIONES.filter((a) => a.params).map((a) => a.id),
-    // Ayuda a detectar la confusión más común entre las dos formas de URL.
-    urlRestringidaAlDominio: /\/a\/macros\//.test(PUENTE_URL || "")
-  });
-});
-
-app.post("/accion/:id", requireToken, async (req, res) => {
-  if (!PUENTE_URL || !PUENTE_SECRETO) {
-    return res.status(503).json({ error: "El puente de acciones no está configurado." });
-  }
-  const id = req.params.id;
-  if (!ACCIONES.some((a) => a.id === id)) {
-    return res.status(404).json({ error: `Acción no permitida: ${id}` });
-  }
-  try {
-    const r = await fetch(PUENTE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secreto: PUENTE_SECRETO, accion: id, params: req.body || {} }),
-      redirect: "follow"
-    });
-    const txt = await r.text();
-    let j;
-    try {
-      j = JSON.parse(txt);
-    } catch {
-      // Google devolvió HTML: es su pantalla de acceso, no el puente.
-      const dominio = /\/a\/macros\//.test(PUENTE_URL);
-      j = {
-        ok: false,
-        error: dominio
-          ? "PUENTE_URL apunta a la URL restringida al dominio (contiene /a/macros/itsanet.com/). " +
-            "Usa la URL corta del despliegue abierto: https://script.google.com/macros/s/…/exec"
-          : "Apps Script respondió con su pantalla de acceso en vez del puente. " +
-            "El despliegue debe tener 'Quién tiene acceso: Cualquier usuario' " +
-            "(no 'con cuenta de Google' ni 'dentro de itsanet.com'), y PUENTE_URL " +
-            "debe ser la URL /exec de ESE despliegue."
-      };
-    }
-    res.status(j.ok === false ? 400 : 200).json(j);
-  } catch (e) {
-    res.status(502).json({ error: "No se pudo contactar el Apps Script", detalle: e.message });
-  }
 });
 
 app.use((_req, res) => res.status(404).json({ error: "Ruta no encontrada" }));

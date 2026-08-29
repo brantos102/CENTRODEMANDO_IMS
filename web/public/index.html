@@ -73,12 +73,6 @@
   svg.chart{width:100%;height:190px;display:block}
   .leyenda{display:flex;gap:14px;font-size:11px;color:var(--dim);margin-top:8px;flex-wrap:wrap}
   .leyenda i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
-  .acc-btn{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;
-           padding:10px 12px;margin-bottom:7px;text-align:left;border-radius:8px;
-           background:var(--panel2);border:1px solid var(--line);color:var(--txt);font-size:13px}
-  .acc-btn:hover{border-color:var(--acc)}
-  .acc-btn .go{color:var(--dim2);font-size:16px}
-  .acc-btn.run{opacity:.6;cursor:wait}
   .salida{margin-top:10px;padding:10px 12px;border-radius:8px;background:#0f1622;
           border:1px solid var(--line);font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
           white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;color:var(--dim)}
@@ -92,18 +86,6 @@
   .tmini td{padding:5px 6px;border-top:1px solid var(--line);white-space:nowrap}
   .tmini td.n{text-align:right;font-variant-numeric:tabular-nums}
   .ok-t{color:var(--ok)} .bad-t{color:var(--bad)} .warn-t{color:var(--warn)}
-  .fase label{display:block;font-size:11px;color:var(--dim);text-transform:uppercase;
-              letter-spacing:.6px;margin:13px 0 5px;font-weight:600}
-  .fase input,.fase select,.fase textarea{width:100%;background:var(--panel2);color:var(--txt);
-    border:1px solid var(--line);border-radius:7px;padding:9px 11px;font:inherit}
-  .fase textarea{font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;resize:vertical}
-  .ops{display:flex;gap:7px;flex-wrap:wrap}
-  .op{flex:1;min-width:110px;padding:9px;border-radius:7px;border:1px solid var(--line);
-      background:var(--panel2);color:var(--dim);font-size:13px}
-  .op.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:500}
-  .pasos{display:flex;gap:5px;margin-bottom:6px}
-  .pasos i{flex:1;height:3px;border-radius:2px;background:#212b3d}
-  .pasos i.on{background:var(--acc)}
   @media(max-width:640px){ main{padding:12px} .kpi .n{font-size:21px} }
 </style>
 </head>
@@ -128,86 +110,12 @@
     <button class="tab" data-v="calidad">Calidad y precisión</button>
     <button class="tab" data-v="operacion">Operación y cumplimiento</button>
     <button class="tab" data-v="datos">Explorar datos</button>
-    <button class="tab" data-v="crear">Crear inventario</button>
-    <button class="tab" data-v="acciones">Acciones</button>
   </div>
 
   <section id="v-resumen"><div class="grid" id="g-resumen"></div></section>
   <section id="v-clientes" hidden><div class="grid" id="g-clientes"></div></section>
   <section id="v-calidad" hidden><div class="grid" id="g-calidad"></div></section>
   <section id="v-operacion" hidden><div class="grid" id="g-operacion"></div></section>
-
-  <section id="v-crear" hidden>
-    <div class="grid ancho" style="max-width:820px">
-      <div class="card">
-        <h3>Nuevo inventario<span id="paso-txt">paso 1 de 4</span></h3>
-
-        <div class="pasos" id="pasos"></div>
-
-        <!-- 1. Identificación -->
-        <div class="fase" data-f="1">
-          <label>Cliente *</label>
-          <input id="c-cliente" list="lista-clientes" placeholder="Ej. FLUKE" autocomplete="off">
-          <datalist id="lista-clientes"></datalist>
-          <label>Nombre del archivo *</label>
-          <input id="c-nombre" placeholder="260830_FLUKE">
-          <p class="mini" id="c-sugerido"></p>
-        </div>
-
-        <!-- 2. Fuente de datos -->
-        <div class="fase" data-f="2" hidden>
-          <label>¿De dónde salen los datos?</label>
-          <div class="ops" id="c-fuente">
-            <button class="op on" data-v="BLANK">En blanco</button>
-            <button class="op" data-v="API">API ITSANET</button>
-            <button class="op" data-v="CSV">Pegar CSV</button>
-          </div>
-
-          <div id="c-api" hidden>
-            <label>Mes del cronograma de códigos</label>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <select id="c-mes"></select>
-              <button id="c-sugerir">Sugerir códigos</button>
-            </div>
-            <label>Códigos a contar (uno por línea, opcional)</label>
-            <textarea id="c-codigos" rows="5" placeholder="Vacío = todo el stock del cliente"></textarea>
-            <label style="display:flex;align-items:center;gap:8px;font-weight:400">
-              <input type="checkbox" id="c-variantes" checked style="width:auto"> Incluir variantes con sufijo
-            </label>
-            <button id="c-extraer" class="pri">Extraer stock desde la API</button>
-          </div>
-
-          <div id="c-csv" hidden>
-            <label>Pega aquí los datos (17 columnas, separadas por tabulación)</label>
-            <textarea id="c-csvdata" rows="7" placeholder="Pega desde Excel…"></textarea>
-          </div>
-
-          <div class="salida" id="c-salida" hidden></div>
-        </div>
-
-        <!-- 3. Carpeta destino -->
-        <div class="fase" data-f="3" hidden>
-          <label>Carpeta destino en Drive</label>
-          <select id="c-carpeta"><option value="">Cargando…</option></select>
-          <p class="mini">El archivo se crea dentro de la carpeta seleccionada.</p>
-        </div>
-
-        <!-- 4. Confirmación -->
-        <div class="fase" data-f="4" hidden>
-          <div id="c-resumen"></div>
-          <div class="salida" id="c-final" hidden></div>
-        </div>
-
-        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-          <button id="c-atras">‹ Atrás</button>
-          <button id="c-sig" class="pri">Siguiente ›</button>
-          <button id="c-crear" class="pri" hidden>✓ Crear inventario</button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="v-acciones" hidden><div class="grid" id="g-acciones"></div></section>
 
   <section id="v-datos" hidden>
     <div class="barra">
@@ -412,6 +320,46 @@ async function cargarTabla() {
   }
 }
 
+/* ── Explorador de datos ── */
+function celda(v) {
+  if (v === null || v === undefined || v === "") return '<span style="color:#3f4a63">—</span>';
+  const s = String(v);
+  if (/^https?:\/\//.test(s)) return `<a href="${esc(s)}" target="_blank" rel="noopener">abrir</a>`;
+  if (/^(entregado|completado|ok)$/i.test(s)) return `<span class="chip ok">${esc(s)}</span>`;
+  if (/^(en curso|en proceso|programado|pendiente)$/i.test(s)) return `<span class="chip warn">${esc(s)}</span>`;
+  if (/^(vencido|atrasado)$/i.test(s)) return `<span class="chip bad">${esc(s)}</span>`;
+  return esc(s.length > 60 ? s.slice(0, 60) + "…" : s);
+}
+
+async function cargarTabla() {
+  const tabla = $("#tabla").value, cli = $("#cliente").value.trim().toUpperCase(), base = $("#base").value;
+  const p = new URLSearchParams({ limit: LIMITE, offset });
+  if (cli) p.set(tabla === "clientes" || tabla === "equipo" ? "nombre" : "cliente", cli);
+  if (base) p.set("base", base);
+  $("#contenido").className = "aviso";
+  $("#contenido").textContent = "Cargando…";
+  try {
+    const d = await api(`/api/proxy?ruta=${tabla}&${p}`);
+    total = d.total ?? 0;
+    const filas = d.datos || [];
+    if (!filas.length) $("#contenido").textContent = "Sin resultados para este filtro.";
+    else {
+      const cols = Object.keys(filas[0]).filter((c) => c !== "creado_en");
+      $("#contenido").className = "";
+      $("#contenido").innerHTML =
+        `<table><thead><tr>${cols.map((c) => `<th>${esc(c.replace(/_/g, " "))}</th>`).join("")}</tr></thead><tbody>` +
+        filas.map((f) => `<tr>${cols.map((c) => `<td>${celda(f[c])}</td>`).join("")}</tr>`).join("") +
+        `</tbody></table>`;
+    }
+    $("#info").textContent = `${num(total ? offset + 1 : 0)}–${num(Math.min(offset + LIMITE, total))} de ${num(total)}`;
+    $("#prev").disabled = offset === 0;
+    $("#next").disabled = offset + LIMITE >= total;
+  } catch (e) {
+    $("#contenido").className = "aviso err";
+    $("#contenido").textContent = "Error: " + e.message;
+  }
+}
+
 /* ── Calidad y precisión (equivalente a los tableros de Power BI) ── */
 let calidadCargada = false;
 
@@ -485,264 +433,16 @@ async function cargarCalidad() {
   }
 }
 
-/* ── Acciones remotas (se ejecutan en Apps Script) ── */
-let accionesCargadas = false;
-
-async function cargarAcciones() {
-  if (accionesCargadas) return;
-  $("#g-acciones").innerHTML = '<div class="card"><p class="mini">Cargando…</p></div>';
-  try {
-    const d = await api("/api/proxy?ruta=acciones");
-    if (!d.disponible) {
-      $("#g-acciones").innerHTML =
-        '<div class="card"><h3>Puente no configurado</h3><p class="mini">' +
-        'Falta definir PUENTE_URL y PUENTE_SECRETO en Railway. Mientras tanto, ' +
-        'estas acciones se ejecutan desde el Centro de Mando en Apps Script.</p></div>';
-      accionesCargadas = true;
-      return;
-    }
-    const grupos = {};
-    for (const a of d.acciones) (grupos[a.grupo] ||= []).push(a);
-    $("#g-acciones").innerHTML = Object.entries(grupos).map(([g, lista]) =>
-      `<div class="card"><h3>${esc(g)}</h3>` +
-      lista.map((a) =>
-        `<button class="acc-btn" data-id="${esc(a.id)}">${esc(a.nombre)}<span class="go">›</span></button>`
-      ).join("") +
-      `<div class="salida" id="out-${esc(g).replace(/\s/g, "")}" hidden></div></div>`
-    ).join("");
-
-    document.querySelectorAll(".acc-btn").forEach((b) => {
-      b.onclick = async () => {
-        const salida = b.closest(".card").querySelector(".salida");
-        const etiqueta = b.textContent.replace("›", "").trim();
-        b.classList.add("run"); b.disabled = true;
-        salida.hidden = false; salida.className = "salida";
-        salida.textContent = `Ejecutando "${etiqueta}"…`;
-        try {
-          const r = await fetch(`/api/proxy?ruta=accion/${b.dataset.id}`, { method: "POST" });
-          const j = await r.json().catch(() => null);
-          const bien = r.ok && j && j.ok !== false;
-          salida.className = "salida " + (bien ? "ok" : "err");
-          salida.textContent = (bien ? "✓ " : "✕ ") + etiqueta + "\n" +
-            JSON.stringify(j && (j.resultado ?? j), null, 2).slice(0, 2000);
-          if (bien) { datos = null; cargarAnalitica(); }
-        } catch (e) {
-          salida.className = "salida err";
-          salida.textContent = "✕ " + e.message;
-        } finally { b.classList.remove("run"); b.disabled = false; }
-      };
-    });
-    accionesCargadas = true;
-  } catch (e) {
-    $("#g-acciones").innerHTML =
-      `<div class="card"><h3>Error</h3><p class="mini">${esc(e.message)}</p></div>`;
-  }
-}
-
-/* ── Asistente de creación de inventarios ─────────────────────────────────
-   Envía exactamente el mismo payload que el asistente de Apps Script, así que
-   el archivo se crea con la lógica ya probada (procesarCreacionArchivoIntegral). */
-const cr = { paso: 1, fuente: "BLANK", filas: null, carpetas: [], iniciado: false };
-const MESES_N = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
-                 "JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
-
-async function accion(id, params) {
-  const r = await fetch(`/api/proxy?ruta=accion/${id}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params || {})
-  });
-  const j = await r.json().catch(() => null);
-  if (!r.ok || !j || j.ok === false) {
-    throw new Error((j && (j.error || j.detalle)) || `HTTP ${r.status}`);
-  }
-  return j.resultado !== undefined ? j.resultado : j;
-}
-
-function crPintar() {
-  $("#pasos").innerHTML = [1, 2, 3, 4]
-    .map((n) => `<i class="${n <= cr.paso ? "on" : ""}"></i>`).join("");
-  $("#paso-txt").textContent = `paso ${cr.paso} de 4`;
-  document.querySelectorAll(".fase").forEach((f) => (f.hidden = +f.dataset.f !== cr.paso));
-  $("#c-atras").disabled = cr.paso === 1;
-  $("#c-sig").hidden = cr.paso === 4;
-  $("#c-crear").hidden = cr.paso !== 4;
-  if (cr.paso === 4) crResumen();
-}
-
-function crResumen() {
-  const filas = cr.fuente === "BLANK" ? 0 : (cr.filas ? cr.filas.length : 0);
-  const carp = cr.carpetas.find((c) => c.id === $("#c-carpeta").value);
-  $("#c-resumen").innerHTML =
-    `<div class="fila"><span>Cliente</span><b>${esc($("#c-cliente").value.trim().toUpperCase())}</b></div>
-     <div class="fila"><span>Archivo</span><b>${esc($("#c-nombre").value.trim())}</b></div>
-     <div class="fila"><span>Fuente</span><b>${cr.fuente === "API" ? "API ITSANET" : cr.fuente === "CSV" ? "CSV pegado" : "En blanco"}</b></div>
-     <div class="fila"><span>Filas a cargar</span><b>${num(filas)}</b></div>
-     <div class="fila"><span>Carpeta</span><b>${esc(carp ? carp.nombre || carp.name : "—")}</b></div>`;
-}
-
-function crValidar() {
-  if (cr.paso === 1) {
-    if (!$("#c-cliente").value.trim()) return "Indica el cliente.";
-    if (!$("#c-nombre").value.trim()) return "Indica el nombre del archivo.";
-  }
-  if (cr.paso === 2) {
-    if (cr.fuente === "API" && !cr.filas) return "Extrae el stock desde la API antes de continuar.";
-    if (cr.fuente === "CSV") {
-      const t = $("#c-csvdata").value.trim();
-      if (!t) return "Pega los datos del CSV.";
-      cr.filas = t.split(/\r?\n/).filter(Boolean).map((l) => l.split("\t"));
-    }
-  }
-  return null;
-}
-
-async function crCargarCarpetas() {
-  const sel = $("#c-carpeta");
-  try {
-    const r = await accion("subcarpetas", {});
-    cr.carpetas = Array.isArray(r) ? r : (r && r.carpetas) || [];
-    sel.innerHTML = cr.carpetas.length
-      ? cr.carpetas.map((c) => `<option value="${esc(c.id)}">${esc(c.nombre || c.name || c.id)}</option>`).join("")
-      : '<option value="">(sin subcarpetas: se usará la raíz)</option>';
-  } catch (e) {
-    sel.innerHTML = `<option value="">Error: ${esc(e.message)}</option>`;
-  }
-}
-
-async function crIniciar() {
-  if (cr.iniciado) return;
-  cr.iniciado = true;
-  $("#c-mes").innerHTML = MESES_N.map((m, i) =>
-    `<option value="${m}"${i === new Date().getMonth() ? " selected" : ""}>${m}</option>`).join("");
-  const hoy = new Date();
-  const yy = String(hoy.getFullYear()).slice(2),
-        mm = String(hoy.getMonth() + 1).padStart(2, "0"),
-        dd = String(hoy.getDate()).padStart(2, "0");
-  $("#c-sugerido").textContent = `Sugerencia de formato: ${yy}${mm}${dd}_CLIENTE`;
-  try {
-    const d = await api("/api/proxy?ruta=clientes&limit=500");
-    $("#lista-clientes").innerHTML = (d.datos || [])
-      .map((c) => `<option value="${esc(c.nombre)}">`).join("");
-  } catch (e) {}
-  crCargarCarpetas();
-  crPintar();
-}
-
-document.querySelectorAll("#c-fuente .op").forEach((b) => {
-  b.onclick = () => {
-    document.querySelectorAll("#c-fuente .op").forEach((x) => x.classList.toggle("on", x === b));
-    cr.fuente = b.dataset.v;
-    cr.filas = null;
-    $("#c-api").hidden = cr.fuente !== "API";
-    $("#c-csv").hidden = cr.fuente !== "CSV";
-    $("#c-salida").hidden = true;
-  };
-});
-
-$("#c-cliente").onblur = () => {
-  const c = $("#c-cliente").value.trim().toUpperCase();
-  if (c && !$("#c-nombre").value.trim()) {
-    const h = new Date();
-    $("#c-nombre").value = String(h.getFullYear()).slice(2) +
-      String(h.getMonth() + 1).padStart(2, "0") + String(h.getDate()).padStart(2, "0") + "_" + c;
-  }
-};
-
-$("#c-sugerir").onclick = async () => {
-  const o = $("#c-salida"); o.hidden = false; o.className = "salida";
-  o.textContent = "Consultando el cronograma de códigos…";
-  try {
-    const r = await accion("codigos_programados", {
-      cliente: $("#c-cliente").value.trim().toUpperCase(), mes: $("#c-mes").value
-    });
-    if (!r || !r.existe || !r.codigos || !r.codigos.length) {
-      o.className = "salida err";
-      o.textContent = "No hay códigos programados para ese cliente y mes.";
-      return;
-    }
-    $("#c-codigos").value = r.codigos.join("\n");
-    o.className = "salida ok";
-    o.textContent = `✓ ${r.total} códigos programados de ${r.mes}.`;
-  } catch (e) { o.className = "salida err"; o.textContent = "✕ " + e.message; }
-};
-
-$("#c-extraer").onclick = async () => {
-  const o = $("#c-salida"); o.hidden = false; o.className = "salida";
-  o.textContent = "Extrayendo stock del ERP… (puede tardar)";
-  $("#c-extraer").disabled = true;
-  try {
-    const codigos = $("#c-codigos").value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
-    const r = await accion("previsualizar_stock", {
-      cliente: $("#c-cliente").value.trim().toUpperCase(),
-      codigos: codigos.length ? codigos : null,
-      variantes: $("#c-variantes").checked
-    });
-    cr.filas = (r && r.datosLimpios) || null;
-    if (!cr.filas || !cr.filas.length) throw new Error("La API no devolvió filas.");
-    const rep = (r && r.reporte) || {};
-    o.className = "salida ok";
-    o.textContent = `✓ ${num(cr.filas.length)} filas listas\n` +
-      `SKUs únicos: ${num(rep.skusUnicosCount || 0)} · unidades: ${num(rep.sumaCantidad || 0)}\n` +
-      `Con serie: ${num(rep.filasConSerie || 0)} · sin serie: ${num(rep.filasSinSerie || 0)}` +
-      (rep.excluidas ? `\nExcluidas: ${num(rep.excluidas)}` : "");
-  } catch (e) {
-    cr.filas = null;
-    o.className = "salida err"; o.textContent = "✕ " + e.message;
-  } finally { $("#c-extraer").disabled = false; }
-};
-
-$("#c-atras").onclick = () => { if (cr.paso > 1) { cr.paso--; crPintar(); } };
-$("#c-sig").onclick = () => {
-  const err = crValidar();
-  if (err) {
-    const o = $("#c-salida");
-    if (cr.paso === 2) { o.hidden = false; o.className = "salida err"; o.textContent = "✕ " + err; }
-    else alert(err);
-    return;
-  }
-  if (cr.paso < 4) { cr.paso++; crPintar(); }
-};
-
-$("#c-crear").onclick = async () => {
-  const o = $("#c-final"); o.hidden = false; o.className = "salida";
-  o.textContent = "Creando el archivo en Drive… no cierres esta pestaña.";
-  $("#c-crear").disabled = true;
-  try {
-    // Misma forma de payload que usa el asistente de Apps Script.
-    const datos = {
-      clientName: $("#c-cliente").value.trim().toUpperCase(),
-      fileName: $("#c-nombre").value.trim(),
-      dataSource: cr.fuente === "API" ? "CSV" : cr.fuente,   // la API ya viene en 17 columnas
-      folderId: $("#c-carpeta").value || null,
-      csvData: cr.fuente === "BLANK" ? null : cr.filas,
-      codigosNoEncontrados: [],
-      eventoAsignacion: { modo: "ninguno", filaEvento: null, datosEvento: null }
-    };
-    const r = await accion("crear_inventario", { datos });
-    o.className = "salida ok";
-    o.textContent = "✓ Inventario creado\n" + JSON.stringify(r, null, 2).slice(0, 1200);
-    if (r && r.fileUrl) {
-      o.innerHTML += `<br><br><a href="${esc(r.fileUrl)}" target="_blank" rel="noopener">Abrir el archivo ›</a>`;
-    }
-    cargarAnalitica();
-  } catch (e) {
-    o.className = "salida err"; o.textContent = "✕ " + e.message;
-  } finally { $("#c-crear").disabled = false; }
-};
-
 /* ── Navegación ── */
 let vista = "resumen";
 document.querySelectorAll(".tab").forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === b));
     vista = b.dataset.v;
-    ["resumen", "clientes", "calidad", "operacion", "datos", "crear", "acciones"].forEach(
+    ["resumen", "clientes", "calidad", "operacion", "datos"].forEach(
       (v) => ($("#v-" + v).hidden = v !== vista));
     if (vista === "datos" && !datos) cargarTabla();
-    if (vista === "acciones") cargarAcciones();
     if (vista === "calidad") cargarCalidad();
-    if (vista === "crear") crIniciar();
   };
 });
 $("#base").onchange = () => { offset = 0; calidadCargada = false; cargarAnalitica();

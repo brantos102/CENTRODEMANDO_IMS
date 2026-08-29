@@ -25,12 +25,7 @@ const TABLAS = new Set(["panel_de_control", "inventarios", "registro", "clientes
 function destinoDe(ruta) {
   if (ruta === "resumen") return "/resumen";
   if (ruta === "analitica") return "/analitica";
-  if (ruta === "acciones") return "/acciones";
   if (ruta === "calidad") return "/calidad";
-  if (ruta.indexOf("accion/") === 0) {
-    const id = ruta.slice(7);
-    return /^[a-z_]+$/.test(id) ? "/accion/" + id : null;
-  }
   const [tabla, id] = String(ruta).split("/");
   if (!TABLAS.has(tabla)) return null;
   if (id !== undefined && !/^\d+$/.test(id)) return null;
@@ -69,19 +64,19 @@ export default async function handler(req, res) {
   if (!/^https?:\/\//i.test(base)) base = "https://" + base;
   const url = `${base}${destino}${qs.toString() ? "?" + qs : ""}`;
 
+  // Solo lectura: el panel consulta, nunca escribe.
   const metodo = req.method || "GET";
-  if (!["GET", "POST", "PATCH"].includes(metodo)) {
-    return res.status(405).json({ error: "Método no permitido" });
+  if (metodo !== "GET") {
+    return res.status(405).json({ error: "Este panel es de solo lectura." });
   }
 
   try {
     const r = await fetch(url, {
-      method: metodo,
+      method: "GET",
       headers: {
         "Content-Type": "application/json",
         ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {})
       },
-      body: metodo === "GET" ? undefined : JSON.stringify(req.body ?? {})
     });
     const texto = await r.text();
     res.status(r.status);

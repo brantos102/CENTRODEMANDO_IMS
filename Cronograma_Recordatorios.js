@@ -4885,18 +4885,6 @@ var USR_CFG = {
 function doGet(e) {
   // === RUTA WMS ===
   if (e && e.parameter && (e.parameter.vista === "wms" || e.parameter.fileId)) {
-    // El Terminal exige usuario identificado, igual que el panel más abajo.
-    // En los despliegues del dominio no cambia nada (el usuario siempre se
-    // identifica); solo bloquea el acceso anónimo, necesario para poder publicar
-    // un despliegue abierto que atienda el puente de acciones (doPost).
-    if (!_usuarioActual()) {
-      var denAnon = HtmlService.createTemplateFromFile("AccesoDenegado");
-      denAnon.email = "";
-      denAnon.diagnostico = "Debes iniciar sesión con tu cuenta corporativa para abrir el Terminal.";
-      return denAnon.evaluate()
-        .setTitle("Acceso denegado")
-        .addMetaTag("viewport", "width=device-width, initial-scale=1");
-    }
     var tplWms = HtmlService.createTemplateFromFile("BlindInventory");
     tplWms.paramFileId  = e.parameter.fileId  || "";
     tplWms.paramCliente = e.parameter.cliente || "";
