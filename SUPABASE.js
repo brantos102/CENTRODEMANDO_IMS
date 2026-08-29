@@ -612,3 +612,66 @@ function migrarEquipoASupabase() {
   Logger.log("EQUIPO migrado -> HTTP " + res.code + " (" + filas.length + ")");
   return { ok: res.code >= 200 && res.code < 300, migradas: filas.length, code: res.code };
 }
+
+/**
+ * DIAGNÓSTICO: lista TODAS las hojas del libro con su tamaño y primera fila.
+ * Sirve para confirmar el nombre exacto de una hoja antes de migrarla.
+ */
+function listarHojasSupabase() {
+  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+  var out = ["── HOJAS DEL LIBRO ──"];
+  ss.getSheets().forEach(function (sh) {
+    var n = sh.getName(), f = sh.getLastRow(), c = sh.getLastColumn();
+    var cab = "";
+    if (f >= 1 && c >= 1) {
+      cab = sh.getRange(1, 1, 1, Math.min(c, 8)).getValues()[0]
+              .map(function (x) { return String(x || "").trim(); })
+              .filter(String).join(" | ");
+    }
+    out.push('"' + n + '"  filas=' + f + " cols=" + c + (cab ? ("\n      fila1: " + cab) : ""));
+  });
+  Logger.log(out.join("\n"));
+  return out.length - 1;
+}
+
+/**
+ * Migra el equipo desde la hoja que le indiques (por si el nombre difiere).
+ * Uso desde el editor: cambia NOMBRE y ejecuta.
+ */
+function migrarEquipoDesdeHoja() {
+  var NOMBRE = "EQUIPO_OPERATIVO";   // <-- cámbialo por el nombre real de tu hoja
+  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(NOMBRE);
+  if (!sh) throw new Error('No existe la hoja "' + NOMBRE + '". Ejecuta listarHojasSupabase() para ver los nombres reales.');
+  if (sh.getLastRow() < 2) throw new Error('La hoja "' + NOMBRE + '" no tiene filas de datos.');
+
+  var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var cNom = _sbCol(head, ["NOMBRE", "NOMBRE (IGUAL AL CRONOGRAMA)", "OPERARIO", "RESPONSABLE"]);
+  var cMail = _sbCol(head, ["EMAIL", "CORREO"]);
+  var cRol = _sbCol(head, ["ROL", "CARGO"]);
+  var cTel = _sbCol(head, ["TELEFONO", "TELÉFONO", "CELULAR"]);
+  var cAct = _sbCol(head, ["ACTIVO", "ESTADO"]);
+  if (cNom < 0) cNom = 0;   // si no se reconoce, se asume la primera columna
+
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  var filas = [];
+  for (var i = 0; i < v.length; i++) {
+    var n = _sbTxt(v[i][cNom]);
+    if (!n) continue;
+    filas.push({
+      nombre: n,
+      email:    cMail >= 0 ? _sbTxt(v[i][cMail]) : null,
+      rol:      cRol  >= 0 ? _sbTxt(v[i][cRol])  : null,
+      telefono: cTel  >= 0 ? _sbTxt(v[i][cTel])  : null,
+      activo:   cAct  >= 0 ? !/^(no|false|0|inactivo)$/i.test(String(v[i][cAct] || "").trim()) : true,
+      base: "UIO", fila_origen: i + 2
+    });
+  }
+  if (!filas.length) throw new Error("No se reconoció ninguna fila con nombre en " + NOMBRE + ".");
+
+  _supabaseFetch("equipo?id=gt.0", "delete", null, "return=minimal");
+  var res = _supabaseFetch("equipo", "post", filas, "return=minimal");
+  Logger.log("EQUIPO desde \"" + NOMBRE + "\" -> HTTP " + res.code + " (" + filas.length + " personas)" +
+             (res.code >= 300 ? ("\n" + res.body.substring(0, 200)) : ""));
+  return { ok: res.code >= 200 && res.code < 300, migradas: filas.length, code: res.code };
+}
