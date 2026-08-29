@@ -323,9 +323,9 @@ function _sbMapRegistro(r, head, c) {
   return vacio ? null : o;
 }
 
-/** Hoja INVENTARIOS (30 col reales) -> tabla inventarios_detalle. */
+/** Hoja INVENTARIOS (30 col reales) -> tabla inventarios. */
 function migrarInventariosASupabase() {
-  return _sbMigrarHoja("INVENTARIOS", "inventarios_detalle", "SB_PROG_INV",
+  return _sbMigrarHoja("INVENTARIOS", "inventarios", "SB_PROG_INV",
     _sbColsInventarios, _sbMapInventarios);
 }
 
@@ -449,7 +449,7 @@ function _sbSyncIncremental(nombreHoja, tabla, propUltimaFila, colsFn, mapFn) {
 
 /** Sincroniza INVENTARIOS (solo filas nuevas). */
 function sincronizarInventariosSupabase() {
-  return _sbSyncIncremental("INVENTARIOS", "inventarios_detalle", "SB_SYNC_INV",
+  return _sbSyncIncremental("INVENTARIOS", "inventarios", "SB_SYNC_INV",
     _sbColsInventarios, _sbMapInventarios);
 }
 
