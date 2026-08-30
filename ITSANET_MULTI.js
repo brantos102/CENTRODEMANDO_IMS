@@ -134,3 +134,97 @@ function obtenerCodigosProgramadosMulti(base, clientes, mes) {
     total: codigos.length, abc: abc, detallePorCliente: detalle
   };
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLIENTES RELACIONADOS
+   ---------------------------------------------------------------------------
+   En el ERP conviven códigos parecidos que son clientes DISTINTOS, cada uno con
+   sus propias credenciales: NOKIA5G, NOKIACNT3G, NOKIACNTLTE… Al escribir uno,
+   el asistente ofrece los demás del mismo grupo para contarlos juntos.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Raíz de un código de cliente: las letras iniciales antes del primer dígito,
+ * acotadas a 5 caracteres. El tope es lo que hace que NOKIA5G, NOKIACNT3G y
+ * NOKIACNTLTE caigan en el mismo grupo (todos → "NOKIA"); sin él, cada uno
+ * formaría su propia raíz y no se ofrecerían juntos.
+ *
+ * Puede juntar códigos que solo se parezcan en las primeras letras, pero el
+ * grupo es una SUGERENCIA: el usuario marca cuáles quiere contar.
+ */
+var RAIZ_MAX = 5;
+
+function _raizCliente(nombre) {
+  var n = String(nombre || "").trim().toUpperCase();
+  var m = n.match(/^[A-ZÑ]+/);
+  var raiz = m ? m[0] : n;
+  if (raiz.length > RAIZ_MAX) raiz = raiz.substring(0, RAIZ_MAX);
+  return raiz.length >= 3 ? raiz : n;   // raíces muy cortas no agrupan bien
+}
+
+/**
+ * Clientes CON CREDENCIAL en la sede que comparten raíz con el indicado.
+ * @param {string} base    "UIO" o "GYE"
+ * @param {string} cliente el que escribió el usuario (p.ej. NOKIA o NOKIA5G)
+ * @return {{raiz, cliente, relacionados:[{cliente,usuario}], hayGrupo}}
+ */
+function sugerirClientesRelacionados(base, cliente) {
+  var esGye = (typeof _baseEsGYE === "function")
+    ? _baseEsGYE(base)
+    : String(base || "").trim().toUpperCase().indexOf("G") === 0;
+
+  var reg;
+  try { reg = esGye ? listarClientesAPI_GYE() : listarClientesAPI(); }
+  catch (e) { return { raiz: "", cliente: cliente, relacionados: [], hayGrupo: false,
+                       error: String(e && e.message || e) }; }
+
+  var todos = (reg && reg.clientes) || [];
+  var raiz  = _raizCliente(cliente);
+  var pedido = String(cliente || "").trim().toUpperCase();
+
+  var grupo = todos.filter(function (c) {
+    var n = String(c.cliente || "").trim().toUpperCase();
+    return n && (n === pedido || n.indexOf(raiz) === 0);
+  }).sort(function (a, b) {
+    // El que escribió el usuario va primero; el resto alfabético.
+    var an = String(a.cliente).toUpperCase(), bn = String(b.cliente).toUpperCase();
+    if (an === pedido) return -1;
+    if (bn === pedido) return 1;
+    return an < bn ? -1 : 1;
+  });
+
+  return {
+    raiz: raiz,
+    cliente: pedido,
+    relacionados: grupo,
+    // Solo tiene sentido preguntar si hay MÁS de uno en el grupo.
+    hayGrupo: grupo.length > 1,
+    exacto: grupo.some(function (c) { return String(c.cliente).toUpperCase() === pedido; })
+  };
+}
+
+/**
+ * Todos los clientes con credencial en la sede, agrupados por raíz.
+ * Sirve para un selector general "por grupo de cliente".
+ */
+function listarGruposDeClientes(base) {
+  var esGye = (typeof _baseEsGYE === "function")
+    ? _baseEsGYE(base)
+    : String(base || "").trim().toUpperCase().indexOf("G") === 0;
+
+  var reg = esGye ? listarClientesAPI_GYE() : listarClientesAPI();
+  var todos = (reg && reg.clientes) || [];
+
+  var grupos = {};
+  todos.forEach(function (c) {
+    var n = String(c.cliente || "").trim().toUpperCase();
+    if (!n) return;
+    var r = _raizCliente(n);
+    (grupos[r] = grupos[r] || []).push(n);
+  });
+
+  var out = Object.keys(grupos).sort().map(function (r) {
+    return { raiz: r, clientes: grupos[r].sort(), total: grupos[r].length };
+  });
+  return { base: esGye ? "GYE" : "UIO", grupos: out, totalClientes: todos.length };
+}

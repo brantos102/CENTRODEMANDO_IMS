@@ -295,6 +295,12 @@
             <input type="text" id="cliente" placeholder="Ej. BELIA" list="clientes-lista"
                    oninput="onClienteChange()">
             <datalist id="clientes-lista"></datalist>
+            <div id="grupo-clientes" style="display:none;margin-top:8px;padding:10px 12px;
+                 border:1px solid var(--border);border-radius:8px;background:rgba(59,130,246,0.06);">
+              <div style="font-size:12px;margin-bottom:8px;" id="grupo-titulo"></div>
+              <div id="grupo-lista" style="display:flex;flex-direction:column;gap:5px;"></div>
+              <div class="hint" style="margin-top:8px;" id="grupo-resumen"></div>
+            </div>
           </div>
           <div class="field">
             <label class="req">Nombre del archivo</label>
@@ -603,6 +609,7 @@
       modo: null, filaEvento: null, datosEvento: null,
       modoFiltro: 'sku',   // FASE 8.70: 'sku' (por código) | 'posicion' (por ubicación física)
       sede: 'UIO',         // GYE: bodega de la que se extrae (credenciales y base propias)
+      clientesSel: [],     // varios clientes en un mismo archivo (cada uno con su credencial)
       eventos: []
     };
     let cacheDash = null;
@@ -722,9 +729,66 @@
       const cli = $('cliente').value.trim();
       if (cli && cli !== estado.cliente) {
         estado.cliente = cli;
+        estado.clientesSel = [];
         cargarEventos();
+        buscarClientesRelacionados(cli);
       }
       validar();
+    }
+
+    /* En el ERP conviven códigos parecidos que son clientes DISTINTOS, cada uno
+       con sus credenciales (NOKIA5G, NOKIACNT3G, NOKIACNTLTE…). Si el escrito
+       pertenece a un grupo así, se ofrecen los demás para contarlos juntos. */
+    let _grupoToken = 0;
+    function buscarClientesRelacionados(cli) {
+      const mio = ++_grupoToken;
+      const caja = $('grupo-clientes');
+      caja.style.display = 'none';
+      if (!cli || cli.length < 3) return;
+
+      google.script.run
+        .withSuccessHandler(function (r) {
+          if (mio !== _grupoToken) return;          // llegó tarde: ya cambió el cliente
+          if (!r || !r.hayGrupo) { caja.style.display = 'none'; return; }
+
+          $('grupo-titulo').innerHTML =
+            'Hay <b>' + r.relacionados.length + ' clientes</b> que empiezan por <b>' + r.raiz +
+            '</b>. Son clientes distintos, con credenciales propias. ' +
+            '¿Quieres incluir varios en este inventario?';
+
+          $('grupo-lista').innerHTML = r.relacionados.map(function (c, i) {
+            var esExacto = c.cliente === r.cliente;
+            return '<label class="radio-mini" style="justify-content:flex-start;gap:8px;">' +
+              '<input type="checkbox" class="cli-multi" value="' + c.cliente + '"' +
+              (esExacto ? ' checked' : '') + ' onchange="actualizarClientesSel()"> ' +
+              '<b>' + c.cliente + '</b>' +
+              (c.usuario ? '<span style="color:var(--muted);font-size:11px;"> · ' + c.usuario + '</span>' : '') +
+              '</label>';
+          }).join('');
+
+          caja.style.display = 'block';
+          actualizarClientesSel();
+        })
+        .withFailureHandler(function () { caja.style.display = 'none'; })
+        .sugerirClientesRelacionados(estado.sede, cli);
+    }
+
+    function actualizarClientesSel() {
+      const marcados = Array.from(document.querySelectorAll('.cli-multi:checked'))
+        .map(function (c) { return c.value; });
+      estado.clientesSel = marcados;
+
+      const res = $('grupo-resumen');
+      if (res) {
+        res.textContent = marcados.length > 1
+          ? 'Se extraerá el stock de ' + marcados.length + ' clientes y se combinará en un solo archivo.'
+          : (marcados.length === 1
+              ? 'Solo ' + marcados[0] + '. Marca más para combinarlos en un mismo inventario.'
+              : 'Marca al menos un cliente.');
+      }
+      // Lo ya extraído corresponde a otra selección de clientes.
+      if (estado.csvAplicado || (estado.csvData && estado.csvData.length)) reseleccionarCSV();
+      if (typeof validar === 'function') validar();
     }
 
     function generarNombre() {
@@ -889,7 +953,7 @@
       var btnRe = document.getElementById('btn-revalidar');
       if (btnRe) btnRe.style.display = 'none';
 
-      google.script.run.withSuccessHandler(res => {
+      const run = google.script.run.withSuccessHandler(res => {
         if (!res || !res.datosLimpios) {
           $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error: La API no devolvió datos válidos.</div>';
           return;
@@ -918,7 +982,14 @@
 
       }).withFailureHandler(err => {
         $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error de conexión API: ' + (err.message || err) + '</div>';
-      }).previsualizarStockRouter(estado.sede, cli, filtros, incluirVariantes);
+      });
+      // Con varios clientes marcados se consulta cada uno con SU credencial y se
+      // combinan; con uno solo se usa la ruta simple de siempre.
+      if (estado.clientesSel && estado.clientesSel.length > 1) {
+        run.previsualizarStockMulti(estado.sede, estado.clientesSel, filtros, incluirVariantes);
+      } else {
+        run.previsualizarStockRouter(estado.sede, cli, filtros, incluirVariantes);
+      }
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -1243,7 +1314,7 @@
       if (txtActual && !confirm('La lista de códigos ya tiene contenido.\n¿Reemplazarla con los códigos programados de ' + mes + '?')) return;
 
       $('mes-sugerencia-info').innerHTML = '⏳ Consultando cronograma de códigos…';
-      google.script.run.withSuccessHandler(res => {
+      const run = google.script.run.withSuccessHandler(res => {
         if (!res || !res.existe) {
           estado.mesCodigosSugeridos = null;
           $('mes-sugerencia-info').innerHTML =
@@ -1260,7 +1331,12 @@
         validar();
       }).withFailureHandler(err => {
         $('mes-sugerencia-info').innerHTML = '<span style="color:#fca5a5;">❌ ' + (err.message || err) + '</span>';
-      }).obtenerCodigosProgramadosRouter(estado.sede, cli, mes);
+      });
+      if (estado.clientesSel && estado.clientesSel.length > 1) {
+        run.obtenerCodigosProgramadosMulti(estado.sede, estado.clientesSel, mes);
+      } else {
+        run.obtenerCodigosProgramadosRouter(estado.sede, cli, mes);
+      }
     }
 
     /* ===== FASE 8.56: ventana de variantes fuera de la lista solicitada ===== */
