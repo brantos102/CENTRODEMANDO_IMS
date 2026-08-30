@@ -8503,8 +8503,9 @@ const CONFIG = {
   INVENTARIO_GLOBAL_NAME: "MATRIZ_INVENTARIOS_UIO",
   INVENTARIO_GLOBAL_ID: "1npxaCwfbwTJ-c8qpcw7qAhVT_CAXi4gUduPe2WuFXK4",
   ROOT_FOLDER_IDS: [
-    "12QkkKJ61AisU7vsNDqSuw03LGd4MSZFY",   // INT
-    "1HAqPpumvBKREO8vLeKp2kD-5WIoNdAsV"    // SLOT
+    "12QkkKJ61AisU7vsNDqSuw03LGd4MSZFY",   // Quito · INT
+    "1HAqPpumvBKREO8vLeKp2kD-5WIoNdAsV",   // Quito · SLOT
+    "1vClQh7AOD1oeVaThMH-4H6eTROVv3HJr"    // Guayaquil (GYE)
     // Agrega aquí más IDs de raíz cuando abras nuevos clientes/operativos
   ]
 };
