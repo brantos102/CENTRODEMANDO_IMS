@@ -233,3 +233,39 @@ function listarGruposDeClientes(base) {
   });
   return { base: esGye ? "GYE" : "UIO", grupos: out, totalClientes: todos.length };
 }
+
+/**
+ * Eventos del cronograma de VARIOS clientes, combinados y ordenados por fecha.
+ * Mantiene el mismo formato que obtenerEventosCronogramaPorCliente, así que el
+ * asistente los pinta con la lista de siempre.
+ *
+ * @param {string[]} clientes  códigos de cliente
+ * @param {Object}   opciones  mismas que la versión de un solo cliente
+ */
+function obtenerEventosCronogramaMulti(clientes, opciones) {
+  var lista = (clientes || [])
+    .map(function (c) { return String(c || "").trim().toUpperCase(); })
+    .filter(Boolean);
+  if (!lista.length) return [];
+
+  var vistos = {}, todos = [];
+  lista.forEach(function (cli) {
+    var evs;
+    try { evs = obtenerEventosCronogramaPorCliente(cli, opciones) || []; }
+    catch (e) { return; }        // un cliente sin eventos no corta a los demás
+    evs.forEach(function (ev) {
+      // La fila del cronograma identifica al evento: evita repetirlo si dos
+      // clientes comparten la misma fila.
+      var k = String(ev.filaEvento || ev.fila || "") + "|" + String(ev.cliente || cli);
+      if (vistos[k]) return;
+      vistos[k] = true;
+      todos.push(ev);
+    });
+  });
+
+  todos.sort(function (a, b) {
+    var fa = a.fechaISO || a.fecha || "", fb = b.fechaISO || b.fecha || "";
+    return fa < fb ? -1 : (fa > fb ? 1 : 0);
+  });
+  return todos;
+}

@@ -102,6 +102,18 @@
                            color: #93c5fd; font-weight: 600; }
     .radio-mini input { display: none; }
 
+    /* Lista de clientes a combinar: aquí la casilla SÍ debe verse, a diferencia
+       de .radio-mini, que oculta el input para simular un botón. */
+    .cli-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px;
+                background: var(--panel-2); border: 1px solid var(--border);
+                border-radius: 5px; cursor: pointer; font-size: 12px; }
+    .cli-item:hover { border-color: var(--accent); }
+    .cli-item.on { border-color: var(--accent); background: rgba(59,130,246,0.14); }
+    .cli-item input { width: 15px; height: 15px; accent-color: var(--accent);
+                      cursor: pointer; flex: none; margin: 0; }
+    .cli-item .nom { font-weight: 600; }
+    .cli-item .usr { color: var(--muted); font-size: 11px; margin-left: auto; }
+
     .radio-block { background: var(--panel-2); border: 1px solid var(--border);
                    padding: 9px 11px; border-radius: 5px; cursor: pointer;
                    margin-bottom: 5px; display: flex; gap: 8px; align-items: center; }
@@ -760,22 +772,24 @@
       google.script.run
         .withSuccessHandler(function (r) {
           if (mio !== _grupoToken) return;          // llegó tarde: ya cambió el cliente
-          if (!r || !r.hayGrupo) { caja.style.display = 'none'; return; }
+          if (!r) { caja.style.display = 'none'; return; }
 
-          $('grupo-titulo').innerHTML =
-            'Hay <b>' + r.relacionados.length + ' clientes</b> que empiezan por <b>' + r.raiz +
-            '</b>. Son clientes distintos, con credenciales propias. ' +
-            '¿Quieres incluir varios en este inventario?';
-
-          $('grupo-lista').innerHTML = r.relacionados.map(function (c, i) {
-            var esExacto = c.cliente === r.cliente;
-            return '<label class="radio-mini" style="justify-content:flex-start;gap:8px;">' +
-              '<input type="checkbox" class="cli-multi" value="' + c.cliente + '"' +
-              (esExacto ? ' checked' : '') + ' onchange="actualizarClientesSel()"> ' +
-              '<b>' + c.cliente + '</b>' +
-              (c.usuario ? '<span style="color:var(--muted);font-size:11px;"> · ' + c.usuario + '</span>' : '') +
-              '</label>';
+          _todosClientes = (r.todos || []).map(function (c) { return c.cliente; });
+          const dl = $('otros-clientes-lista');
+          if (dl) dl.innerHTML = _todosClientes.map(function (n) {
+            return '<option value="' + n + '">';
           }).join('');
+
+          $('grupo-titulo').innerHTML = r.hayGrupo
+            ? 'Hay <b>' + r.relacionados.length + ' clientes</b> que empiezan por <b>' + r.raiz +
+              '</b>. Son clientes distintos, con credenciales propias. Marca los que quieras contar juntos.'
+            : 'Clientes de este inventario. Añade más abajo para combinarlos en un mismo archivo.';
+
+          const base = r.hayGrupo ? r.relacionados
+                                  : (r.exacto ? [{ cliente: r.cliente, usuario: '' }] : []);
+          _pintarClientes(base.map(function (c) {
+            return { cliente: c.cliente, usuario: c.usuario, marcado: c.cliente === r.cliente };
+          }));
 
           caja.style.display = 'block';
           actualizarClientesSel();
@@ -784,21 +798,74 @@
         .sugerirClientesRelacionados(estado.sede, cli);
     }
 
+    /* Clientes con credencial en la sede; alimenta el buscador de "añadir otro". */
+    let _todosClientes = [];
+
+    function _filaCliente(c) {
+      return '<label class="cli-item' + (c.marcado ? ' on' : '') + '">' +
+        '<input type="checkbox" class="cli-multi" value="' + c.cliente + '"' +
+        (c.marcado ? ' checked' : '') + ' onchange="actualizarClientesSel()">' +
+        '<span class="nom">' + c.cliente + '</span>' +
+        (c.usuario ? '<span class="usr">' + c.usuario + '</span>' : '') +
+        '</label>';
+    }
+
+    function _pintarClientes(items) {
+      $('grupo-lista').innerHTML = items.map(_filaCliente).join('');
+    }
+
+    /* Añade cualquier cliente de la sede, aunque no se parezca al escrito:
+       sirve para contar juntos, por ejemplo, SG y HYCITE de una misma zona. */
+    function anadirOtroCliente() {
+      const campo = $('otro-cliente');
+      const nombre = String(campo.value || '').trim().toUpperCase();
+      if (!nombre) return;
+
+      if (_todosClientes.length && _todosClientes.indexOf(nombre) === -1) {
+        alert('"' + nombre + '" no tiene credenciales registradas en ' + estado.sede + '.\n' +
+              'Regístralas en Panel → Credenciales API, o elige uno de la lista.');
+        return;
+      }
+
+      const yaEsta = Array.from(document.querySelectorAll('.cli-multi'))
+        .filter(function (c) { return c.value === nombre; })[0];
+
+      if (yaEsta) {
+        yaEsta.checked = true;
+      } else {
+        const usr = (_todosClientes.indexOf(nombre) !== -1) ? '' : '';
+        $('grupo-lista').insertAdjacentHTML('beforeend',
+          _filaCliente({ cliente: nombre, usuario: usr, marcado: true }));
+      }
+      campo.value = '';
+      actualizarClientesSel();
+    }
+
     function actualizarClientesSel() {
       const marcados = Array.from(document.querySelectorAll('.cli-multi:checked'))
         .map(function (c) { return c.value; });
       estado.clientesSel = marcados;
 
+      // Realce visual de la fila marcada.
+      document.querySelectorAll('.cli-item').forEach(function (l) {
+        const chk = l.querySelector('.cli-multi');
+        l.classList.toggle('on', !!(chk && chk.checked));
+      });
+
       const res = $('grupo-resumen');
       if (res) {
-        res.textContent = marcados.length > 1
-          ? 'Se extraerá el stock de ' + marcados.length + ' clientes y se combinará en un solo archivo.'
+        res.innerHTML = marcados.length > 1
+          ? '<b style="color:#93c5fd;">' + marcados.length + ' clientes</b> en este archivo: ' +
+            marcados.join(', ') + '. Se extraerá el stock de cada uno y se combinará.'
           : (marcados.length === 1
-              ? 'Solo ' + marcados[0] + '. Marca más para combinarlos en un mismo inventario.'
-              : 'Marca al menos un cliente.');
+              ? 'Solo <b>' + marcados[0] + '</b>. Marca o añade más para combinarlos.'
+              : '<span style="color:#fca5a5;">Marca al menos un cliente.</span>');
       }
+
       // Lo ya extraído corresponde a otra selección de clientes.
       if (estado.csvAplicado || (estado.csvData && estado.csvData.length)) reseleccionarCSV();
+      // Los eventos sugeridos son los de los clientes marcados: se recargan.
+      if (typeof cargarEventos === 'function') cargarEventos();
       if (typeof validar === 'function') validar();
     }
 
@@ -1887,7 +1954,11 @@
       $('evt-filtros').style.display = 'flex';
 
       var inclEnt = !!($('evt-incl-entregados') && $('evt-incl-entregados').checked);
-      var claveCache = cli.toUpperCase() + '|' + evtRangoActual + '|' + (inclEnt ? '1':'0');
+      // Con varios clientes marcados, los eventos son la unión de todos ellos:
+      // la clave de caché y la consulta usan esa selección, no solo el escrito.
+      var clientesEvt = (estado.clientesSel && estado.clientesSel.length)
+        ? estado.clientesSel.slice() : [cli.toUpperCase()];
+      var claveCache = clientesEvt.slice().sort().join('+') + '|' + evtRangoActual + '|' + (inclEnt ? '1':'0');
 
       // FIX 8.23: si tenemos cache válido, pintar instantáneo (sin loader)
       if (evtCachePorClave[claveCache]) {
@@ -1899,9 +1970,10 @@
       $('evt-list').style.display = 'none';
       $('evt-empty').style.display = 'none';
       $('modo-asignar-label').style.display = 'none';
-      $('evt-info').innerText = '— buscando para ' + cli + '…';
+      $('evt-info').innerText = '— buscando para ' +
+        (clientesEvt.length > 1 ? clientesEvt.length + ' clientes' : cli) + '…';
 
-      google.script.run.withSuccessHandler(evs => {
+      const runEvt = google.script.run.withSuccessHandler(evs => {
         evs = evs || [];
         evtCachePorClave[claveCache] = evs;
         estado.eventos = evs;
@@ -1910,11 +1982,13 @@
         $('evt-loader').style.display = 'none';
         $('evt-empty').style.display = 'block';
         $('evt-info').innerText = '— error: ' + (err.message || err);
-      }).obtenerEventosCronogramaPorCliente(cli, {
-        rango: evtRangoActual,
-        incluirEntregados: inclEnt,
-        incluirConArchivo: false
       });
+      const opcEvt = { rango: evtRangoActual, incluirEntregados: inclEnt, incluirConArchivo: false };
+      if (clientesEvt.length > 1) {
+        runEvt.obtenerEventosCronogramaMulti(clientesEvt, opcEvt);
+      } else {
+        runEvt.obtenerEventosCronogramaPorCliente(cli, opcEvt);
+      }
     }
 
     function _pintarEventos(evs) {
