@@ -23,10 +23,61 @@ function previsualizarStockRouter(base, cliente, listaCodigos, incluirVariantes)
 }
 
 /* ── Cronograma de códigos ───────────────────────────────────────────────── */
+
+/**
+ * Quién puede CARGAR el cronograma de códigos: el permiso `baseDatos`, que es
+ * el que abre Panel → Base de datos (donde vive esa pantalla). Hoy lo tiene
+ * solo Admin; los demás roles deben pedírselo.
+ *
+ * Nunca lanza: si el rol no se puede resolver se responde `false`, que es el
+ * mensaje conservador ("solicítalo a un administrador").
+ */
+function _puedeCargarCronogramaCodigos() {
+  try {
+    var ctx = obtenerContextoUsuario();
+    return !!(ctx && ctx.permisos && ctx.permisos.baseDatos);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Clientes que SÍ tienen códigos cargados en la sede. Sirve para orientar
+ * cuando el pedido viene vacío: se ve de un vistazo si el cronograma está
+ * cargado para otros clientes o si no hay ninguno todavía.
+ */
+function _clientesConCodigos(base) {
+  try {
+    var res = obtenerResumenCronCodigosRouter(base) || [];
+    return res
+      .map(function (r) { return String((r && r.cliente) || "").trim().toUpperCase(); })
+      .filter(Boolean);
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * Completa un resultado del cronograma con el contexto que el asistente
+ * necesita para explicar qué hacer cuando no hay códigos: a quién pedirlos y
+ * qué clientes sí los tienen. Si hay códigos, el resultado pasa intacto.
+ */
+function _conContextoCronograma(res, base, cliente, mes) {
+  res = res || {};
+  if (res.cliente == null) res.cliente = String(cliente || "").trim().toUpperCase();
+  if (res.mes == null)     res.mes     = String(mes || "").trim().toUpperCase();
+  if (res.existe) return res;
+
+  res.puedeCargar        = _puedeCargarCronogramaCodigos();
+  res.clientesConCodigos = _clientesConCodigos(base);
+  return res;
+}
+
 function obtenerCodigosProgramadosRouter(base, cliente, mes) {
-  return _baseEsGYE(base)
+  var res = _baseEsGYE(base)
     ? obtenerCodigosProgramados_GYE(cliente, mes)
     : obtenerCodigosProgramados(cliente, mes);
+  return _conContextoCronograma(res, base, cliente, mes);
 }
 
 function obtenerMesesDeCodigosRouter(base, cliente, listaSkus) {

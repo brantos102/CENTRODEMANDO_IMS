@@ -129,10 +129,23 @@ function obtenerCodigosProgramadosMulti(base, clientes, mes) {
     detalle.push({ cliente: cli, total: cods.length, nuevos: nuevos });
   });
 
-  return {
+  // Clientes del grupo que no aportaron ni un código: se nombran tal cual para
+  // que el usuario sepa cuáles faltan por cargar, no solo que "faltan".
+  var sinCodigos = detalle
+    .filter(function (d) { return !d.total; })
+    .map(function (d) { return d.cliente; });
+
+  var out = {
     existe: codigos.length > 0, mes: mes, codigos: codigos,
-    total: codigos.length, abc: abc, detallePorCliente: detalle
+    total: codigos.length, abc: abc, detallePorCliente: detalle,
+    sinCodigos: sinCodigos
   };
+
+  // Mismo contexto que el flujo de un solo cliente (quién puede cargar el
+  // cronograma y qué clientes ya lo tienen), si el enrutador está presente.
+  return (typeof _conContextoCronograma === "function")
+    ? _conContextoCronograma(out, base, lista.join(", "), mes)
+    : out;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

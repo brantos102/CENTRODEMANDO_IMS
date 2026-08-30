@@ -747,16 +747,25 @@
     }
 
     /* ===== CLIENTE & NOMBRE ===== */
+
+    /* Aísla un paso del flujo: si falla, los siguientes se siguen ejecutando.
+       Antes, un error en cargarEventos() cancelaba el pintado de la caja de
+       clientes y, como estado.cliente ya estaba actualizado, no se volvía a
+       intentar: había que cerrar la pestaña para poder continuar. */
+    function _sinRomper(fn) {
+      try { fn(); } catch (e) { console.error(e); }
+    }
+
     function onClienteChange() {
-      generarNombre();
+      _sinRomper(generarNombre);
       const cli = $('cliente').value.trim();
       if (cli && cli !== estado.cliente) {
         estado.cliente = cli;
         estado.clientesSel = [];
-        cargarEventos();
-        buscarClientesRelacionados(cli);
+        _sinRomper(function () { buscarClientesRelacionados(cli); });
+        _sinRomper(cargarEventos);
       }
-      validar();
+      _sinRomper(validar);
     }
 
     /* En el ERP conviven códigos parecidos que son clientes DISTINTOS, cada uno
@@ -767,12 +776,30 @@
       const mio = ++_grupoToken;
       const caja = $('grupo-clientes');
       caja.style.display = 'none';
-      if (!cli || cli.length < 3) return;
+      // Dos caracteres: hay clientes con nombre corto (SG) y desde ellos se
+      // tiene que poder añadir a los demás.
+      if (!cli || cli.length < 2) return;
+
+      /* Aunque el ERP no responda, la caja debe quedar utilizable: el usuario
+         sigue pudiendo escribir los clientes que quiere combinar. */
+      const _cajaMinima = function (motivo) {
+        _todosClientes = [];
+        $('grupo-titulo').innerHTML = motivo;
+        _pintarClientes([{ cliente: cli.toUpperCase(), usuario: '', marcado: true }]);
+        caja.style.display = 'block';
+        actualizarClientesSel();
+      };
 
       google.script.run
         .withSuccessHandler(function (r) {
           if (mio !== _grupoToken) return;          // llegó tarde: ya cambió el cliente
-          if (!r) { caja.style.display = 'none'; return; }
+          if (!r || r.error) {
+            _cajaMinima(r && r.error
+              ? 'No pude leer los clientes de ' + estado.sede + ': ' + r.error +
+                ' Puedes añadirlos a mano.'
+              : 'Clientes de este inventario. Añade más abajo para combinarlos.');
+            return;
+          }
 
           _todosClientes = (r.todos || []).map(function (c) { return c.cliente; });
           const dl = $('otros-clientes-lista');
@@ -794,7 +821,11 @@
           caja.style.display = 'block';
           actualizarClientesSel();
         })
-        .withFailureHandler(function () { caja.style.display = 'none'; })
+        .withFailureHandler(function (err) {
+          if (mio !== _grupoToken) return;
+          _cajaMinima('No pude consultar los clientes de ' + estado.sede + ' (' +
+                      ((err && err.message) || err) + '). Puedes añadirlos a mano.');
+        })
         .sugerirClientesRelacionados(estado.sede, cli);
     }
 
@@ -983,6 +1014,19 @@
       if (estado.csvAplicado || (estado.csvData && estado.csvData.length)) {
         reseleccionarCSV();   // lo extraído era de la otra bodega
       }
+
+      // Los clientes con credencial dependen de la sede: se vuelve a consultar
+      // sin exigir que el nombre haya cambiado (si no, la caja se quedaba con
+      // el resultado de la bodega anterior o directamente oculta).
+      estado.clientesSel = [];
+      var cliAct = $('cliente').value.trim();
+      if (cliAct) {
+        _sinRomper(function () { buscarClientesRelacionados(cliAct); });
+        _sinRomper(cargarEventos);
+      } else {
+        $('grupo-clientes').style.display = 'none';
+      }
+
       if (typeof validar === 'function') validar();
     }
 
@@ -1395,17 +1439,36 @@
       const run = google.script.run.withSuccessHandler(res => {
         if (!res || !res.existe) {
           estado.mesCodigosSugeridos = null;
+          // Quién puede cargar el cronograma de códigos es el permiso baseDatos
+          // (Panel → Base de datos). Al resto se le indica a quién pedirlo.
+          var quien = (res && res.clientesConCodigos && res.clientesConCodigos.length)
+            ? '<br><span style="color:var(--muted);">Con códigos cargados en ' + estado.sede + ': ' +
+              res.clientesConCodigos.slice(0, 12).join(', ') +
+              (res.clientesConCodigos.length > 12 ? '…' : '') + '</span>'
+            : '';
+          var accion = (res && res.puedeCargar)
+            ? 'Puedes cargarlo desde <b>Panel → 📅 Cronograma de códigos</b>.'
+            : 'Solicítalo a un <b>Administrador</b> para que lo cargue en el cronograma de códigos.';
           $('mes-sugerencia-info').innerHTML =
-            '<span style="color:#fbbf24;">⚠ ' + cli.toUpperCase() + ' no tiene cronograma de códigos cargado. ' +
-            'Pídele al Coordinador cargarlo (Panel → 📅 Cronograma de códigos) o escribe los códigos manualmente.</span>';
+            '<span style="color:#fbbf24;">⚠ <b>' + (res && res.cliente ? res.cliente : cli.toUpperCase()) +
+            '</b> no tiene códigos registrados para <b>' + (res && res.mes ? res.mes : mes) + '</b> en ' +
+            estado.sede + '. ' + accion +
+            ' Mientras tanto puedes escribir los códigos a mano o extraer todo el stock.</span>' + quien;
           return;
         }
         $('filtroCodigos').value = res.codigos.join('\n');
         estado.mesCodigosSugeridos = { mes: res.mes, total: res.total };
         const abcTxt = Object.keys(res.abc || {}).sort().map(k => k + ':' + res.abc[k]).join(' · ');
+        // Con varios clientes puede haber cobertura parcial: se nombra a los
+        // que no aportaron códigos para que se note antes de extraer.
+        const faltan = (res.sinCodigos && res.sinCodigos.length)
+          ? '<br><span style="color:#fbbf24;">⚠ Sin códigos en ' + res.mes + ': <b>' +
+            res.sinCodigos.join(', ') + '</b> — de esos clientes no se sugirió nada.</span>'
+          : '';
         $('mes-sugerencia-info').innerHTML =
           '<span style="color:#22c55e;">✓ <b>' + res.total + '</b> códigos programados de <b>' + res.mes + '</b>' +
-          (abcTxt ? ' (' + abcTxt + ')' : '') + ' — edita la lista (añadir/quitar) si lo necesitas y luego extrae.</span>';
+          (abcTxt ? ' (' + abcTxt + ')' : '') + ' — edita la lista (añadir/quitar) si lo necesitas y luego extrae.</span>' +
+          faltan;
         validar();
       }).withFailureHandler(err => {
         $('mes-sugerencia-info').innerHTML = '<span style="color:#fca5a5;">❌ ' + (err.message || err) + '</span>';
