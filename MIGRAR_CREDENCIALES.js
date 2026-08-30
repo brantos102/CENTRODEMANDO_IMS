@@ -3,101 +3,114 @@
  * ---------------------------------------------------------------------------
  * Las credenciales viven en las Propiedades del Script, que NO se copian al
  * duplicar un archivo de Drive. Por eso la copia de desarrollo aparece sin
- * credenciales aunque el código sea el mismo.
+ * credenciales aunque el código sea idéntico.
  *
- * USO (una sola vez, desde el editor):
- *   1. En el proyecto de PRODUCCIÓN → ejecuta  exportarCredenciales()
- *      y copia el texto que aparece en el registro de ejecución.
- *   2. En el proyecto de DESARROLLO → pega ese texto en PEGAR_AQUI (abajo)
- *      y ejecuta  importarCredenciales().
+ * El traspaso va por un archivo TEMPORAL en tu Drive, no por copiar y pegar:
+ * el registro de ejecución trunca los textos largos y pegar claves dentro del
+ * código las deja escritas en el proyecto. Aquí nunca se ven en pantalla.
  *
- * ⚠ El registro muestra las claves en claro mientras dura la operación. Son tus
- *   credenciales y tus dos proyectos, así que es correcto, pero:
- *   · no compartas ese registro,
- *   · borra este archivo del proyecto cuando termines,
- *   · y NO lo subas a producción (basta con desarrollo).
+ * USO (una sola vez):
+ *   1. PRODUCCIÓN  → ejecuta  exportarCredenciales()
+ *                    y copia el ID que muestra el registro (solo el ID).
+ *   2. DESARROLLO  → pon ese ID en ARCHIVO_ID (abajo) y ejecuta
+ *                    importarCredenciales(). Al terminar borra el archivo.
  *
- * Copia las llaves de AMBAS sedes:
+ * Cubre las dos sedes:
  *   CRED_API_<CLIENTE>     → Quito      (q_apidepot)
  *   CREDGYE_API_<CLIENTE>  → Guayaquil  (g_apidepot)
  */
 
-/** Prefijos que se consideran credenciales de API. */
-var MIGRA_PREFIJOS = ["CRED_API_", "CREDGYE_API_"];
+/** ¿La llave es una credencial de API? */
+function _esCredencial(k) {
+  return k.indexOf("CREDGYE_API_") === 0 || k.indexOf("CRED_API_") === 0;
+}
 
 /**
- * PRODUCCIÓN: muestra en el registro las credenciales para copiarlas.
- * No modifica nada.
+ * PRODUCCIÓN: guarda las credenciales en un archivo temporal de Drive.
+ * No las muestra en el registro; solo devuelve el ID del archivo.
  */
 function exportarCredenciales() {
   var props = PropertiesService.getScriptProperties().getProperties();
-  var out = {}, cuenta = { CRED_API_: 0, CREDGYE_API_: 0 };
+  var out = {}, uio = 0, gye = 0;
 
   for (var k in props) {
-    for (var i = 0; i < MIGRA_PREFIJOS.length; i++) {
-      var pre = MIGRA_PREFIJOS[i];
-      // CREDGYE_API_ empieza por "CRED", así que se compara el prefijo completo.
-      if (k.indexOf(pre) === 0 && (pre !== "CRED_API_" || k.indexOf("CREDGYE_API_") !== 0)) {
-        out[k] = props[k];
-        cuenta[pre]++;
-        break;
-      }
-    }
+    if (!_esCredencial(k)) continue;
+    out[k] = props[k];
+    if (k.indexOf("CREDGYE_API_") === 0) gye++; else uio++;
   }
+  if (!uio && !gye) throw new Error("Este proyecto no tiene credenciales guardadas.");
 
-  var json = JSON.stringify(out);
-  Logger.log("Credenciales encontradas: " + cuenta["CRED_API_"] + " de Quito, " +
-             cuenta["CREDGYE_API_"] + " de Guayaquil.\n\n" +
-             "Copia TODO el bloque siguiente y pégalo en PEGAR_AQUI del proyecto de desarrollo:\n\n" +
-             json);
-  return json;
+  var archivo = DriveApp.createFile(
+    "TRASPASO_CREDENCIALES_" + new Date().getTime() + ".json",
+    JSON.stringify(out),
+    MimeType.PLAIN_TEXT
+  );
+
+  Logger.log(
+    "Credenciales listas para el traspaso: " + uio + " de Quito, " + gye + " de Guayaquil.\n\n" +
+    "Copia SOLO este ID y ponlo en ARCHIVO_ID del proyecto de desarrollo:\n\n" +
+    archivo.getId() + "\n\n" +
+    "El archivo queda en tu Drive y se borra solo al importar.\n" +
+    "Si cancelas el traspaso, bórralo a mano: " + archivo.getUrl()
+  );
+  return archivo.getId();
 }
 
 /**
- * DESARROLLO: pega arriba el texto exportado y ejecuta.
- * Las credenciales existentes con el mismo nombre se reemplazan.
+ * DESARROLLO: lee el archivo temporal, importa las credenciales y lo borra.
+ * Las existentes con el mismo nombre se reemplazan.
  */
 function importarCredenciales() {
-  var PEGAR_AQUI = '';   // <-- pega aquí el JSON que devolvió exportarCredenciales()
+  var ARCHIVO_ID = '';   // <-- pega aquí SOLO el ID que devolvió exportarCredenciales()
 
-  var texto = String(PEGAR_AQUI || "").trim();
-  if (!texto) {
-    throw new Error("Pega primero el JSON exportado en la variable PEGAR_AQUI.");
-  }
+  var id = String(ARCHIVO_ID || "").trim();
+  if (!id) throw new Error("Pon en ARCHIVO_ID el identificador que devolvió exportarCredenciales().");
+  // Por si pegan la URL completa en vez del ID.
+  var m = id.match(/[-\w]{25,}/);
+  if (m) id = m[0];
+
+  var texto;
+  try { texto = DriveApp.getFileById(id).getBlob().getDataAsString(); }
+  catch (e) { throw new Error("No pude abrir el archivo " + id + ": " + e.message); }
 
   var obj;
   try { obj = JSON.parse(texto); }
-  catch (e) { throw new Error("El texto pegado no es un JSON válido: " + e.message); }
+  catch (e) { throw new Error("El archivo no contiene un JSON válido: " + e.message); }
 
   var sp = PropertiesService.getScriptProperties();
-  var n = 0, uio = 0, gye = 0, ignoradas = 0;
+  var uio = 0, gye = 0, ignoradas = 0;
 
   for (var k in obj) {
-    var esGye = k.indexOf("CREDGYE_API_") === 0;
-    var esUio = !esGye && k.indexOf("CRED_API_") === 0;
-    if (!esGye && !esUio) { ignoradas++; continue; }   // solo credenciales
+    if (!_esCredencial(k)) { ignoradas++; continue; }
     sp.setProperty(k, obj[k]);
-    n++; if (esGye) gye++; else uio++;
+    if (k.indexOf("CREDGYE_API_") === 0) gye++; else uio++;
   }
 
   // Los tokens del día se invalidan para que se renueven con estas credenciales.
-  var todas = sp.getProperties();
-  var tokensBorrados = 0;
+  var todas = sp.getProperties(), tokens = 0;
   for (var t in todas) {
     if (t.indexOf("ITSANET_TOKEN_") === 0 || t.indexOf("FECHA_TOKEN_") === 0) {
-      sp.deleteProperty(t); tokensBorrados++;
+      sp.deleteProperty(t); tokens++;
     }
   }
 
-  Logger.log("✓ Importadas " + n + " credenciales (" + uio + " Quito, " + gye + " Guayaquil)." +
-             (ignoradas ? "\n  Ignoradas " + ignoradas + " llaves que no son credenciales." : "") +
-             "\n  Tokens en caché borrados: " + tokensBorrados + " (se renovarán al primer uso).");
-  return { ok: true, importadas: n, uio: uio, gye: gye };
+  // El archivo ya cumplió su función: no debe quedarse en Drive.
+  var borrado = true;
+  try { DriveApp.getFileById(id).setTrashed(true); } catch (e) { borrado = false; }
+
+  Logger.log(
+    "✓ Importadas " + (uio + gye) + " credenciales (" + uio + " Quito, " + gye + " Guayaquil)." +
+    (ignoradas ? "\n  Ignoradas " + ignoradas + " llaves que no eran credenciales." : "") +
+    "\n  Tokens en caché borrados: " + tokens + " (se renovarán al primer uso)." +
+    (borrado ? "\n  Archivo de traspaso enviado a la papelera."
+             : "\n  ⚠ No pude borrar el archivo de traspaso: bórralo a mano.")
+  );
+  return { ok: true, uio: uio, gye: gye };
 }
 
 /**
- * Comprueba qué credenciales hay en ESTE proyecto, sin mostrar las claves.
- * Útil para verificar antes y después de importar.
+ * Lista qué credenciales hay en ESTE proyecto, sin mostrar las claves.
+ * Úsala antes y después de importar para confirmar.
  */
 function verificarCredenciales() {
   var props = PropertiesService.getScriptProperties().getProperties();
