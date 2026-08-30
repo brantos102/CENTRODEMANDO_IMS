@@ -3030,8 +3030,25 @@ function invalidarCacheSeries() {
    Devuelve { datosLimpios, reporte } con métricas y advertencias.
    ========================================================================== */
 
+/**
+ * @param {Array}          csvData             filas a validar
+ * @param {string|Array}   clienteSeleccionado un cliente, o VARIOS cuando el
+ *   inventario combina clientes distintos (NOKIA5G + NOKIACNT3G, SG + HYCITE…).
+ *   Con un solo cliente el comportamiento es exactamente el de siempre.
+ */
 function validarCSVAvanzado(csvData, clienteSeleccionado) {
   if (!Array.isArray(csvData)) throw new Error("csvData inválido.");
+
+  // Varios clientes: se valida contra la lista completa, aceptando la fila si
+  // coincide con CUALQUIERA de ellos.
+  var _multiCli = null;
+  if (Array.isArray(clienteSeleccionado)) {
+    _multiCli = clienteSeleccionado
+      .map(function (c) { return String(c || "").trim().toUpperCase(); })
+      .filter(Boolean);
+    clienteSeleccionado = _multiCli.length === 1 ? _multiCli[0] : "";
+    if (_multiCli.length < 2) _multiCli = null;
+  }
 
   var TOPE_FILAS = 50000;
   if (csvData.length > TOPE_FILAS) {
@@ -3119,7 +3136,15 @@ function validarCSVAvanzado(csvData, clienteSeleccionado) {
     // FIX FASE 8.7: Match flexible — HYCITE2/HYCITE3 cuentan como HYCITE.
     // Si el cliente del CSV empieza igual al seleccionado y solo difiere en sufijo numérico,
     // se acepta. Mismo trato para casos al revés (CSV=HYCITE, seleccionado=HYCITE2).
-    if (cli && cliN && cli !== cliN) {
+    // Con varios clientes, basta con que la fila sea de alguno de ellos.
+    if (_multiCli && cli) {
+      var enLista = false;
+      for (var mi = 0; mi < _multiCli.length; mi++) {
+        if (_clienteCoincideItsanet(cli, _multiCli[mi])) { enLista = true; break; }
+      }
+      if (!enLista) { rep.filtradasPorCliente++; rep.excluidas++; continue; }
+    }
+    else if (cli && cliN && cli !== cliN) {
       var coincide = false;
       // Caso A: CSV es variante con sufijo numérico del seleccionado
       // Ej: seleccionado=HYCITE, csv=HYCITE2 → coincide

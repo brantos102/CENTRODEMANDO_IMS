@@ -1864,7 +1864,10 @@
           var btnRe = document.getElementById('btn-revalidar');
           if (btnRe) btnRe.style.display = 'inline-block';
         })
-        .validarCSVAvanzado(estado.csvData, cli);
+        // Con varios clientes se valida contra TODOS: si no, las filas de los
+        // demás se descartarían por "cliente distinto".
+        .validarCSVAvanzado(estado.csvData,
+          (estado.clientesSel && estado.clientesSel.length > 1) ? estado.clientesSel : cli);
     }
 
     /* FIX FASE 8.7: Reseleccionar archivo CSV (limpia y permite cargar otro) */
