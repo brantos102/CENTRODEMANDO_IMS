@@ -279,6 +279,18 @@
         <div class="card">
           <div class="ttl"><span class="step-num">1</span> Identificación del archivo</div>
           <div class="field">
+            <label class="req">Bodega / sede</label>
+            <div style="display:flex;gap:6px;">
+              <label class="radio-mini selected" id="lbl-sede-uio" style="flex:1;justify-content:center;">
+                <input type="radio" name="sedeBodega" value="UIO" checked onchange="cambiarSede()"> 🏔 Quito (UIO)
+              </label>
+              <label class="radio-mini" id="lbl-sede-gye" style="flex:1;justify-content:center;">
+                <input type="radio" name="sedeBodega" value="GYE" onchange="cambiarSede()"> 🏢 Guayaquil (GYE)
+              </label>
+            </div>
+            <div class="hint" id="hint-sede">Base de Quito (q_apidepot), con las credenciales de esa sede.</div>
+          </div>
+          <div class="field">
             <label class="req">Cliente</label>
             <input type="text" id="cliente" placeholder="Ej. BELIA" list="clientes-lista"
                    oninput="onClienteChange()">
@@ -590,6 +602,7 @@
       csvData: [], csvAplicado: false, csvValidado: null,
       modo: null, filaEvento: null, datosEvento: null,
       modoFiltro: 'sku',   // FASE 8.70: 'sku' (por código) | 'posicion' (por ubicación física)
+      sede: 'UIO',         // GYE: bodega de la que se extrae (credenciales y base propias)
       eventos: []
     };
     let cacheDash = null;
@@ -805,6 +818,32 @@
     }
 
     /* ===== FASE 8.70: modo de filtrado — por CÓDIGO (SKU) o por POSICIÓN ===== */
+    /* GYE: cambia la bodega de trabajo. Cada sede consulta su propia base con
+       credenciales y token propios, así que lo ya extraído (que pertenece a la
+       sede anterior) se descarta para no mezclar orígenes. */
+    function cambiarSede() {
+      var sel = document.querySelector('input[name="sedeBodega"]:checked');
+      var sede = sel ? sel.value : 'UIO';
+      if (estado.sede === sede) return;
+      estado.sede = sede;
+
+      var lu = $('lbl-sede-uio'), lg = $('lbl-sede-gye');
+      if (lu) lu.classList.toggle('selected', sede === 'UIO');
+      if (lg) lg.classList.toggle('selected', sede === 'GYE');
+
+      var h = $('hint-sede');
+      if (h) {
+        h.textContent = (sede === 'GYE')
+          ? 'Base de Guayaquil (g_apidepot), con las credenciales de esa sede.'
+          : 'Base de Quito (q_apidepot), con las credenciales de esa sede.';
+      }
+
+      if (estado.csvAplicado || (estado.csvData && estado.csvData.length)) {
+        reseleccionarCSV();   // lo extraído era de la otra bodega
+      }
+      if (typeof validar === 'function') validar();
+    }
+
     function cambiarModoFiltro() {
       var sel = document.querySelector('input[name="modoFiltro"]:checked');
       var modo = (sel && sel.value) || 'sku';
@@ -879,7 +918,7 @@
 
       }).withFailureHandler(err => {
         $('csv-status-box').innerHTML = '<div class="csv-status err">❌ Error de conexión API: ' + (err.message || err) + '</div>';
-      }).previsualizarStockItsanet(cli, filtros, incluirVariantes);
+      }).previsualizarStockRouter(estado.sede, cli, filtros, incluirVariantes);
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
@@ -1221,7 +1260,7 @@
         validar();
       }).withFailureHandler(err => {
         $('mes-sugerencia-info').innerHTML = '<span style="color:#fca5a5;">❌ ' + (err.message || err) + '</span>';
-      }).obtenerCodigosProgramados(cli, mes);
+      }).obtenerCodigosProgramadosRouter(estado.sede, cli, mes);
     }
 
     /* ===== FASE 8.56: ventana de variantes fuera de la lista solicitada ===== */
@@ -1287,7 +1326,7 @@
         });
       }).withFailureHandler(() => {
         document.querySelectorAll('.var-mes-info').forEach(el => { el.innerHTML = ''; });
-      }).obtenerMesesDeCodigos(cli, skus);
+      }).obtenerMesesDeCodigosRouter(estado.sede, cli, skus);
     }
 
     function aplicarVariantesMes() {
