@@ -199,7 +199,12 @@ function sugerirClientesRelacionados(base, cliente) {
     relacionados: grupo,
     // Solo tiene sentido preguntar si hay MÁS de uno en el grupo.
     hayGrupo: grupo.length > 1,
-    exacto: grupo.some(function (c) { return String(c.cliente).toUpperCase() === pedido; })
+    exacto: grupo.some(function (c) { return String(c.cliente).toUpperCase() === pedido; }),
+    // Todos los de la sede: permite combinar clientes que no se parecen
+    // (por ejemplo SG y HYCITE, de una misma zona de la bodega).
+    todos: todos.map(function (c) {
+      return { cliente: String(c.cliente || "").trim().toUpperCase(), usuario: c.usuario || "" };
+    }).sort(function (a, b) { return a.cliente < b.cliente ? -1 : 1; })
   };
 }
 

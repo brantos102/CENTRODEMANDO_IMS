@@ -299,6 +299,17 @@
                  border:1px solid var(--border);border-radius:8px;background:rgba(59,130,246,0.06);">
               <div style="font-size:12px;margin-bottom:8px;" id="grupo-titulo"></div>
               <div id="grupo-lista" style="display:flex;flex-direction:column;gap:5px;"></div>
+              <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--border);">
+                <div style="display:flex;gap:6px;">
+                  <input type="text" id="otro-cliente" list="otros-clientes-lista" placeholder="Añadir otro cliente…"
+                         style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();anadirOtroCliente();}">
+                  <datalist id="otros-clientes-lista"></datalist>
+                  <button type="button" class="mini-btn" onclick="anadirOtroCliente()">+ Añadir</button>
+                </div>
+                <div class="hint" style="margin-top:5px;">
+                  Sirve para combinar clientes de una misma zona de la bodega, aunque no se parezcan.
+                </div>
+              </div>
               <div class="hint" style="margin-top:8px;" id="grupo-resumen"></div>
             </div>
           </div>
