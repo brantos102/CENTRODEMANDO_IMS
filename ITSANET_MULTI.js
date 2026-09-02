@@ -13,6 +13,97 @@
  * solo cliente, más `reporte.porCliente` con el detalle de cada uno.
  */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   EL CÓDIGO DEL ERP NO SIEMPRE ES EL NOMBRE DE LA CREDENCIAL
+   ---------------------------------------------------------------------------
+   En el maestro de clientes, COD. CLIENTE y RAZÓN SOCIAL son campos distintos:
+
+       COD. CLIENTE   RAZÓN SOCIAL
+       NOKIACNT       NOKIACNTLTE      ← la credencial se llama NOKIACNTLTE
+       NOKIACNT3G     NOKIACNT3G
+       NOKIA5G        NOKIA 5G
+
+   La credencial NOKIACNTLTE devuelve su stock etiquetado como NOKIACNT, y el
+   filtro por nombre lo descartaba entero: el archivo salía sin ese cliente
+   aunque la extracción sí había traído sus filas.
+
+   Aquí se detecta ese caso — la credencial respondió filas y TODAS se
+   descartaron por el nombre — y se repite aceptando el código real. Siempre
+   queda registrado en `reporte.aliasERP` para que se vea en el asistente.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Códigos del ERP que corresponden a la credencial pedida.
+ *
+ * Se prefiere el parentesco por prefijo (NOKIACNT ⊂ NOKIACNTLTE), que es un
+ * alias real del mismo cliente. Solo si no hay ninguno se admite la familia
+ * por raíz. Nunca se toman los códigos que ya se piden aparte con su propia
+ * credencial: eso duplicaría stock y metería clientes no seleccionados.
+ */
+function _aliasClienteERP(cliPedido, clientesDetalle, yaSeleccionados) {
+  var pedido = String(cliPedido || "").trim().toUpperCase();
+  if (!pedido) return [];
+  var conRaiz = (typeof _raizCliente === "function");
+  var raizPedido = conRaiz ? _raizCliente(pedido) : pedido;
+
+  var porPrefijo = [], porFamilia = [];
+  (clientesDetalle || []).forEach(function (d) {
+    var c = String((d && d.cliente) || "").trim().toUpperCase();
+    if (!c || c === pedido) return;
+    if (yaSeleccionados && yaSeleccionados[c]) return;
+    if (c.indexOf(pedido) === 0 || pedido.indexOf(c) === 0) porPrefijo.push(c);
+    else if (conRaiz && _raizCliente(c) === raizPedido) porFamilia.push(c);
+  });
+
+  return porPrefijo.length ? porPrefijo : porFamilia;
+}
+
+/**
+ * Extrae el stock de UN cliente y, si el filtro por nombre lo dejó en cero,
+ * reintenta con el código real del ERP. Si de verdad no hay stock, el error
+ * original se propaga tal cual.
+ *
+ * @param {Object} yaSeleccionados mapa {CLIENTE:true} de los que se piden aparte
+ */
+function _extraerStockConAlias(esGye, cli, codigos, variantes, yaSeleccionados) {
+  var extraer = function (okCli) {
+    return esGye
+      ? previsualizarStockItsanet_GYE(cli, codigos || null, !!variantes, okCli)
+      : previsualizarStockItsanet(cli, codigos || null, !!variantes, okCli);
+  };
+
+  var r = null, rep = null, fallo = null;
+  try {
+    r = extraer(null);
+    rep = (r && r.reporte) || null;
+  } catch (e) {
+    fallo = e;
+    rep = (e && e.reporte) || null;   // el informe viaja con el error
+  }
+
+  if (r && r.datosLimpios && r.datosLimpios.length) {
+    if (r.reporte) r.reporte.clientesEfectivos = [String(cli || "").trim().toUpperCase()];
+    return r;
+  }
+
+  // Solo se reintenta si la credencial SÍ trajo filas y el nombre las descartó.
+  var alias = (rep && rep.filtradasPorCliente > 0)
+    ? _aliasClienteERP(cli, rep.clientesDetalle, yaSeleccionados)
+    : [];
+  if (!alias.length) {
+    if (fallo) throw fallo;
+    return r;
+  }
+
+  var r2 = extraer(alias);
+  if (r2 && r2.reporte) {
+    r2.reporte.aliasERP = alias;
+    r2.reporte.clientePedido = String(cli || "").trim().toUpperCase();
+    r2.reporte.clientesEfectivos = alias.slice();
+  }
+  return r2;
+}
+
 /**
  * @param {string}   base      "UIO" (q_apidepot) o "GYE" (g_apidepot)
  * @param {string[]} clientes  códigos EXACTOS del ERP, p.ej. ["NOKIA","NOKIA5G"]
@@ -43,12 +134,19 @@ function previsualizarStockMulti(base, clientes, codigos, variantes) {
   };
   var skusUnicos = {}, clavesVistas = {};
 
+  // Los códigos pedidos no se aceptan como alias de otro: cada uno viene con
+  // SU credencial y colarlo dos veces duplicaría su stock.
+  var pedidos = {};
+  unicos.forEach(function (c) { pedidos[c] = true; });
+
+  // Códigos con los que realmente quedaron etiquetadas las filas: es lo que
+  // hay que usar después para validar, si no la validación los descartaría.
+  var efectivos = {}, alias = [];
+
   unicos.forEach(function (cli) {
     var r;
     try {
-      r = esGye
-        ? previsualizarStockItsanet_GYE(cli, codigos || null, !!variantes)
-        : previsualizarStockItsanet(cli, codigos || null, !!variantes);
+      r = _extraerStockConAlias(esGye, cli, codigos, variantes, pedidos);
     } catch (e) {
       // Un cliente sin stock o sin credencial no debe tumbar a los demás.
       errores.push(cli + ": " + (e && e.message ? e.message : e));
@@ -58,6 +156,11 @@ function previsualizarStockMulti(base, clientes, codigos, variantes) {
 
     var dl = (r && r.datosLimpios) || [], rep = (r && r.reporte) || {};
     var nuevas = 0, unidades = 0;
+
+    (rep.clientesEfectivos || [cli]).forEach(function (c) { efectivos[c] = true; });
+    if (rep.aliasERP && rep.aliasERP.length) {
+      alias.push({ cliente: cli, codigosERP: rep.aliasERP.slice() });
+    }
 
     for (var i = 0; i < dl.length; i++) {
       var f = dl[i];
@@ -78,7 +181,10 @@ function previsualizarStockMulti(base, clientes, codigos, variantes) {
 
     repTotal.incluidas += nuevas;
     repTotal.sumaCantidad += unidades;
-    porCliente.push({ cliente: cli, filas: nuevas, unidades: unidades });
+    porCliente.push({
+      cliente: cli, filas: nuevas, unidades: unidades,
+      codigoERP: (rep.aliasERP && rep.aliasERP.length) ? rep.aliasERP.join(", ") : null
+    });
   });
 
   if (!filas.length) {
@@ -89,6 +195,8 @@ function previsualizarStockMulti(base, clientes, codigos, variantes) {
   repTotal.skusUnicosCount = Object.keys(skusUnicos).length;
   repTotal.porCliente = porCliente;
   repTotal.clientesPedidos = unicos;
+  repTotal.clientesEfectivos = Object.keys(efectivos);
+  repTotal.aliasERP = alias;
   repTotal.erroresPorCliente = errores;
   repTotal.clientesDetalle = porCliente.map(function (p) {
     return { cliente: p.cliente, filas: p.filas };

@@ -16,8 +16,19 @@ function _baseEsGYE(base) {
 }
 
 /* ── Extracción de stock ─────────────────────────────────────────────────── */
+
+/**
+ * Un solo cliente. Se pasa por _extraerStockConAlias para que también aquí
+ * funcione el caso en que el ERP publica el stock bajo otro COD. CLIENTE
+ * (credencial NOKIACNTLTE → código NOKIACNT). Si ese módulo no estuviera
+ * cargado, se llama al flujo de siempre.
+ */
 function previsualizarStockRouter(base, cliente, listaCodigos, incluirVariantes) {
-  return _baseEsGYE(base)
+  var esGye = _baseEsGYE(base);
+  if (typeof _extraerStockConAlias === "function") {
+    return _extraerStockConAlias(esGye, cliente, listaCodigos, incluirVariantes, null);
+  }
+  return esGye
     ? previsualizarStockItsanet_GYE(cliente, listaCodigos, incluirVariantes)
     : previsualizarStockItsanet(cliente, listaCodigos, incluirVariantes);
 }

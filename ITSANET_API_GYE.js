@@ -172,7 +172,7 @@ function probarConexionItsanet_GYE() {
  * módulo de Quito), sólo que consulta el stock de g_apidepot. Devuelve el mismo
  * formato { datosLimpios, reporte } que el flujo de Quito.
  */
-function previsualizarStockItsanet_GYE(clienteSeleccionado, listaCodigos, incluirVariantes) {
+function previsualizarStockItsanet_GYE(clienteSeleccionado, listaCodigos, incluirVariantes, codigosCliente) {
   var r = consultarStockItsanet_GYE(clienteSeleccionado);
   if (r.code !== 200) throw new Error('El servidor de Guayaquil reporta HTTP ' + r.code);
 
@@ -198,7 +198,7 @@ function previsualizarStockItsanet_GYE(clienteSeleccionado, listaCodigos, inclui
     var cliRow = String(o['COD. CLIENTE']||"").trim().toUpperCase();
     if (cliRow) clientes[cliRow] = (clientes[cliRow]||0)+1;
     if (!sku){ rep.skuVacio++; rep.excluidas++; continue; }
-    if (!_clienteCoincideItsanet(cliRow, clienteSeleccionado)){ rep.filtradasPorCliente++; rep.excluidas++; continue; }
+    if (!_aceptaClienteItsanet(cliRow, clienteSeleccionado, codigosCliente)){ rep.filtradasPorCliente++; rep.excluidas++; continue; }
     if (setCods){
       var m = !!setCods[sku];
       if (!m && incluirVariantes){ for (var kk in setCods){ if (sku.indexOf(kk)===0){ m=true; break; } } }
@@ -237,7 +237,13 @@ function previsualizarStockItsanet_GYE(clienteSeleccionado, listaCodigos, inclui
   rep.skusUnicosCount = Object.keys(skusUnicos).length;
   rep.clientesDetalle = Object.keys(clientes).map(function(k){ return {cliente:k, filas:clientes[k]}; }).sort(function(a,b){ return b.filas-a.filas; });
 
-  if (!datosLimpios.length) throw new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de Guayaquil.');
+  if (!datosLimpios.length) {
+    // El informe viaja CON el error: quien llama puede ver bajo qué
+    // COD. CLIENTE respondió la credencial sin repetir la consulta al ERP.
+    var _vacio = new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de Guayaquil.');
+    _vacio.reporte = rep;
+    throw _vacio;
+  }
 
   return { datosLimpios: datosLimpios, reporte: rep };
 }

@@ -321,6 +321,14 @@
                 <div class="hint" style="margin-top:5px;">
                   Sirve para combinar clientes de una misma zona de la bodega, aunque no se parezcan.
                 </div>
+                <button type="button" class="mini-btn" id="btn-todos-clientes"
+                        style="margin-top:7px;" onclick="alternarTodosClientes()">▸ Ver todos los clientes</button>
+                <div id="todos-clientes-panel" style="display:none;margin-top:7px;">
+                  <input type="text" id="todos-filtro" placeholder="Filtrar…" style="width:100%;"
+                         oninput="_pintarTodosClientes()">
+                  <div id="todos-lista" style="display:flex;flex-direction:column;gap:4px;
+                       max-height:210px;overflow-y:auto;margin-top:6px;"></div>
+                </div>
               </div>
               <div class="hint" style="margin-top:8px;" id="grupo-resumen"></div>
             </div>
@@ -633,6 +641,7 @@
       modoFiltro: 'sku',   // FASE 8.70: 'sku' (por código) | 'posicion' (por ubicación física)
       sede: 'UIO',         // GYE: bodega de la que se extrae (credenciales y base propias)
       clientesSel: [],     // varios clientes en un mismo archivo (cada uno con su credencial)
+      clientesEfectivos: null,  // códigos REALES del ERP con los que vinieron las filas
       eventos: []
     };
     let cacheDash = null;
@@ -872,16 +881,74 @@
       actualizarClientesSel();
     }
 
+    /* No siempre se combinan clientes parecidos: en una misma zona de bodega
+       conviven ALU, ALU SWAP, ALULTE, FOC 5G, MOD2024, NOKIA5G, NOKIACNT… y se
+       cuentan en un solo archivo. Este panel los lista todos para marcarlos de
+       golpe, en vez de escribirlos uno a uno. */
+    function alternarTodosClientes() {
+      const p = $('todos-clientes-panel');
+      const abierto = p.style.display !== 'none';
+      p.style.display = abierto ? 'none' : 'block';
+      $('btn-todos-clientes').innerHTML = (abierto ? '▸' : '▾') + ' Ver todos los clientes' +
+        (_todosClientes.length ? ' (' + _todosClientes.length + ')' : '');
+      if (!abierto) _pintarTodosClientes();
+    }
+
+    function _clientesMarcados() {
+      const m = {};
+      Array.from(document.querySelectorAll('.cli-multi')).forEach(function (c) {
+        if (c.checked) m[c.value] = true;
+      });
+      return m;
+    }
+
+    function _pintarTodosClientes() {
+      const cont = $('todos-lista');
+      if (!cont) return;
+      if (!_todosClientes.length) {
+        cont.innerHTML = '<div class="hint">No pude leer los clientes con credencial en ' +
+          estado.sede + '. Usa el campo de arriba para escribirlos.</div>';
+        return;
+      }
+      const f = String($('todos-filtro').value || '').trim().toUpperCase();
+      const sel = _clientesMarcados();
+      const vis = _todosClientes.filter(function (n) { return !f || n.indexOf(f) !== -1; });
+      cont.innerHTML = vis.length
+        ? vis.map(function (n) {
+            return '<label class="cli-item' + (sel[n] ? ' on' : '') + '">' +
+              '<input type="checkbox"' + (sel[n] ? ' checked' : '') +
+              ' onchange="alternarCliente(this.value, this.checked)" value="' + n + '">' +
+              '<span class="nom">' + n + '</span></label>';
+          }).join('')
+        : '<div class="hint">Ninguno coincide con "' + f + '".</div>';
+    }
+
+    /* Marca/desmarca desde el panel manteniendo UNA sola lista de verdad:
+       las casillas de arriba (.cli-multi) son las que mandan. */
+    function alternarCliente(nombre, marcar) {
+      const actual = Array.from(document.querySelectorAll('.cli-multi'))
+        .filter(function (c) { return c.value === nombre; })[0];
+      if (actual) actual.checked = !!marcar;
+      else if (marcar) {
+        $('grupo-lista').insertAdjacentHTML('beforeend',
+          _filaCliente({ cliente: nombre, usuario: '', marcado: true }));
+      }
+      actualizarClientesSel();
+    }
+
     function actualizarClientesSel() {
       const marcados = Array.from(document.querySelectorAll('.cli-multi:checked'))
         .map(function (c) { return c.value; });
       estado.clientesSel = marcados;
 
-      // Realce visual de la fila marcada.
-      document.querySelectorAll('.cli-item').forEach(function (l) {
+      // Realce visual de la fila marcada (solo las de la lista principal: las
+      // del panel se repintan aparte para no perder el filtro escrito).
+      document.querySelectorAll('#grupo-lista .cli-item').forEach(function (l) {
         const chk = l.querySelector('.cli-multi');
         l.classList.toggle('on', !!(chk && chk.checked));
       });
+      const panel = $('todos-clientes-panel');
+      if (panel && panel.style.display !== 'none') _pintarTodosClientes();
 
       const res = $('grupo-resumen');
       if (res) {
@@ -931,6 +998,34 @@
       validar();
     }*/
     /* ===== FUENTE ===== */
+
+    /* Al cambiar de fuente (En blanco ⇄ API ⇄ CSV) los filtros y los datos de
+       la anterior dejan de aplicar: se limpian para no extraer con códigos o
+       posiciones heredados de otro origen ni validar contra datos viejos. */
+    function _reiniciarBusqueda() {
+      ['filtroCodigos', 'filtroPosiciones', 'csv-upload'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      var info = document.getElementById('mes-sugerencia-info');
+      if (info) info.innerHTML = '';
+
+      estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
+      estado.datosYaFiltrados = false;
+      estado.mesCodigosSugeridos = null;
+      estado.clientesEfectivos = null;
+
+      window._codigosNoEncontrados = [];
+      window._posCobertura = null;
+      window._aliasERP = null;
+      window._porClienteAPI = null;
+
+      $('csv-status-box').innerHTML = '';
+      $('val-report-box').innerHTML = '';
+      var btnRe = document.getElementById('btn-revalidar');
+      if (btnRe) btnRe.style.display = 'none';
+    }
+
     function cambiarFuente() {
       const f = document.querySelector('input[name="fuente"]:checked').value;
       const fPrev = estado.fuente;   // FIX FASE 8.54: fuente anterior
@@ -942,18 +1037,10 @@
       const isData = (f === 'CSV' || f === 'API');
       $('data-zone').style.display = isData ? 'block' : 'none';
 
-      // FIX FASE 8.54: al alternar ENTRE CSV y API se limpian los datos ya
-      // cargados/validados — evita crear un archivo con datos de la fuente
-      // anterior marcados como válidos.
-      if (isData && fPrev && fPrev !== f && (fPrev === 'CSV' || fPrev === 'API')) {
-        estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
-        var inpCsvF = document.getElementById('csv-upload');
-        if (inpCsvF) inpCsvF.value = '';
-        $('csv-status-box').innerHTML = '';
-        $('val-report-box').innerHTML = '';
-        var btnReF = document.getElementById('btn-revalidar');
-        if (btnReF) btnReF.style.display = 'none';
-      }
+      // FIX FASE 8.54 (ampliado): cualquier cambio de fuente reinicia la
+      // búsqueda, no solo alternar CSV↔API. Venir de "En blanco" dejaba los
+      // filtros de la extracción anterior escritos.
+      if (fPrev && fPrev !== f) _reiniciarBusqueda();
 
       if (isData) {
         // FASE 8.67: el 'Sugerir códigos del mes' (api-mes-box) ahora vale para
@@ -979,14 +1066,8 @@
         info.style.display = (f === 'BLANK' && cliente) ? 'block' : 'none';
       }
       
-      // Resetear vista si cambian de fuente
-      if (!isData) {
-        estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
-        $('csv-status-box').innerHTML = '';
-        $('val-report-box').innerHTML = '';
-        var btnRe = document.getElementById('btn-revalidar');
-        if (btnRe) btnRe.style.display = 'none';
-      }
+      // Sin fuente de datos no queda nada cargado ni validado.
+      if (!isData) _reiniciarBusqueda();
       validar();
     }
 
@@ -1084,6 +1165,15 @@
         // 1. Guardamos la matriz ya formateada por la API como si fuera el CSV
         estado.csvData = res.datosLimpios; 
         estado.csvAplicado = true;
+
+        // Con qué COD. CLIENTE quedaron etiquetadas las filas. No siempre es el
+        // nombre de la credencial (NOKIACNTLTE se publica como NOKIACNT), y la
+        // validación tiene que usar el código real o las descarta.
+        var _rep = res.reporte || {};
+        estado.clientesEfectivos = (_rep.clientesEfectivos && _rep.clientesEfectivos.length)
+          ? _rep.clientesEfectivos.slice() : null;
+        window._aliasERP = (_rep.aliasERP && _rep.aliasERP.length) ? _rep.aliasERP : null;
+        window._porClienteAPI = _rep.porCliente || null;
 
         // 2. FIX FASE 8.54: métricas de serie REALES desde el backend
         // (previsualizarStockItsanet ahora aplica la regla 1 SERIE = 1 UNIDAD,
@@ -1396,6 +1486,30 @@
         _hdrLbl = (window._fuenteWizard === 'CSV') ? 'CSV cargado y consolidado' : 'Datos de API ITSANET extraídos';
       }
 
+      // Desglose por cliente: con varios credenciales conviene ver cuánto puso
+      // cada uno y, si el ERP usa otro código, cuál fue.
+      var porCliHtml = '';
+      if (window._porClienteAPI && window._porClienteAPI.length > 1) {
+        porCliHtml = '<div style="margin-top:6px;font-size:11px;color:var(--muted);">' +
+          window._porClienteAPI.map(function (p) {
+            if (p.error) return '<b>' + p.cliente + '</b>: ❌ ' + p.error;
+            return '<b>' + p.cliente + '</b>: ' + p.filas + ' filas' +
+                   (p.codigoERP ? ' <i>(ERP: ' + p.codigoERP + ')</i>' : '') +
+                   (p.filas ? '' : ' ⚠');
+          }).join(' · ') + '</div>';
+      }
+
+      // Si el ERP publica el stock bajo otro COD. CLIENTE, se dice explícito:
+      // así nadie piensa que se coló un cliente que no pidió.
+      var aliasHtml = '';
+      if (window._aliasERP && window._aliasERP.length) {
+        aliasHtml = '<div style="margin-top:6px;font-size:11px;color:#93c5fd;">ℹ ' +
+          window._aliasERP.map(function (a) {
+            return 'La credencial <b>' + a.cliente + '</b> publica su stock como <b>' +
+                   a.codigosERP.join(', ') + '</b> en el ERP';
+          }).join(' · ') + '.</div>';
+      }
+
       $('csv-status-box').innerHTML =
         '<div class="csv-status ok">' +
           '<b>✓ ' + _hdrLbl + '</b>' + (notaExtra || '') + '<br>' +
@@ -1403,6 +1517,8 @@
           '<span class="csv-metric"><b>' + Math.round(unidades).toLocaleString() + '</b> unidades totales</span>' +
           serieHtml +
           varianteHtml +
+          porCliHtml +
+          aliasHtml +
         '</div>' + covHtml;
 
       // Validación estándar contra el histórico (mismo recuadro que el CSV)
@@ -1898,6 +2014,17 @@
       _detectarVariantesYContinuar();
     }
 
+    /* Con qué clientes se valida: los códigos REALES del ERP si la extracción
+       los reportó (pueden diferir del nombre de la credencial), si no los
+       marcados, y como último recurso el escrito en el Paso 1. */
+    function _clientesParaValidar(cli) {
+      if (estado.clientesEfectivos && estado.clientesEfectivos.length) {
+        return estado.clientesEfectivos.slice();
+      }
+      if (estado.clientesSel && estado.clientesSel.length > 1) return estado.clientesSel.slice();
+      return cli;
+    }
+
     function validarBackend() {
       const cli = $('cliente').value.trim();
       if (!cli) {
@@ -1929,8 +2056,7 @@
         })
         // Con varios clientes se valida contra TODOS: si no, las filas de los
         // demás se descartarían por "cliente distinto".
-        .validarCSVAvanzado(estado.csvData,
-          (estado.clientesSel && estado.clientesSel.length > 1) ? estado.clientesSel : cli);
+        .validarCSVAvanzado(estado.csvData, _clientesParaValidar(cli));
     }
 
     /* FIX FASE 8.7: Reseleccionar archivo CSV (limpia y permite cargar otro) */
@@ -1939,6 +2065,8 @@
       if (inp) inp.value = '';
       window._codigosNoEncontrados = []; // FASE 8.59: limpiar cobertura previa
       window._posCobertura = null;       // FASE 8.70: limpiar cobertura de posiciones
+      window._aliasERP = null; window._porClienteAPI = null;
+      estado.clientesEfectivos = null;   // los códigos del ERP eran de esa extracción
       estado.csvData = []; estado.csvAplicado = false; estado.csvValidado = null;
       estado.datosYaFiltrados = false;
       $('csv-status-box').innerHTML = '';
@@ -1979,10 +2107,15 @@
         ? '<div class="warn-item">⚠ ' + r.seriesDuplicadasEnCSV.length +
           ' series duplicadas dentro del mismo CSV</div>' : '';
 
+      // Varios clientes en el archivo es un AVISO cuando nadie los pidió, pero es
+      // lo esperado en un inventario multi-cliente: ahí se muestra informativo.
+      const _multiPedido = !!(estado.clientesSel && estado.clientesSel.length > 1);
       const cliMix = r.clientesDetalle.length > 1
-        ? '<div class="warn-item">⚠ El CSV trae ' + r.clientesDetalle.length + ' clientes mezclados: ' +
-          r.clientesDetalle.slice(0,3).map(c => c.cliente + '(' + c.filas + ')').join(', ') +
-          (r.clientesDetalle.length > 3 ? ', …' : '') + '</div>' : '';
+        ? '<div class="warn-item"' + (_multiPedido ? ' style="color:var(--muted);"' : '') + '>' +
+          (_multiPedido ? 'ℹ Archivo con ' : '⚠ El CSV trae ') + r.clientesDetalle.length +
+          (_multiPedido ? ' clientes (como se pidió): ' : ' clientes mezclados: ') +
+          r.clientesDetalle.slice(0,6).map(c => c.cliente + '(' + c.filas + ')').join(', ') +
+          (r.clientesDetalle.length > 6 ? ', …' : '') + '</div>' : '';
 
       $('val-report-box').innerHTML =
         '<div class="val-report">' +
