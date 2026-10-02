@@ -810,6 +810,72 @@ function actualizarCronogramaCodigos(cliente, textoPegado, opciones) {
   };
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   CONSULTA DEL CRONOGRAMA DE CÓDIGOS
+   --------------------------------------------------------------------------
+   Hasta ahora la hoja solo se podía escribir: no había forma de revisar desde
+   el panel qué quedó cargado. Esto permite leerlo y filtrarlo por cliente, por
+   mes y por código, para ver qué está presente y qué falta por actualizar.
+   Solo lee; no escribe nada.
+   ══════════════════════════════════════════════════════════════════════════ */
+function consultarCronogramaCodigos(filtros) {
+  // Leer lo cargado es parte de planificar el conteo, no de administrarlo:
+  // lo abre a quien programa, aunque cargar siga reservado.
+  _requiereRol(["Admin", "Coordinador", "Líder de Conteo", "Lider de Conteo"]);
+  filtros = filtros || {};
+  var fCli = String(filtros.cliente || "").trim().toUpperCase();
+  var fCod = String(filtros.codigo  || "").trim().toUpperCase();
+  var fAbc = String(filtros.abc     || "").trim().toUpperCase();
+  var fMes = String(filtros.mes     || "").trim().toUpperCase();
+  var iMes = fMes ? CRONCOD_MESES.indexOf(fMes) : -1;
+  if (fMes && iMes === -1 && fMes !== "SIN MES") throw new Error("Mes inválido: " + filtros.mes);
+  var tope = parseInt(filtros.tope, 10) || 300;
+
+  var sh = _ssCronCod().getSheetByName(CRONCOD_HOJA);
+  if (!sh || sh.getLastRow() < 2) {
+    return { filas: [], total: 0, mostrados: 0, clientes: [], porMes: {}, vacio: true };
+  }
+
+  var v = sh.getRange(2, 1, sh.getLastRow() - 1, 15).getValues();
+  var filas = [], clientes = {}, porMes = {}, total = 0;
+  CRONCOD_MESES.forEach(function (m) { porMes[m] = 0; });
+
+  for (var i = 0; i < v.length; i++) {
+    var cli = String(v[i][0] || "").trim().toUpperCase();
+    if (!cli) continue;
+    clientes[cli] = true;
+
+    var cod = String(v[i][1] || "").trim().toUpperCase();
+    var abc = String(v[i][2] || "").trim().toUpperCase();
+
+    var meses = [], nMeses = 0;
+    for (var m = 0; m < 12; m++) {
+      if (String(v[i][3 + m] || "").trim()) { meses.push(CRONCOD_MESES[m]); nMeses++; }
+    }
+
+    // El conteo por mes refleja el filtro de cliente, no el de mes: así se ve
+    // en qué meses está repartido lo que se está mirando.
+    if (!fCli || cli === fCli) meses.forEach(function (mn) { porMes[mn]++; });
+
+    if (fCli && cli !== fCli) continue;
+    if (fCod && cod.indexOf(fCod) === -1) continue;
+    if (fAbc && abc !== fAbc) continue;
+    if (fMes === "SIN MES") { if (nMeses) continue; }
+    else if (iMes !== -1 && !String(v[i][3 + iMes] || "").trim()) continue;
+
+    total++;
+    if (filas.length < tope) {
+      filas.push({ cliente: cli, codigo: cod, abc: abc, meses: meses, nMeses: nMeses });
+    }
+  }
+
+  return {
+    filas: filas, total: total, mostrados: filas.length, tope: tope,
+    clientes: Object.keys(clientes).sort(), porMes: porMes,
+    filtro: { cliente: fCli, codigo: fCod, abc: fAbc, mes: fMes }
+  };
+}
+
 /* PANEL: resumen de clientes cargados en el cronograma de códigos. */
 function obtenerResumenCronCodigos() {
   var ss = _ssCronCod();

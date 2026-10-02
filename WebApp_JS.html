@@ -61,7 +61,8 @@ function aplicarPermisosBotones() {
     'b-metricas': P.crearInventario, 'b-libro': P.abrirLibro,
     'b-consolidar': P.baseDatos, 'b-prevalidar': P.baseDatos,
     'b-limpiar': P.baseDatos,
-    'b-cron-codigos': P.baseDatos, 'b-cred-api': P.baseDatos, 'b-accesos': P.baseDatos,
+    'b-cron-codigos': P.baseDatos, 'b-cron-consulta': P.baseDatos,
+    'b-cred-api': P.baseDatos, 'b-accesos': P.baseDatos,
     'b-exportar': P.exportar,
     'b-record': P.recordatorios, 'b-sinc': P.recordatorios, 'b-syncQ': P.recordatorios,
     'b-zip': P.exportar,
@@ -2477,6 +2478,79 @@ function abrirCronCodigos() {
       });
   }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
   .obtenerResumenCronCodigos();
+}
+
+/* Consulta de lo cargado: filtrar por cliente, mes, código o clasificación
+   para revisar qué está presente y qué falta por actualizar. Solo lee. */
+function abrirConsultaCronCodigos(pre) {
+  var f = pre || {};
+  modalCustom('🔎 Consultar cronograma de códigos',
+    'Revisa lo que ya está cargado. Los filtros se combinan entre sí.',
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
+      '<div class="field" style="margin:0;"><label>Cliente</label>'+
+        '<input type="text" id="qc-cli" value="'+escapeHtml(f.cliente||'')+'" placeholder="todos" style="text-transform:uppercase;"></div>'+
+      '<div class="field" style="margin:0;"><label>Mes</label><select id="qc-mes">'+
+        '<option value="">todos</option>'+
+        MESES_CC_CARGA.map(function(m){ return '<option value="'+m+'"'+(f.mes===m?' selected':'')+'>'+m+'</option>'; }).join('')+
+        '<option value="SIN MES"'+(f.mes==='SIN MES'?' selected':'')+'>— sin ningún mes —</option>'+
+      '</select></div>'+
+      '<div class="field" style="margin:0;"><label>Código contiene</label>'+
+        '<input type="text" id="qc-cod" value="'+escapeHtml(f.codigo||'')+'" placeholder="todos" style="text-transform:uppercase;"></div>'+
+      '<div class="field" style="margin:0;"><label>ABC</label><select id="qc-abc">'+
+        '<option value="">todas</option><option value="A">A</option><option value="B">B</option><option value="C">C</option>'+
+      '</select></div>'+
+    '</div>'+
+    '<div id="qc-res" style="margin-top:10px;font-size:11px;max-height:340px;overflow:auto;">'+
+      '<span style="color:var(--muted);">Pulsa <b>Buscar</b> para ver los códigos cargados.</span></div>',
+    'Buscar', function(){
+      var filtros = {
+        cliente: $('qc-cli').value.trim(), mes: $('qc-mes').value,
+        codigo:  $('qc-cod').value.trim(), abc: $('qc-abc').value
+      };
+      var caja = $('qc-res');
+      caja.innerHTML = '⏳ Consultando…';
+      google.script.run.withSuccessHandler(function(r){
+        caja.innerHTML = _qcPintar(r);
+      }).withFailureHandler(function(e){
+        caja.innerHTML = '<span style="color:#fca5a5;">❌ '+escapeHtml(e.message||String(e))+'</span>';
+      }).consultarCronogramaCodigos(filtros);
+      return false;   // el modal queda abierto para seguir filtrando
+    });
+}
+
+function _qcPintar(r) {
+  if (!r || r.vacio) return '<span style="color:var(--muted);">La hoja de cronograma de códigos está vacía.</span>';
+  if (!r.total) {
+    return '<span style="color:#fbbf24;">Ningún código cumple ese filtro.</span>'+
+           (r.clientes && r.clientes.length
+             ? '<div style="margin-top:6px;color:var(--muted);">Clientes cargados: '+r.clientes.map(escapeHtml).join(', ')+'</div>'
+             : '');
+  }
+  var repartoMeses = MESES_CC_CARGA
+    .filter(function(m){ return r.porMes[m]; })
+    .map(function(m){ return '<span class="pill pill-muted" style="margin:1px;display:inline-block;">'+m.slice(0,3)+': '+r.porMes[m]+'</span>'; })
+    .join(' ');
+
+  var filas = r.filas.map(function(x){
+    var meses = x.nMeses
+      ? x.meses.map(function(m){ return m.slice(0,3); }).join(' · ')
+      : '<span style="color:#fbbf24;">sin mes asignado</span>';
+    return '<tr>'+
+      '<td style="padding:3px 7px;">'+escapeHtml(x.cliente)+'</td>'+
+      '<td style="padding:3px 7px;font-family:ui-monospace,monospace;">'+escapeHtml(x.codigo)+'</td>'+
+      '<td style="padding:3px 7px;text-align:center;">'+escapeHtml(x.abc||'—')+'</td>'+
+      '<td style="padding:3px 7px;">'+meses+'</td>'+
+      '<td style="padding:3px 7px;text-align:right;">'+x.nMeses+'</td></tr>';
+  }).join('');
+
+  return '<div style="margin-bottom:7px;"><b>'+r.total+'</b> código(s)'+
+         (r.mostrados < r.total ? ' — se muestran los primeros '+r.mostrados : '')+
+         '</div><div style="margin-bottom:8px;">'+repartoMeses+'</div>'+
+         '<table style="width:100%;border-collapse:collapse;">'+
+         '<thead><tr style="text-align:left;color:var(--muted);">'+
+         '<th style="padding:3px 7px;">Cliente</th><th style="padding:3px 7px;">Código</th>'+
+         '<th style="padding:3px 7px;text-align:center;">ABC</th><th style="padding:3px 7px;">Meses</th>'+
+         '<th style="padding:3px 7px;text-align:right;">#</th></tr></thead><tbody>'+filas+'</tbody></table>';
 }
 
 /* El bloque no dice a qué meses corresponde: se pregunta en vez de adivinar. */
