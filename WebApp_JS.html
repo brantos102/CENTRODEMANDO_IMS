@@ -2439,7 +2439,14 @@ function _crearEventoFinal(datos) {
     .crearEventoCronograma(datos);
 }
 
-/* ===== FASE 8.56: CRONOGRAMA DE CÓDIGOS POR CLIENTE (solo Coordinador) ===== */
+/* ===== CRONOGRAMA DE CÓDIGOS POR CLIENTE (solo Coordinador) =====
+   La carga FUSIONA por mes: toca solo los meses del bloque pegado y deja el
+   resto del año como estaba. Si el bloque no dice de qué meses es, se pregunta
+   antes de escribir — antes se asumía que empezaban en enero, y por eso subir
+   el semestre de julio borraba lo cargado de enero a junio. */
+var MESES_CC_CARGA = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO',
+                      'JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+
 function abrirCronCodigos() {
   toast('Cargando resumen…');
   google.script.run.withSuccessHandler(function(res){
@@ -2447,24 +2454,70 @@ function abrirCronCodigos() {
       ? res.map(function(r){ return '<span class="pill pill-muted" style="margin:2px;display:inline-block;">'+escapeHtml(r.cliente)+': '+r.codigos+'</span>'; }).join(' ')
       : '<span style="color:var(--muted);">Aún no hay clientes cargados.</span>';
     modalCustom('📅 Cronograma de códigos por cliente',
-      'Pega desde el Excel del cliente las columnas <b>ABC | producto_id | ENERO…DICIEMBRE</b> (con X en los meses programados). ' +
-      '<b>REEMPLAZA</b> por completo el bloque de ese cliente. La hoja CRONOGRAMA_CODIGOS queda protegida: solo se edita desde aquí.',
+      'Pega desde el Excel las columnas <b>ABC | producto_id | meses</b> (con X en los programados). ' +
+      'Se <b>fusiona por mes</b>: solo cambian los meses que trae el bloque; el resto del año queda intacto. ' +
+      'Si incluyes la fila de encabezado con los nombres de los meses, se detectan solos.',
       '<div style="margin-bottom:8px;font-size:11px;max-height:70px;overflow-y:auto;"><b>Clientes cargados:</b><br>'+resumen+'</div>'+
       '<div class="field"><label>Cliente *</label><input type="text" id="cc-cliente" placeholder="Ej. DEGSO" style="text-transform:uppercase;"></div>'+
       '<div class="field"><label>Códigos (pegar desde Excel) *</label>'+
-      '<textarea id="cc-datos" rows="8" placeholder="A\t3M1161511MX\tX\t\t\t\tX\t\t\t\tX\t\t\t" style="width:100%;font-family:ui-monospace,monospace;font-size:10px;"></textarea>'+
-      '<div style="font-size:10px;color:var(--muted);margin-top:3px;">Tip: en el Excel selecciona desde la primera fila de datos (sin encabezados) las columnas ABC + producto_id + los 12 meses, copia y pega aquí.</div></div>',
-      'Actualizar cronograma', function(){
+      '<textarea id="cc-datos" rows="8" placeholder="ABC\tCODIGO\tJULIO\tAGOSTO\tSEPTIEMBRE…" style="width:100%;font-family:ui-monospace,monospace;font-size:10px;"></textarea>'+
+      '<div style="font-size:10px;color:var(--muted);margin-top:3px;">Incluye la fila de encabezado con los meses: así no hay que indicarlos a mano.</div></div>'+
+      '<label style="display:flex;gap:7px;align-items:center;font-size:11px;margin-top:6px;">'+
+      '<input type="checkbox" id="cc-reemplazar"><span>Vaciar el cliente y dejar solo esto <b>(reemplazo total)</b></span></label>',
+      'Revisar y cargar', function(){
         var cli = $('cc-cliente').value.trim(), txt = $('cc-datos').value;
         if (!cli || !txt.trim()) { toast('Cliente y códigos obligatorios','error'); return false; }
-        cerrarModal(); toast('Actualizando cronograma de '+cli.toUpperCase()+'…');
-        google.script.run.withSuccessHandler(function(r){
-          toast('✓ '+r.cliente+': '+r.codigos+' códigos cargados (reemplazó '+r.reemplazadas+' anteriores)','success');
+        var reemplazar = !!($('cc-reemplazar') && $('cc-reemplazar').checked);
+        cerrarModal(); toast('Revisando el bloque…');
+        google.script.run.withSuccessHandler(function(a){
+          if (a && a.necesitaMeses) _ccPedirMeses(cli, txt, a, reemplazar);
+          else _ccCargar(cli, txt, null, reemplazar, a);
         }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
-        .actualizarCronogramaCodigos(cli, txt);
+        .analizarCronogramaCodigos(cli, txt);
       });
   }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
   .obtenerResumenCronCodigos();
+}
+
+/* El bloque no dice a qué meses corresponde: se pregunta en vez de adivinar. */
+function _ccPedirMeses(cli, txt, a, reemplazar) {
+  var casillas = MESES_CC_CARGA.map(function(m, i){
+    return '<label class="cli-item" style="display:flex;gap:7px;align-items:center;padding:5px 8px;">'+
+      '<input type="checkbox" class="cc-mes" value="'+m+'" data-i="'+i+'"><span>'+m+'</span></label>';
+  }).join('');
+  modalCustom('¿A qué meses corresponde este bloque?',
+    'El bloque de <b>'+escapeHtml(cli.toUpperCase())+'</b> trae <b>'+a.columnasDeMes+'</b> columna(s) de mes '+
+    'y <b>'+a.codigos+'</b> código(s), pero no dice de qué meses son. '+
+    'Marca <b>'+a.columnasDeMes+'</b>, en el mismo orden en que están las columnas.',
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:260px;overflow-y:auto;">'+casillas+'</div>'+
+    '<div id="cc-aviso" style="font-size:11px;color:var(--muted);margin-top:8px;"></div>',
+    'Cargar', function(){
+      var sel = Array.prototype.slice.call(document.querySelectorAll('.cc-mes:checked'))
+        .sort(function(x,y){ return (+x.dataset.i) - (+y.dataset.i); })
+        .map(function(c){ return c.value; });
+      if (sel.length !== a.columnasDeMes) {
+        var av = $('cc-aviso');
+        if (av) av.innerHTML = '<span style="color:#fca5a5;">Marcaste '+sel.length+' mes(es) y el bloque trae '+
+          a.columnasDeMes+' columna(s). Deben coincidir.</span>';
+        return false;
+      }
+      cerrarModal();
+      _ccCargar(cli, txt, sel, reemplazar, a);
+    });
+}
+
+function _ccCargar(cli, txt, meses, reemplazar, a) {
+  var queMeses = (meses && meses.length) ? meses
+                : ((a && a.mesesDetectados && a.mesesDetectados.length) ? a.mesesDetectados : []);
+  toast('Cargando '+cli.toUpperCase()+(queMeses.length ? ' · '+queMeses.join(', ') : '')+'…');
+  google.script.run.withSuccessHandler(function(r){
+    var det = r.agregados+' nuevo(s), '+r.actualizados+' actualizado(s)'+
+              (r.conservados ? ', '+r.conservados+' sin tocar' : '')+
+              (r.reemplazadas ? ' · reemplazó '+r.reemplazadas : '');
+    toast('✓ '+r.cliente+' · '+r.meses.join(', ')+': '+det,'success');
+  }).withFailureHandler(function(e){ toast('Error: '+(e.message||e),'error'); })
+  .actualizarCronogramaCodigos(cli, txt, { meses: meses || null,
+                                           modo: reemplazar ? 'reemplazar' : 'fusionar' });
 }
 
 /* ===== FASE 8.65 R10: sincronizar cronograma con Google Calendar ===== */

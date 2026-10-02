@@ -3312,6 +3312,65 @@ function _detectarColumnasClave(headers) {
   return idx;
 }
 
+/* ==========================================================================
+   APILADO IDEMPOTENTE — un archivo no puede quedar dos veces
+   --------------------------------------------------------------------------
+   El apilado por lotes daba por hecho que el checkpoint siempre alcanzaba a
+   guardarse. No siempre: si la ejecución muere DESPUÉS de escribir un lote y
+   ANTES de guardar el índice, el watchdog la reanuda desde el índice viejo y
+   vuelve a apilar los mismos archivos. El archivo queda completo dos veces y
+   Power BI suma el doble — que es justo lo que se reportó.
+
+   Afinar el checkpoint no basta: siempre queda una ventana entre escribir y
+   confirmar. La defensa es que volver a procesar un archivo sea inofensivo:
+   antes de apilar un lote se retiran las filas que esos mismos archivos
+   hubieran dejado antes. Reanudar REEMPLAZA en vez de sumar.
+
+   La columna ID de la planilla (col C, que se propaga sola desde la fila 2)
+   identifica el archivo origen, y es la misma que Supabase guarda como
+   archivo_id. No hace falta añadir ninguna columna ni tocar el mapeo.
+   ========================================================================== */
+function _consolPurgarFilasDeArchivos(hoja, idsLote) {
+  if (!hoja || !idsLote || !idsLote.length) return 0;
+  var ultima = hoja.getLastRow();
+  if (ultima < 2) return 0;
+
+  // Columna ID por nombre. Si la hoja no la tiene, no se toca nada.
+  var head = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0];
+  var colId = -1;
+  for (var i = 0; i < head.length; i++) {
+    if (String(head[i] || "").trim().toUpperCase() === "ID") { colId = i + 1; break; }
+  }
+  if (colId < 1) return 0;
+
+  var buscar = {}, hay = false;
+  for (var k = 0; k < idsLote.length; k++) {
+    var s = String(idsLote[k] || "").trim();
+    if (s) { buscar[s] = true; hay = true; }
+  }
+  if (!hay) return 0;
+
+  var col = hoja.getRange(2, colId, ultima - 1, 1).getValues();
+
+  // Las filas de un archivo se apilaron juntas: se agrupan en bloques contiguos
+  // y se borran de abajo hacia arriba, para que el borrado no desplace lo que
+  // aún falta por borrar.
+  var bloques = [], ini = -1, n = 0;
+  for (var r = 0; r < col.length; r++) {
+    if (buscar[String(col[r][0] || "").trim()]) {
+      if (ini < 0) { ini = r + 2; n = 1; } else { n++; }
+    } else if (ini >= 0) { bloques.push([ini, n]); ini = -1; n = 0; }
+  }
+  if (ini >= 0) bloques.push([ini, n]);
+
+  var borradas = 0;
+  for (var b = bloques.length - 1; b >= 0; b--) {
+    hoja.deleteRows(bloques[b][0], bloques[b][1]);
+    borradas += bloques[b][1];
+  }
+  return borradas;
+}
+
 function consolidarConAuditoria(opciones) {
   _requiereRol(["Coordinador"]);
   // FIX FASE 8.33: el gate de rol vive en el punto de entrada público.
@@ -3965,9 +4024,25 @@ function _consolidarNucleo(opciones) {
 
     // ── Escribir INVENTARIOS — tolerante/estricto (reporte_solo nunca escribe) ─
     //    FIX FASE 8.33: APPEND por lote. Solo el arranque fresco limpia la fila 2+.
+    // IDs de los archivos de ESTE lote: la llave para que reanudar reemplace.
+    var _idsLote = [];
+    for (var _il = startIdx; _il < nextIdx && _il < entries.length; _il++) {
+      var _eid = String((entries[_il] || {}).id || "").trim();
+      if (_eid) _idsLote.push(_eid);
+    }
+
     if (modo !== "reporte_solo" && procInv) {
       if (esFresh && inv.getLastRow() > 1) {
         inv.getRange(2, 1, inv.getLastRow() - 1, inv.getLastColumn()).clearContent();
+        SpreadsheetApp.flush();   // getLastRow() debe ver la hoja ya vacía
+      } else if (!esFresh) {
+        // Reanudación: si este lote ya había escrito antes de morir sin guardar
+        // el checkpoint, sus filas se retiran para no apilarlas dos veces.
+        try {
+          var _purgInv = _consolPurgarFilasDeArchivos(inv, _idsLote);
+          if (_purgInv) Logger.log("Consolidación: " + _purgInv +
+            " fila(s) de INVENTARIOS reemplazadas al reanudar (apilado idempotente).");
+        } catch (ePI) { Logger.log("Purga INVENTARIOS falló: " + ePI.message); }
       }
       // Capa 3: stringificar cualquier Date que aún quede
       todosLosDatos = _stringificarFechasFinales(todosLosDatos);
@@ -3989,6 +4064,13 @@ function _consolidarNucleo(opciones) {
     if (modo !== "reporte_solo" && procReg && reg) {
       if (esFresh && reg.getLastRow() > 1) {
         reg.getRange(2, 1, reg.getLastRow() - 1, reg.getLastColumn()).clearContent();
+        SpreadsheetApp.flush();
+      } else if (!esFresh) {
+        try {
+          var _purgReg = _consolPurgarFilasDeArchivos(reg, _idsLote);
+          if (_purgReg) Logger.log("Consolidación: " + _purgReg +
+            " fila(s) de REGISTRO reemplazadas al reanudar (apilado idempotente).");
+        } catch (ePR) { Logger.log("Purga REGISTRO falló: " + ePR.message); }
       }
       todosLosRegistros = _stringificarFechasFinales(todosLosRegistros);
 
@@ -4095,6 +4177,15 @@ function _consolidarNucleo(opciones) {
       });
     } catch (eInac) {
       Logger.log("FIX 8.31 ARCHIVOS_INACCESIBLES: " + eInac.message);
+    }
+
+    // El checkpoint se guarda en cuanto el lote QUEDÓ ESCRITO, no solo cuando se
+    // agota el tiempo. Antes, una ejecución cortada por el límite duro dejaba el
+    // índice viejo y el watchdog reprocesaba el lote; con el apilado idempotente
+    // eso ya no duplica, pero tampoco tiene por qué repetirse el trabajo.
+    if (esBatch) {
+      try { _consolEstadoCheckpoint(nextIdx); }
+      catch (eCk) { Logger.log("No se pudo guardar el checkpoint: " + eCk.message); }
     }
 
     // ── FIX FASE 8.33: ¿quedan archivos pendientes? → checkpoint + trigger ────

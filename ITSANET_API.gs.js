@@ -542,72 +542,272 @@ function obtenerMesesDeCodigos(cliente, listaSkus) {
 /* COORDINADOR: REEMPLAZA el bloque completo del cliente con lo pegado desde
    su Excel (columnas ABC | producto_id | ENERO…DICIEMBRE con X; también
    acepta sin la columna ABC). Acepta TSV (pegado directo), ';' o ','. */
-function actualizarCronogramaCodigos(cliente, textoPegado) {
+/* ══════════════════════════════════════════════════════════════════════════
+   CARGA DEL CRONOGRAMA DE CÓDIGOS — FUSIÓN POR MES
+   --------------------------------------------------------------------------
+   Antes se borraba el bloque COMPLETO del cliente y se reescribía. Por eso,
+   subir el semestre de julio a diciembre borraba lo que ya estaba cargado de
+   enero a junio: el año se perdía en cada actualización.
+
+   Ahora la carga toca SOLO los meses a los que corresponde el bloque pegado:
+     · Si el pegado trae una fila de encabezado con nombres de mes, esos son
+       los meses afectados y cada columna va a su mes real.
+     · Si trae las 12 columnas, el bloque declara el año entero.
+     · Si trae menos de 12 y no dice de qué meses son, NO se adivina: se pide
+       que lo indiquen (antes se asumía que empezaban en enero, que es
+       exactamente lo que movía julio al casillero de enero).
+
+   Dentro de los meses afectados el pegado manda, incluso para desmarcar. Fuera
+   de ellos no se toca nada, y los códigos que el pegado no menciona se quedan
+   como estaban. Para vaciar y volver a empezar está el modo "reemplazar".
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Lee el bloque pegado sin escribir: qué códigos trae y a qué meses apunta. */
+function _cronCodParsear(textoPegado) {
+  var lineas = String(textoPegado || "").split(/\r?\n/);
+  var filas = [], mesesCab = null, anchoMax = 0;
+
+  for (var i = 0; i < lineas.length; i++) {
+    var ln = lineas[i];
+    if (!ln || !ln.trim()) continue;
+    var sep = (ln.indexOf("\t") !== -1) ? "\t" : (ln.indexOf(";") !== -1 ? ";" : ",");
+    var c = ln.split(sep).map(function (x) { return String(x || "").trim(); });
+    var c0 = (c[0] || "").toUpperCase(), c1 = (c[1] || "").toUpperCase();
+
+    // ¿Es la fila de encabezado? Si nombra meses, dice a qué mes va cada columna.
+    var mesesEnFila = [], posMes = [];
+    for (var j = 0; j < c.length; j++) {
+      var idxM = CRONCOD_MESES.indexOf(String(c[j] || "").trim().toUpperCase());
+      if (idxM !== -1) { mesesEnFila.push(idxM); posMes.push(j); }
+    }
+    // Basta UN mes nombrado para saber de qué mes es el bloque; se exige que sea
+    // la primera línea con contenido, para no confundir un código con un mes.
+    if (mesesEnFila.length >= 1 && !mesesCab && !filas.length) {
+      mesesCab = { desde: posMes[0], meses: mesesEnFila };
+      continue;
+    }
+
+    // Encabezados y títulos que no son datos
+    if (c0.indexOf("ABC") !== -1 || c1.indexOf("PRODUCTO") !== -1 ||
+        c1.indexOf("CODIGO") !== -1 || CRONCOD_MESES.indexOf(c0) !== -1 ||
+        c0.indexOf("QTY") !== -1 || c0.indexOf("SEMESTRE") !== -1) continue;
+
+    // El desplazamiento no es el mismo en todas las filas: unas traen la columna
+    // ABC y otras no. Se guarda por fila para no desalinear los meses.
+    var abc = "", cod = "", marcas = [], desde = 0;
+    if (/^[ABC]$/i.test(c0) && c1) { abc = c0; cod = c1; desde = 2; marcas = c.slice(2); }
+    else if (c0) { cod = c0; desde = 1; marcas = c.slice(1); }
+    if (!cod) continue;
+
+    if (marcas.length > anchoMax) anchoMax = marcas.length;
+    filas.push({ codigo: cod.toUpperCase(), abc: abc.toUpperCase(),
+                 marcas: marcas, desde: desde });
+  }
+
+  return { filas: filas, mesesCab: mesesCab, ancho: anchoMax };
+}
+
+/* Qué meses toca el bloque. Devuelve null si no se puede saber sin preguntar. */
+function _cronCodMesesAfectados(parsed, mesesPedidos) {
+  // 1) Lo que indique quien carga manda sobre cualquier deducción.
+  if (mesesPedidos && mesesPedidos.length) {
+    var out = [];
+    for (var i = 0; i < mesesPedidos.length; i++) {
+      var k = CRONCOD_MESES.indexOf(String(mesesPedidos[i] || "").trim().toUpperCase());
+      if (k !== -1 && out.indexOf(k) === -1) out.push(k);
+    }
+    return out.length ? out.sort(function (a, b) { return a - b; }) : null;
+  }
+  // 2) El encabezado del propio bloque.
+  if (parsed.mesesCab && parsed.mesesCab.meses.length) return parsed.mesesCab.meses.slice();
+  // 3) Doce columnas = el año entero.
+  if (parsed.ancho >= 12) return [0,1,2,3,4,5,6,7,8,9,10,11];
+  // 4) Menos de 12 y sin encabezado: hay que preguntar.
+  return null;
+}
+
+/**
+ * Revisa el bloque pegado SIN escribir nada. El asistente lo usa para saber si
+ * debe preguntar a qué meses corresponde antes de cargar.
+ */
+function analizarCronogramaCodigos(cliente, textoPegado) {
+  var cliN = String(cliente || "").trim().toUpperCase();
+  if (!cliN) throw new Error("Indica el cliente.");
+
+  var parsed = _cronCodParsear(textoPegado);
+  if (!parsed.filas.length) {
+    throw new Error("No se reconoció ningún código en el texto pegado. " +
+      "Copia desde el Excel las columnas ABC + producto_id + los meses.");
+  }
+
+  var meses = _cronCodMesesAfectados(parsed, null);
+  var existentes = _leerCronCodigosCliente(cliN);
+  var yaHay = {};
+  if (existentes.existe) existentes.filas.forEach(function (f) { yaHay[f.codigo] = true; });
+
+  var nuevos = 0;
+  parsed.filas.forEach(function (f) { if (!yaHay[f.codigo]) nuevos++; });
+
+  return {
+    cliente: cliN,
+    codigos: parsed.filas.length,
+    nuevos: nuevos,
+    yaCargados: parsed.filas.length - nuevos,
+    totalCliente: existentes.existe ? existentes.filas.length : 0,
+    columnasDeMes: parsed.ancho,
+    mesesDetectados: meses ? meses.map(function (m) { return CRONCOD_MESES[m]; }) : [],
+    origenMeses: (parsed.mesesCab ? "encabezado" : (parsed.ancho >= 12 ? "doce columnas" : "")),
+    necesitaMeses: !meses,
+    muestra: parsed.filas.slice(0, 8).map(function (f) { return f.codigo; })
+  };
+}
+
+/**
+ * COORDINADOR: carga el cronograma de códigos de un cliente.
+ *
+ * @param {string} cliente
+ * @param {string} textoPegado  bloque copiado del Excel
+ * @param {Object} opciones     { meses:["JULIO",…], modo:"fusionar"|"reemplazar" }
+ *   · meses  — obligatorio solo si el bloque no dice a qué meses corresponde.
+ *   · modo   — "fusionar" (por defecto) respeta los meses no incluidos;
+ *              "reemplazar" vacía el cliente y deja solo lo pegado.
+ */
+function actualizarCronogramaCodigos(cliente, textoPegado, opciones) {
   _requiereRol(["Coordinador"]);
-  var cliN = String(cliente||"").trim().toUpperCase();
+  var cliN = String(cliente || "").trim().toUpperCase();
   if (!cliN) throw new Error("Indica el cliente.");
   if (!textoPegado || !String(textoPegado).trim()) {
     throw new Error("Pega el bloque de códigos (ABC | CÓDIGO | ENERO…DICIEMBRE).");
   }
 
-  var lineas = String(textoPegado).split(/\r?\n/);
-  var nuevas = [];
-  for (var i=0;i<lineas.length;i++){
-    var ln = lineas[i];
-    if (!ln || !ln.trim()) continue;
-    var sep = (ln.indexOf("\t")!==-1) ? "\t" : (ln.indexOf(";")!==-1 ? ";" : ",");
-    var c = ln.split(sep).map(function(x){ return String(x||"").trim(); });
-    var c0 = (c[0]||"").toUpperCase(), c1 = (c[1]||"").toUpperCase();
-    // Saltar encabezados / líneas de meses / títulos
-    if (c0.indexOf("ABC")!==-1 || c1.indexOf("PRODUCTO")!==-1 ||
-        c1.indexOf("CODIGO")!==-1 || CRONCOD_MESES.indexOf(c0)!==-1 ||
-        c0.indexOf("QTY")!==-1 || c0.indexOf("SEMESTRE")!==-1) continue;
+  opciones = opciones || {};
+  var modo = String(opciones.modo || "fusionar").toLowerCase();
+  if (modo !== "reemplazar") modo = "fusionar";
 
-    var abc = "", cod = "", mesesArr = [];
-    if (/^[ABC]$/i.test(c0) && c1) {           // formato: ABC | CODIGO | 12 meses
-      abc = c0; cod = c1; mesesArr = c.slice(2, 14);
-    } else if (c0) {                            // formato: CODIGO | 12 meses
-      cod = c0; mesesArr = c.slice(1, 13);
-    }
-    if (!cod) continue;
-    var fila = [cliN, cod, abc];
-    for (var m=0;m<12;m++){ fila.push(String(mesesArr[m]||"").trim() ? "X" : ""); }
-    nuevas.push(fila);
+  var parsed = _cronCodParsear(textoPegado);
+  if (!parsed.filas.length) {
+    throw new Error("No se reconoció ningún código en el texto pegado. " +
+      "Copia desde el Excel las columnas ABC + producto_id + los meses.");
   }
-  if (!nuevas.length) throw new Error("No se reconoció ningún código en el texto pegado. " +
-    "Copia desde el Excel las columnas ABC + producto_id + los 12 meses.");
+
+  var meses = _cronCodMesesAfectados(parsed, opciones.meses);
+  if (!meses) {
+    var e = new Error("El bloque trae " + parsed.ancho + " columna(s) de mes pero no dice " +
+      "a qué meses corresponden. Indícalo antes de cargar para no escribir julio en enero.");
+    e.necesitaMeses = true;
+    e.columnasDeMes = parsed.ancho;
+    throw e;
+  }
+  if (meses.length > parsed.ancho && parsed.ancho > 0) {
+    throw new Error("Indicaste " + meses.length + " meses pero el bloque trae " +
+      parsed.ancho + " columna(s). Deben coincidir.");
+  }
+
+  /* ¿La fila marca ese mes?
+     `marcas` ya empieza en la primera columna de mes de SU propia línea, así
+     que el índice es la posición del mes DENTRO del bloque — nunca la columna
+     absoluta. Esa diferencia importa: el encabezado y las filas no siempre
+     traen el mismo número de columnas antes de los meses (unas llevan ABC y
+     otras no), y calcular por columna absoluta corría los meses un casillero. */
+  function marcaDeMes(f, posEnLista, idxMes) {
+    var ci;
+    if (parsed.mesesCab) {
+      ci = parsed.mesesCab.meses.indexOf(idxMes);
+      if (ci === -1) return false;                // el bloque no cubre ese mes
+    } else if (parsed.ancho >= 12 && !opciones.meses) {
+      ci = idxMes;                                // año completo, en orden
+    } else {
+      ci = posEnLista;                            // tantas columnas como meses indicados
+    }
+    return ci >= 0 && ci < f.marcas.length && String(f.marcas[ci] || "").trim() !== "";
+  }
 
   var sh = _asegurarHojaCronCodigos();
-  var last = sh.getLastRow(), borradas = 0;
-  if (last >= 2) {
-    // Releer todo, quitar el bloque del cliente (match EXACTO del registrado) y reescribir.
-    var todo = sh.getRange(2, 1, last-1, 15).getValues();
-    var restantes = todo.filter(function(r){
-      var c = String(r[0]||"").trim().toUpperCase();
-      return c !== "" && c !== cliN;
+  var last = sh.getLastRow();
+  var todo = (last >= 2) ? sh.getRange(2, 1, last - 1, 15).getValues() : [];
+
+  var otrosClientes = todo.filter(function (r) {
+    var c = String(r[0] || "").trim().toUpperCase();
+    return c !== "" && c !== cliN;
+  });
+  var delCliente = todo.filter(function (r) {
+    return String(r[0] || "").trim().toUpperCase() === cliN;
+  });
+
+  var finales, reemplazadas = 0, conservados = 0, actualizados = 0, agregados = 0;
+
+  if (modo === "reemplazar") {
+    reemplazadas = delCliente.length;
+    finales = parsed.filas.map(function (f) {
+      var fila = [cliN, f.codigo, f.abc];
+      for (var m = 0; m < 12; m++) {
+        var pos = meses.indexOf(m);
+        fila.push((pos !== -1 && marcaDeMes(f, pos, m)) ? "X" : "");
+      }
+      return fila;
     });
-    borradas = todo.filter(function(r){
-      return String(r[0]||"").trim().toUpperCase() === cliN;
-    }).length;
-    sh.getRange(2, 1, last-1, 15).clearContent();
-    if (restantes.length) sh.getRange(2, 1, restantes.length, 15).setValues(restantes);
-    sh.getRange(2 + restantes.length, 1, nuevas.length, 15).setValues(nuevas);
+    agregados = finales.length;
   } else {
-    sh.getRange(2, 1, nuevas.length, 15).setValues(nuevas);
+    // Índice de lo que ya tiene el cliente, para tocarle solo los meses del bloque.
+    var porCodigo = {};
+    delCliente.forEach(function (r) {
+      porCodigo[String(r[1] || "").trim().toUpperCase()] = r.slice();
+    });
+
+    parsed.filas.forEach(function (f) {
+      var fila = porCodigo[f.codigo];
+      if (fila) { actualizados++; }
+      else {
+        fila = [cliN, f.codigo, f.abc];
+        for (var z = 0; z < 12; z++) fila.push("");
+        porCodigo[f.codigo] = fila;
+        agregados++;
+      }
+      if (f.abc) fila[2] = f.abc;
+      // Solo los meses afectados. El resto del año queda intacto.
+      for (var k = 0; k < meses.length; k++) {
+        var m = meses[k];
+        fila[3 + m] = marcaDeMes(f, k, m) ? "X" : "";
+      }
+    });
+
+    finales = [];
+    delCliente.forEach(function (r) {
+      var cod = String(r[1] || "").trim().toUpperCase();
+      if (porCodigo[cod]) { finales.push(porCodigo[cod]); delete porCodigo[cod]; }
+    });
+    for (var cNuevo in porCodigo) finales.push(porCodigo[cNuevo]);
+    conservados = delCliente.length - actualizados;
   }
 
+  if (last >= 2) sh.getRange(2, 1, last - 1, 15).clearContent();
+  var salida = otrosClientes.concat(finales);
+  if (salida.length) sh.getRange(2, 1, salida.length, 15).setValues(salida);
+
+  var nombresMeses = meses.map(function (m) { return CRONCOD_MESES[m]; });
   try {
     if (typeof _registrarActividad === "function" && typeof _usuarioActual === "function") {
       _registrarActividad(_usuarioActual(), "actualizar_cron_codigos", "",
-        cliN + ": " + nuevas.length + " códigos (reemplazó " + borradas + ")");
+        cliN + " · " + modo + " · meses: " + nombresMeses.join(", ") +
+        " · " + agregados + " nuevo(s), " + actualizados + " actualizado(s)" +
+        (conservados ? ", " + conservados + " intacto(s)" : "") +
+        (reemplazadas ? ", reemplazó " + reemplazadas : ""));
     }
   } catch (eL) {}
 
   var porMes = {};
-  CRONCOD_MESES.forEach(function(mn, mi){
-    porMes[mn] = nuevas.filter(function(f){ return f[3+mi] === "X"; }).length;
+  CRONCOD_MESES.forEach(function (mn, mi) {
+    porMes[mn] = finales.filter(function (f) { return f[3 + mi] === "X"; }).length;
   });
-  return { ok:true, cliente:cliN, codigos:nuevas.length, reemplazadas:borradas, porMes:porMes };
+
+  return {
+    ok: true, cliente: cliN, modo: modo,
+    meses: nombresMeses,
+    codigos: finales.length,
+    agregados: agregados, actualizados: actualizados,
+    conservados: conservados, reemplazadas: reemplazadas,
+    porMes: porMes
+  };
 }
 
 /* PANEL: resumen de clientes cargados en el cronograma de códigos. */
