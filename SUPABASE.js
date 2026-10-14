@@ -517,12 +517,18 @@ function _sbReconciliarPorArchivo(nombreHoja, tabla, propProg, colsFn, mapFn) {
   for (; i < bloques.length; i++) {
     if (new Date().getTime() - t0 > LIMITE_MS) break;
     var b = bloques[i];
-    if (!b.id) { sinId += b.n; continue; }   // sin archivo origen: no se puede reconciliar
+
+    // Las filas sin ID de archivo también viajan: se tratan como un grupo
+    // propio (archivo_id nulo). Si se saltaran, REGISTRO perdería las que
+    // no vienen de un archivo hijo — hoy son miles.
+    var filtro = b.id
+      ? "archivo_id=eq." + encodeURIComponent(b.id)
+      : "archivo_id=is.null";
+    if (!b.id) sinId += b.n;
 
     // 1) Fuera lo que Supabase tenga de este archivo
-    var del = _supabaseFetch(tabla + "?archivo_id=eq." + encodeURIComponent(b.id),
-                             "delete", null, "return=minimal");
-    if (del.code >= 300) { fallidos.push(b.id + " (borrado HTTP " + del.code + ")"); continue; }
+    var del = _supabaseFetch(tabla + "?" + filtro, "delete", null, "return=minimal");
+    if (del.code >= 300) { fallidos.push((b.id || "(sin id)") + " (borrado HTTP " + del.code + ")"); continue; }
 
     // 2) Dentro lo que la hoja tiene ahora
     var vals = sh.getRange(b.fila, 1, b.n, ancho).getValues();
@@ -533,11 +539,11 @@ function _sbReconciliarPorArchivo(nombreHoja, tabla, propProg, colsFn, mapFn) {
       obj.fila_origen = b.fila + r;
       lote.push(obj);
       if (lote.length >= SB_LOTE) {
-        if (_sbEnviarLote(tabla, lote, fallidos, b.id)) enviadas += lote.length;
+        if (_sbEnviarLote(tabla, lote, fallidos, b.id || "(sin id)")) enviadas += lote.length;
         lote = [];
       }
     }
-    if (lote.length && _sbEnviarLote(tabla, lote, fallidos, b.id)) enviadas += lote.length;
+    if (lote.length && _sbEnviarLote(tabla, lote, fallidos, b.id || "(sin id)")) enviadas += lote.length;
 
     archivos++; filas += enviadas;
     sp.setProperty(propProg, String(i + 1));
@@ -802,4 +808,71 @@ function migrarEquipoASupabase() {
   Logger.log("EQUIPO (USUARIOS) -> HTTP " + res.code + " (" + filas.length + " personas)" +
              (res.code >= 300 ? ("\n" + res.body.substring(0, 250)) : ""));
   return { ok: res.code >= 200 && res.code < 300, migradas: filas.length, code: res.code };
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ¿QUÉ TIENE SUPABASE AHORA MISMO?
+   ---------------------------------------------------------------------------
+   Cuando una verificación dice "Supabase: 0 filas" hay que separar tres cosas
+   muy distintas antes de actuar: que la tabla esté vacía, que tenga filas pero
+   sin fecha (y entonces ningún filtro por año las encuentra), o que la fecha
+   esté guardada de una forma que el filtro no reconoce. Solo lee.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function diagnosticarSupabaseTablas() {
+  var L = ["═══ CONTENIDO ACTUAL DE SUPABASE ═══\n"];
+  var tablas = [
+    { t: "inventarios",      f: "fecha_inicio" },
+    { t: "registro",         f: "fecha" },
+    { t: "panel_de_control", f: "fecha_inicio" },
+    { t: "cronograma",       f: "fecha" }
+  ];
+
+  function contar(path) {
+    var c = _supabaseCfg();
+    var res = UrlFetchApp.fetch(c.url + "/rest/v1/" + path, {
+      method: "head",
+      headers: { "apikey": c.key, "Authorization": "Bearer " + c.key, "Prefer": "count=exact" },
+      muteHttpExceptions: true
+    });
+    var h = res.getAllHeaders() || {};
+    var cr = String(h["content-range"] || h["Content-Range"] || "");
+    var m = cr.match(/\/(\d+)$/);
+    return { code: res.getResponseCode(), total: m ? parseInt(m[1], 10) : null };
+  }
+
+  var salida = {};
+  tablas.forEach(function (x) {
+    var tot  = contar(x.t + "?select=" + x.f);
+    if (tot.code >= 300) {
+      L.push(x.t + ": ✗ HTTP " + tot.code + " (¿la tabla existe? ¿el nombre de la columna " + x.f + " es correcto?)\n");
+      salida[x.t] = { error: tot.code };
+      return;
+    }
+    var nulos = contar(x.t + "?select=" + x.f + "&" + x.f + "=is.null");
+    var anio  = new Date().getFullYear();
+    var esteA = contar(x.t + "?select=" + x.f + "&" + x.f + "=gte." + anio + "-01-01&" + x.f + "=lt." + (anio + 1) + "-01-01");
+
+    L.push(x.t);
+    L.push("   total            : " + tot.total);
+    L.push("   con " + x.f + " vacía : " + nulos.total);
+    L.push("   de " + anio + "          : " + esteA.total);
+
+    // Una fila de muestra dice cómo está guardada la fecha realmente.
+    var r = _supabaseFetch(x.t + "?select=archivo_id," + x.f + "&limit=1", "get");
+    if (r.code >= 200 && r.code < 300 && r.body && r.body !== "[]") {
+      L.push("   muestra          : " + String(r.body).substring(0, 160));
+    } else if (tot.total === 0) {
+      L.push("   (tabla vacía)");
+    }
+    L.push("");
+    salida[x.t] = { total: tot.total, nulos: nulos.total, anioActual: esteA.total };
+  });
+
+  L.push("CÓMO LEERLO:");
+  L.push("  total 0                      -> la tabla está vacía: hay que cargarla.");
+  L.push("  total alto y de " + new Date().getFullYear() + " en 0    -> hay datos pero la fecha no los");
+  L.push("                                  clasifica; mira 'con fecha vacía' y la muestra.");
+  Logger.log(L.join("\n"));
+  return salida;
 }
