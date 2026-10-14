@@ -447,6 +447,151 @@ function _sbSyncIncremental(nombreHoja, tabla, propUltimaFila, colsFn, mapFn) {
   return { ok: true, nuevas: enviadas, fallidas: fallidas, hasta: ultima };
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   SINCRONIZACIÓN POR ARCHIVO — la que sí aguanta una consolidación
+   ---------------------------------------------------------------------------
+   _sbSyncIncremental recuerda "hasta qué FILA envié" y manda de ahí en
+   adelante. Eso funciona mientras la hoja solo crezca por abajo, pero
+   INVENTARIOS y REGISTRO no crecen: la consolidación los vacía y los reescribe
+   enteros. Después de consolidar, el puntero queda apuntando a un contenido
+   que ya no existe, y pasa una de dos:
+
+     · la hoja quedó con MENOS filas  -> ultima <= yaVisto -> no envía nunca
+       más nada, y Supabase se queda congelado en los datos viejos;
+     · la hoja quedó con MÁS filas    -> envía solo la cola, y Supabase termina
+       con las filas viejas MÁS las nuevas, mezcladas.
+
+   En los dos casos Power BI lee algo que no es lo que dice la hoja. Por eso la
+   sincronización se hace por ARCHIVO, no por posición: para cada archivo
+   presente en la hoja se borra lo suyo en Supabase y se vuelve a insertar, así
+   la tabla refleja exactamente lo consolidado.
+
+   Lo que NO está en la hoja no se toca: Supabase conserva los años ya
+   archivados. Es a propósito — es lo que lo convierte en el histórico.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Bloques contiguos por archivo: [{id, fila, n}]. Lee solo la columna ID. */
+function _sbBloquesPorArchivo(sh, colId) {
+  var ultima = sh.getLastRow();
+  if (ultima < 2) return [];
+  var col = sh.getRange(2, colId + 1, ultima - 1, 1).getValues();
+  var bloques = [], act = null;
+  for (var i = 0; i < col.length; i++) {
+    var id = String(col[i][0] || "").trim();
+    if (act && act.id === id) { act.n++; continue; }
+    if (act) bloques.push(act);
+    act = { id: id, fila: i + 2, n: 1 };
+  }
+  if (act) bloques.push(act);
+  return bloques;
+}
+
+/**
+ * Reemplaza en Supabase, archivo por archivo, lo que la hoja tiene ahora.
+ * Reanudable: si se acaba el tiempo guarda por dónde iba y sigue en la
+ * siguiente corrida. Volver a pasar por un archivo es inofensivo (borra e
+ * inserta), así que una interrupción nunca deja filas duplicadas.
+ */
+function _sbReconciliarPorArchivo(nombreHoja, tabla, propProg, colsFn, mapFn) {
+  var t0 = new Date().getTime();
+  var LIMITE_MS = 4.5 * 60 * 1000;
+  var sp = PropertiesService.getScriptProperties();
+  var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(nombreHoja);
+  if (!sh) return { ok: false, mensaje: nombreHoja + " no existe." };
+  if (sh.getLastRow() < 2) { sp.deleteProperty(propProg); return { ok: true, archivos: 0, filas: 0, mensaje: nombreHoja + " está vacía." }; }
+
+  var ancho = sh.getLastColumn();
+  var head = sh.getRange(1, 1, 1, ancho).getValues()[0]
+               .map(function (h) { return String(h || "").trim().toUpperCase(); });
+  var cols = colsFn(head);
+  var colId = _sbCol(head, ["ID"]);
+  if (colId < 0) return { ok: false, mensaje: nombreHoja + " no tiene columna ID; sin ella no se puede sincronizar por archivo." };
+
+  var bloques = _sbBloquesPorArchivo(sh, colId);
+  var desdeIdx = parseInt(sp.getProperty(propProg) || "0", 10);
+  if (isNaN(desdeIdx) || desdeIdx < 0 || desdeIdx >= bloques.length) desdeIdx = 0;
+
+  var archivos = 0, filas = 0, sinId = 0, fallidos = [];
+  var i = desdeIdx;
+  for (; i < bloques.length; i++) {
+    if (new Date().getTime() - t0 > LIMITE_MS) break;
+    var b = bloques[i];
+    if (!b.id) { sinId += b.n; continue; }   // sin archivo origen: no se puede reconciliar
+
+    // 1) Fuera lo que Supabase tenga de este archivo
+    var del = _supabaseFetch(tabla + "?archivo_id=eq." + encodeURIComponent(b.id),
+                             "delete", null, "return=minimal");
+    if (del.code >= 300) { fallidos.push(b.id + " (borrado HTTP " + del.code + ")"); continue; }
+
+    // 2) Dentro lo que la hoja tiene ahora
+    var vals = sh.getRange(b.fila, 1, b.n, ancho).getValues();
+    var lote = [], enviadas = 0;
+    for (var r = 0; r < vals.length; r++) {
+      var obj = mapFn(vals[r], head, cols);
+      if (!obj) continue;
+      obj.fila_origen = b.fila + r;
+      lote.push(obj);
+      if (lote.length >= SB_LOTE) {
+        if (_sbEnviarLote(tabla, lote, fallidos, b.id)) enviadas += lote.length;
+        lote = [];
+      }
+    }
+    if (lote.length && _sbEnviarLote(tabla, lote, fallidos, b.id)) enviadas += lote.length;
+
+    archivos++; filas += enviadas;
+    sp.setProperty(propProg, String(i + 1));
+  }
+
+  var completo = (i >= bloques.length);
+  if (completo) sp.deleteProperty(propProg);
+
+  return {
+    ok: true, hoja: nombreHoja, archivos: archivos, filas: filas,
+    totalArchivos: bloques.length, sinId: sinId,
+    fallidos: fallidos.slice(0, 10), completo: completo,
+    mensaje: completo
+      ? ("✓ " + nombreHoja + ": " + archivos + " archivo(s) y " + filas + " fila(s) reconciliados.")
+      : ("⏳ " + nombreHoja + ": " + i + " de " + bloques.length + " archivos. Continúa en la próxima corrida.")
+  };
+}
+
+/** Envía un lote; si falla, reintenta fila a fila para no perder el resto. */
+function _sbEnviarLote(tabla, lote, fallidos, idArchivo) {
+  var res = _supabaseFetch(tabla, "post", lote, "return=minimal");
+  if (res.code >= 200 && res.code < 300) return true;
+  var okN = 0;
+  for (var j = 0; j < lote.length; j++) {
+    var r1 = _supabaseFetch(tabla, "post", [lote[j]], "return=minimal");
+    if (r1.code >= 200 && r1.code < 300) okN++;
+  }
+  if (okN < lote.length) {
+    fallidos.push(idArchivo + " (" + (lote.length - okN) + " fila(s) rechazadas)");
+  }
+  return okN > 0;
+}
+
+/** INVENTARIOS -> Supabase, reemplazando archivo por archivo. */
+function reconciliarInventariosSupabase() {
+  return _sbReconciliarPorArchivo("INVENTARIOS", "inventarios", "SB_RECON_INV",
+    _sbColsInventarios, _sbMapInventarios);
+}
+
+/** REGISTRO -> Supabase, reemplazando archivo por archivo. */
+function reconciliarRegistroSupabase() {
+  return _sbReconciliarPorArchivo("REGISTRO", "registro", "SB_RECON_REG",
+    _sbColsRegistro, _sbMapRegistro);
+}
+
+/** Vuelve a empezar la reconciliación desde el primer archivo. */
+function reiniciarReconciliacionSupabase() {
+  var sp = PropertiesService.getScriptProperties();
+  sp.deleteProperty("SB_RECON_INV");
+  sp.deleteProperty("SB_RECON_REG");
+  Logger.log("Reconciliación reiniciada: la próxima corrida empieza desde el primer archivo.");
+  return { ok: true };
+}
+
 /** Sincroniza INVENTARIOS (solo filas nuevas). */
 function sincronizarInventariosSupabase() {
   return _sbSyncIncremental("INVENTARIOS", "inventarios", "SB_SYNC_INV",
@@ -466,8 +611,13 @@ function sincronizarRegistroSupabase() {
 function sincronizarTodoSupabase() {
   var res = { hora: new Date().toISOString() };
   try { res.panel = migrarPanelASupabase(); }           catch (e) { res.panel = { error: e.message }; }
-  try { res.inventarios = sincronizarInventariosSupabase(); } catch (e) { res.inventarios = { error: e.message }; }
-  try { res.registro = sincronizarRegistroSupabase(); } catch (e) { res.registro = { error: e.message }; }
+  // INVENTARIOS y REGISTRO van por ARCHIVO, no por posición de fila: la
+  // consolidación los vacía y reescribe, y el puntero de "última fila enviada"
+  // quedaba apuntando a un contenido que ya no existe. Las funciones viejas
+  // (sincronizarInventariosSupabase / sincronizarRegistroSupabase) siguen ahí
+  // por si hiciera falta, pero no deben usarse sobre hojas que se reescriben.
+  try { res.inventarios = reconciliarInventariosSupabase(); } catch (e) { res.inventarios = { error: e.message }; }
+  try { res.registro = reconciliarRegistroSupabase(); } catch (e) { res.registro = { error: e.message }; }
   // El cronograma cambia en filas existentes (estado, entrega, %), así que va completo.
   try { res.cronograma = migrarCronogramaASupabase(); } catch (e) { res.cronograma = { error: e.message }; }
   try { migrarEquipoASupabase(); } catch (e) {}
