@@ -165,10 +165,19 @@ function inventarioPorAnio() {
    2) ¿SUPABASE TIENE ESE AÑO COMPLETO? — la comprobación que habilita archivar
    ═══════════════════════════════════════════════════════════════════════════ */
 function verificarArchivoHistorico(anio) {
-  anio = parseInt(anio, 10);
-  if (!anio || anio < 2000 || anio > 2100) throw new Error("Indica el año, por ejemplo verificarArchivoHistorico(2024).");
   var actual = new Date().getFullYear();
-  var L = ["═══ VERIFICACIÓN DEL AÑO " + anio + " ═══\n"];
+  // El botón ▶ del editor no pasa argumentos. Sin año se asume el actual, que
+  // es el caso más frecuente: comprobar que Supabase refleja lo consolidado.
+  var sinArgumento = (anio === undefined || anio === null || anio === "");
+  anio = sinArgumento ? actual : parseInt(anio, 10);
+  if (!anio || anio < 2000 || anio > 2100) {
+    throw new Error("Año inválido: " + anio + ". Usa verificarAnio() y cambia la constante de arriba.");
+  }
+  var L = ["═══ VERIFICACIÓN DEL AÑO " + anio + " ═══"];
+  if (sinArgumento) {
+    L.push("(sin año indicado: se usa el año en curso. Para otro año usa verificarAnio().)");
+  }
+  L.push("");
   if (anio >= actual) {
     L.push("⚠ " + anio + " es el año en curso (o futuro). El año vivo NO debe archivarse.\n");
   }
@@ -256,4 +265,22 @@ function verificarArchivoHistorico(anio) {
   }
   Logger.log(L.join("\n"));
   return veredicto;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PARA EJECUTAR DESDE EL EDITOR
+   ---------------------------------------------------------------------------
+   El botón ▶ no pasa argumentos. Estas no los necesitan.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Comprueba el AÑO EN CURSO: ¿Supabase refleja lo que quedó consolidado? */
+function verificarAnioEnCurso() {
+  return verificarArchivoHistorico(new Date().getFullYear());
+}
+
+/** Comprueba OTRO año: cambia la constante y ejecuta. */
+function verificarAnio() {
+  var ANIO = 2024;   // <-- cambia aquí el año a comprobar
+  return verificarArchivoHistorico(ANIO);
 }
