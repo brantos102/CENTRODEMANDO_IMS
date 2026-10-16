@@ -166,8 +166,20 @@ test('IBM autorizado: mismo código con dos contenidos conserva dos orígenes y 
  assert.equal(sheets.INVENTARIOS.rows[0].at(-1),'ORIGEN_DRIVE');
  assert.deepEqual(sheets.INVENTARIOS.rows.slice(1).map(r=>r.at(-1)),ids);
 });
-test('VENTURA permanece bloqueado según la respuesta del usuario',()=>{
- const {c,props}=workflow();const abrir=c.safeOpenSpreadsheet;
- c.safeOpenSpreadsheet=id=>{const r=abrir(id);r.ss.getSheetByName('PLANILLA DE CONTEO FISICO').rows=[head,line('260907_VENTURA',1,'VENTURA')];return r};
- assert.throws(()=>c._consolidarNucleo({contexto:'web'}),/VENTURA.*bloqueado/);assert.equal(props.CONSOL_KPI_RUN,'');
+test('VENTURA habilitado conserva 53 y 64 filas de dos orígenes aun tras una interrupción',()=>{
+ const {c,props,setTime,sheets,ids}=workflow();const abrir=c.safeOpenSpreadsheet;
+ c.safeOpenSpreadsheet=id=>{
+  const r=abrir(id);const n=id===ids[0]?53:64;
+  const rows=Array.from({length:n},(_,i)=>line('260907_VENTURA',i+1,'VENTURA',id+'-POS-'+i,1));
+  r.ss.getSheetByName('PLANILLA DE CONTEO FISICO').rows=[head,...rows];
+  r.ss.getSheetByName('REGISTRO').rows=[head,...rows];return r;
+ };
+ c._consolidarNucleo({contexto:'web'});setTime(303000);sheets.REGISTRO.failWrite=true;
+ assert.throws(()=>c._consolidarNucleo({_continuacion:true}),/write failure/);setTime(304000);
+ const result=c._consolidarNucleo({_continuacion:true});
+ assert.equal(result.ok,true);assert.equal(result.filasIncluidas,117);assert.equal(result.registroIncluidas,117);
+ assert.equal(sheets.INVENTARIOS.rows.length,118);
+ assert.equal(sheets.INVENTARIOS.rows.filter(r=>r.at(-1)===ids[0]).length,53);
+ assert.equal(sheets.INVENTARIOS.rows.filter(r=>r.at(-1)===ids[1]).length,64);
+ assert.equal(props.CONSOL_STATUS,'COMPLETADO');assert.equal(props.CONSOL_KPI_RUN,props.CONSOL_RUN_TOKEN);
 });

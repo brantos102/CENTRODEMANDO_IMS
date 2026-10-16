@@ -3448,11 +3448,11 @@ function _consolFirmaFilas(filas) {
 function _consolClaveFuente(row, cols, tabla, archivo) {
   var codigo = String(row[cols.id] || "").trim().toUpperCase();
   var cliente = cols.cliente < 0 ? "" : String(row[cols.cliente] || "").trim().toUpperCase();
-  if (codigo === "260907_VENTURA" && cliente === "VENTURA") {
-    throw _consolIntegridadError("VENTURA 260907_VENTURA bloqueado por decisión del usuario: revisar los archivos de 53 y 64 filas antes de publicar KPI.");
-  }
   var identidad = _consolClaveInventario(row, cols);
-  var distinta = codigo === "250724_IBM" && cliente === "IBM";
+  // VENTURA fue habilitado por el usuario: sus fuentes de 53 y 64 filas
+  // tienen productos/ubicaciones diferentes y conservan su origen físico.
+  var distinta = (codigo === "250724_IBM" && cliente === "IBM") ||
+    (codigo === "260907_VENTURA" && cliente === "VENTURA");
   return JSON.stringify([tabla, identidad || ("sin-id:" + archivo), distinta ? archivo : ""]);
 }
 

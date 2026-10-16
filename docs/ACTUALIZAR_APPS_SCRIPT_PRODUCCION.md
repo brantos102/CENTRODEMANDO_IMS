@@ -100,7 +100,7 @@ Para verificar el push, descargar nuevamente el HEAD de Google en otra carpeta v
 
 Importar código no limpia INVENTARIOS ni corrige por sí mismo Supabase. Ejecutar una corrida nueva mediante consolidarTodoDesdeEditor; no reanudar el estado creado por el código antiguo. Revisar el resultado y la auditoría.
 
-Decisiones actuales: IBM se mantiene como dos inventarios separados con ORIGEN_DRIVE. VENTURA sigue bloqueado por orden del usuario; mientras se encuentre ese caso no habrá marca de validación del KPI global. No quitar el bloqueo automáticamente para conseguir un resultado verde.
+Decisiones actuales: IBM se mantiene como dos inventarios separados con ORIGEN_DRIVE. VENTURA fue habilitado por nueva indicación del usuario: se conservan sus dos fuentes con ORIGEN_DRIVE distinto. Permanecen las validaciones generales de integridad.
 
 Antes de sincronizar las columnas nuevas a Supabase, ejecutar supabase/20261015_origen_drive.sql en el proyecto correcto. Después de resolver los bloqueos y completar la validación global, ejecutar sincronizarTodoSupabase hasta ok:true y completo:true; conciliar y refrescar Power BI al final. Reinstalar el trigger horario solo cuando el flujo esté verificado. Para contar ambos IBM, Power BI debe distinguir origen_drive/ORIGEN_DRIVE en lugar de contar únicamente el código repetido.
 
