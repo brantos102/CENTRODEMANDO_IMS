@@ -74,7 +74,8 @@ El archivo está ignorado por Git. .claspignore excluye api/, web/, tests/, supa
     clasp status
     node --check Cronograma_Recordatorios.js
     node --check SUPABASE.js
-    node --test tests/consolidacion.test.cjs tests/supabase.test.cjs
+    node tests/consolidacion.test.cjs
+    node tests/supabase.test.cjs
 
 Comparar los archivos que se van a subir con la copia recién descargada. Un push envía el conjunto local del proyecto y puede retirar archivos remotos que no estén incluidos: si hay diferencias no previstas, resolverlas antes de importar. El material de GitHub debe contener también el resto del proyecto operativo, no solamente los dos archivos corregidos. No ejecutar clasp pull dentro del checkout corregido para hacer una copia: podría reemplazar la corrección local con el código anterior.
 
@@ -98,7 +99,9 @@ Para verificar el push, descargar nuevamente el HEAD de Google en otra carpeta v
 
 ## Datos y KPI después de importar
 
-Importar código no limpia INVENTARIOS ni corrige por sí mismo Supabase. Ejecutar una corrida nueva mediante consolidarTodoDesdeEditor; no reanudar el estado creado por el código antiguo. Revisar el resultado y la auditoría.
+Importar código no limpia INVENTARIOS ni corrige por sí mismo Supabase. Si se investiga una corrida fallida, ejecutar primero diagnosticarConsolidacionActual desde el editor y conservar los logs antes de cancelar o reiniciar: el arranque nuevo limpia las auditorías anteriores. El diagnóstico es de solo lectura y también admite el estado de versión 4 que produjo el fallo de versión 97. Revisar criticosPorMotivo, ejemplosCriticos y ERRORES_VALIDACION_DETALLE; no ignorar errores críticos para forzar la publicación.
+
+Después de resolver las incidencias y conservar la evidencia, cancelar el estado anterior y ejecutar una corrida nueva mediante consolidarTodoDesdeEditor; CONSOL_VERSION=5 rechaza las continuaciones creadas por el código antiguo. Revisar el resultado y la auditoría.
 
 Decisiones actuales: IBM se mantiene como dos inventarios separados con ORIGEN_DRIVE. VENTURA fue habilitado por nueva indicación del usuario: se conservan sus dos fuentes con ORIGEN_DRIVE distinto. Permanecen las validaciones generales de integridad.
 

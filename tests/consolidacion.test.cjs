@@ -288,3 +288,63 @@ test('columna vacía no interfiere cuando un encabezado nuevo se sitúa antes de
  const r=c._consolAlinearColumnas([row],fuente,esquema,[],'FLUKE');
  assert.equal(r[0][2],'260311_FLUKE');assert.equal(r[0][10],'dato');assert.equal(esquema.length,11);
 });
+test('guardado parcial de propiedades después de escribir datos no vuelve a sumar el lote',()=>{
+ const {c,props,setTime,sheets}=workflow();c._consolidarNucleo({contexto:'web'});setTime(303000);
+ const p=c.PropertiesService.getScriptProperties(),guardar=p.setProperties;let fallo=true;
+ p.setProperties=o=>{if(fallo&&o.CONSOL_ACC&&o.CONSOL_NEXT_IDX==='2'){
+  fallo=false;props.CONSOL_ACC=o.CONSOL_ACC;throw Error('checkpoint parcial');
+ }return guardar(o)};
+ assert.throws(()=>c._consolidarNucleo({_continuacion:true}),/checkpoint parcial/);assert.equal(props.CONSOL_NEXT_IDX,'1');
+ setTime(304000);const r=c._consolidarNucleo({_continuacion:true});
+ assert.equal(r.filasIncluidas,2);assert.equal(r.registroIncluidas,2);assert.equal(r.sumaCantidad,30);
+ assert.equal(sheets.INVENTARIOS.rows.length,3);
+});
+test('repetición de un intervalo solapado reemplaza aportes por archivo en lugar de acumularlos',()=>{
+ const {c,props,setTime}=workflow();c._consolidarNucleo({contexto:'web'});
+ props.CONSOL_NEXT_IDX='0';props.CONSOL_PROCESADOS='0';setTime(303000);
+ const r=c._consolidarNucleo({_continuacion:true});
+ assert.equal(r.filasIncluidas,2);assert.equal(r.registroIncluidas,2);assert.equal(r.sumaCantidad,30);
+});
+test('cache de contadores inflada se reconstruye desde los aportes confirmados',()=>{
+ const {c,props,setTime}=workflow();c._consolidarNucleo({contexto:'web'});
+ props.CONSOL_ACC=JSON.stringify({filas:999999,regIncl:888888,criticos:2118});setTime(303000);
+ const r=c._consolidarNucleo({_continuacion:true});assert.equal(r.filasIncluidas,2);assert.equal(r.criticos,0);
+});
+test('purga sin filas del origen solo lee una columna y evita recorrer el consolidado completo',()=>{
+ const {c}=context();const h=[...head,...Array.from({length:20},(_,i)=>'EXTRA'+i),'ORIGEN_DRIVE'];
+ const viejo=[...line('A',1),...Array(20).fill('dato'),'origen-viejo'];
+ const nuevo=[...line('B',1),...Array(20).fill('otro'),'origen-nuevo'];
+ const sh=new Sheet('INVENTARIOS',[h,viejo]);const plan=c._consolPrepararReemplazo(sh,[nuevo],h);
+ const get=sh.getRange.bind(sh),lecturas=[];sh.getRange=(r,col,n,m)=>{
+  const rango=get(r,col,n,m),leer=rango.getValues;rango.getValues=()=>{lecturas.push({col,n,m});return leer.call(rango)};return rango;
+ };
+ assert.equal(c._consolPurgarFilasDelLote(sh,plan),0);assert.equal(lecturas.length,1);assert.equal(lecturas[0].m,1);
+});
+test('eventos sin ID se reemplazan por origen conservando los eventos de otros archivos',()=>{
+ const {c}=context();const h=[...head,'ORIGEN_DRIVE'],a=[...line('',1),'A'],b=[...line('',1),'B'];
+ const sh=new Sheet('REGISTRO',[h,a,b]);const plan=c._consolPrepararReemplazo(sh,[a],h);
+ assert.equal(c._consolPurgarFilasDelLote(sh,plan),1);assert.deepEqual(sh.rows,[h,b]);
+});
+test('diagnóstico cuenta críticos únicos y no altera datos, propiedades ni su validación',()=>{
+ const {c,sheets,props}=workflow();c._consolidarNucleo({contexto:'web'});
+ const error=['SG','archivo','','12','G','','SKU_VACIO','EXCLUIDA','CRÍTICA'];
+ sheets.ERRORES_VALIDACION_DETALLE.rows.push(error,error.slice());
+ const before=JSON.stringify({sheets,props});const r=c.diagnosticarConsolidacionActual();
+ assert.equal(r.criticosFilasDetalle,2);assert.equal(r.criticosUnicos,1);assert.equal(r.criticosPorMotivo.SKU_VACIO,1);
+ assert.equal(JSON.stringify({sheets,props}),before);
+});
+test('los errores de validación reales siguen bloqueando la marca KPI',()=>{
+ const {c,props,setTime}=workflow();const abrir=c.safeOpenSpreadsheet;
+ c.safeOpenSpreadsheet=id=>{const r=abrir(id);r.ss.getSheetByName('PLANILLA DE CONTEO FISICO').rows.push(line('MALO',1));r.ss.getSheetByName('PLANILLA DE CONTEO FISICO').rows.at(-1)[6]='';return r};
+ c._consolidarNucleo({contexto:'web'});setTime(303000);
+ assert.throws(()=>c._consolidarNucleo({_continuacion:true}),/errores críticos/);assert.equal(props.CONSOL_KPI_RUN,'');
+});
+test('continuación con error se reporta como fallo en lugar de completada silenciosamente',()=>{
+ const {c,props}=workflow();props.CONSOL_STATUS='EN_CURSO';
+ c._consolidarNucleo=()=>{props.CONSOL_STATUS='ERROR';throw Error('KPI no validado')};
+ assert.throws(()=>c._continuarConsolidacion(),/KPI no validado/);
+});
+test('continuación ocupada no incrementa el contador de estancamiento',()=>{
+ const {c,props}=workflow();props.CONSOL_STATUS='EN_CURSO';props.CONSOL_STALLS='0';
+ c.LockService={getScriptLock:()=>({tryLock:()=>false})};c._continuarConsolidacion();assert.equal(props.CONSOL_STALLS,'0');
+});

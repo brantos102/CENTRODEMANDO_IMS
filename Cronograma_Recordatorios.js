@@ -3375,27 +3375,44 @@ function _consolPrepararReemplazo(hoja, filas, headers, fresco) {
     }
   });
   var claves = Object.create(null), sinId = Object.create(null);
+  var origenes = Object.create(null), sinIdOrigen = Object.create(null), origenVacio = false;
   filas.forEach(function(row) {
+    var origen = cols.origen >= 0 ? String(row[cols.origen] || "") : "";
+    if (origen) origenes[origen] = true; else origenVacio = true;
     var clave = _consolClaveInventario(row, cols);
     if (clave) claves[clave] = true;
+    else if (origen) sinIdOrigen[origen] = true;
     else sinId[_consolClaveFilaSinId(row)] = true;
   });
-  return { cols: destino, claves: claves, sinId: sinId };
+  return { cols: destino, claves: claves, sinId: sinId, origenes: origenes, sinIdOrigen: sinIdOrigen, origenVacio: origenVacio };
 }
 
 function _consolPurgarFilasDelLote(hoja, plan) {
   if (!plan || hoja.getLastRow() < 2) return 0;
   var ultima = hoja.getLastRow();
   var cols = plan.cols;
-  // Sin IDs vacíos solo hacen falta las columnas de identidad, no las 30+
-  // columnas completas de las ~180k filas del consolidado.
-  var ancho = Object.keys(plan.sinId).length ? hoja.getLastColumn()
-    : Math.max(cols.id, cols.cliente, cols.base, cols.origen) + 1;
-  var rows = hoja.getRange(2, 1, ultima - 1, ancho).getValues();
+  var nFilas = ultima - 1, columnas = Object.create(null), rows = null;
+  if (cols.origen >= 0) {
+    columnas[cols.origen] = hoja.getRange(2, cols.origen + 1, nFilas, 1).getValues();
+    if (!plan.origenVacio && !columnas[cols.origen].some(function(r) { return plan.origenes[String(r[0] || "")]; })) return 0;
+  }
+  if (Object.keys(plan.sinId).length) {
+    rows = hoja.getRange(2, 1, nFilas, hoja.getLastColumn()).getValues();
+  } else {
+    // ORIGEN_DRIVE está al final: leer un rectángulo hasta esa columna leía
+    // innecesariamente millones de celdas en cada continuación.
+    [cols.id, cols.cliente, cols.base].forEach(function(c) {
+      if (c >= 0 && !columnas[c]) columnas[c] = hoja.getRange(2, c + 1, nFilas, 1).getValues();
+    });
+  }
   var bloques = [], ini = -1, n = 0;
-  for (var r = 0; r < rows.length; r++) {
-    var clave = _consolClaveInventario(rows[r], cols);
-    var coincide = clave ? plan.claves[clave] : plan.sinId[_consolClaveFilaSinId(rows[r])];
+  for (var r = 0; r < nFilas; r++) {
+    var row = rows ? rows[r] : [];
+    if (!rows) Object.keys(columnas).forEach(function(c) { row[c] = columnas[c][r][0]; });
+    var clave = _consolClaveInventario(row, cols);
+    var origen = cols.origen < 0 ? "" : String(row[cols.origen] || "");
+    var coincide = clave ? plan.claves[clave]
+      : (plan.sinIdOrigen[origen] || (rows && plan.sinId[_consolClaveFilaSinId(row)]));
     if (coincide) {
       if (ini < 0) { ini = r + 2; n = 1; } else n++;
     } else if (ini >= 0) { bloques.push([ini, n]); ini = -1; n = 0; }
@@ -3759,7 +3776,7 @@ function _consolidarNucleo(opciones) {
 
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(60000)) {
-    return { ok:false, mensaje:"Sistema ocupado, intenta más tarde." };
+    return { ok:false, ocupado:true, mensaje:"Sistema ocupado, intenta más tarde." };
   }
   try {
     var ss = _getSS();
@@ -3775,7 +3792,7 @@ function _consolidarNucleo(opciones) {
     // ── FIX FASE 8.33: determinar arranque fresco vs. reanudación ────────────
     var estPrev = _consolEstadoLeer();
     var debeReanudar = false;
-    if (esContinuacion && estPrev.STATUS === "EN_CURSO" && estPrev.VERSION !== "4") {
+    if (esContinuacion && estPrev.STATUS === "EN_CURSO" && estPrev.VERSION !== "5") {
       throw _consolIntegridadError("La corrida pendiente usa el código anterior. Cancélala y comienza una consolidación nueva.");
     }
     if (estPrev.STATUS === "EN_CURSO") {
@@ -3886,6 +3903,7 @@ function _consolidarNucleo(opciones) {
     // etc.) entran a la consolidación de este ciclo.
     // FIX FASE 8.33: solo en arranque fresco (no en cada lote de continuación).
     var reparadosAuto = 0;
+    var aportesArchivo = Object.create(null);
     if (esFresh) try {
       var hInacPre = ss.getSheetByName("ARCHIVOS_INACCESIBLES");
       if (hInacPre && hInacPre.getLastRow() >= 2) {
@@ -3982,6 +4000,8 @@ function _consolidarNucleo(opciones) {
       var cantidadAntes = sumTotalCant, filasAntes = sumTotalFilas;
       var regAntes = totalFilasRegIncluidas;
       var auditAntes = auditRows.length, auditRegAntes = auditRegRows.length;
+      var criticosAntes = totalCriticos, duplicadosAntes = totalDuplicados;
+      var erroresAntes = erroresDetalle.length, regDupAntes = totalDuplicadosReg, regVaciasAntes = totalFilasRegVacias;
       try {
 
       var op = safeOpenSpreadsheet(ent.id);
@@ -4261,6 +4281,17 @@ function _consolidarNucleo(opciones) {
           "Archivo saltado completo", "ALTA"]);
         Logger.log("FIX 8.30 archivo saltado: " + ent.cliente + " (" + ent.id + ") → " + msgErr);
       }
+      finally {
+        aportesArchivo[ent.id] = {
+          filas: sumTotalFilas - filasAntes, cant: sumTotalCant - cantidadAntes,
+          criticos: totalCriticos - criticosAntes, dups: totalDuplicados - duplicadosAntes,
+          erroresDet: erroresDetalle.length - erroresAntes,
+          leidas: auditRows.slice(auditAntes).reduce(function(n, r) { return n + (Number(r[3]) || 0); }, 0),
+          excAud: auditRows.slice(auditAntes).reduce(function(n, r) { return n + (Number(r[5]) || 0); }, 0),
+          regIncl: totalFilasRegIncluidas - regAntes, regDup: totalDuplicadosReg - regDupAntes,
+          regVacias: totalFilasRegVacias - regVaciasAntes
+        };
+      }
     });
 
     // ── FIX FASE 8.33: contadores de auditoría de ESTE lote ──────────────────
@@ -4508,15 +4539,10 @@ function _consolidarNucleo(opciones) {
       Logger.log("FIX 8.31 ARCHIVOS_INACCESIBLES: " + eInac.message);
     }
 
-    // Confirmar contadores e índice juntos DESPUÉS de ambas escrituras. Si
-    // una escritura falla, el reintento reemplaza las filas y no suma dos veces.
+    // Reemplazar aportes por archivo: repetir un intervalo nunca vuelve a
+    // sumar sus contadores, aunque un corte haya guardado solo parte de props.
     if (esBatch) {
-      _consolAccSumar({
-        filas: sumTotalFilas, cant: sumTotalCant, criticos: totalCriticos,
-        dups: totalDuplicados, erroresDet: erroresDetalle.length,
-        excAud: excAudLote, leidas: leidasLote,
-        regIncl: totalFilasRegIncluidas, regDup: totalDuplicadosReg, regVacias: totalFilasRegVacias
-      }, esFresh ? reparadosAuto : null, nextIdx);
+      _consolConfirmarLote(entries, startIdx, nextIdx, aportesArchivo, esFresh ? reparadosAuto : null);
       _consolSnapshotMarcarRango(startIdx, nextIdx, "PROCESADO");
     }
 
@@ -4543,26 +4569,6 @@ function _consolidarNucleo(opciones) {
     invalidarCacheSeries();
     // FIX FASE 8.37: regenerar el LOG único de consolidación (nunca rompe el flujo).
     try { generarLogConsolidacion(); } catch (eLog) {}
-
-    // ── FASE 8.62 (R1): garantía de accesos al COMPLETAR ──────────────────────
-    // Solo re-comparte si el EQUIPO cambió (altas/bajas) desde la última vez.
-    // Así una consolidación normal NO re-comparte ni envía correos, y cuando se
-    // incorpora un operario, la siguiente consolidación le da acceso a todo.
-    try {
-      var _teamHashNow = _equipoHashActivo();
-      var _teamHashOld = _consolProps().getProperty("ACCESOS_TEAM_HASH") || "";
-      if (_teamHashNow && _teamHashNow !== _teamHashOld) {
-        var _idsAcc = [];
-        for (var _ea = 0; _ea < entries.length; _ea++) {
-          if (entries[_ea] && entries[_ea].id) _idsAcc.push(entries[_ea].id);
-        }
-        var _rAcc = _garantizarAccesosLote(_idsAcc, Date.now() + 90 * 1000);
-        if (_rAcc.completo) _consolProps().setProperty("ACCESOS_TEAM_HASH", _teamHashNow);
-        Logger.log("FASE 8.62 R1 accesos: aplicados=" + _rAcc.aplicados +
-                   " fallos=" + _rAcc.fallos + " completo=" + _rAcc.completo +
-                   " (equipo cambió)");
-      }
-    } catch (eAcc62) { Logger.log("FASE 8.62 R1 garantía accesos: " + eAcc62.message); }
 
     // Totales GRANDES: en batch vienen del estado acumulado entre lotes;
     // en estricto (pasada única) son los locales de esta ejecución.
@@ -4631,6 +4637,26 @@ function _consolidarNucleo(opciones) {
     if (procReg) _consolProps().setProperties({
       CONSOL_KPI_REG_RUN: registroFuentes.run, CONSOL_KPI_REG_FILAS: String(G.regIncl)
     }, false);
+
+    // ── FASE 8.62 (R1): garantía de accesos al COMPLETAR ──────────────────────
+    // Solo re-comparte si el EQUIPO cambió (altas/bajas) desde la última vez.
+    // Así una consolidación normal NO re-comparte ni envía correos, y cuando se
+    // incorpora un operario, la siguiente consolidación le da acceso a todo.
+    try {
+      var _teamHashNow = _equipoHashActivo();
+      var _teamHashOld = _consolProps().getProperty("ACCESOS_TEAM_HASH") || "";
+      if (_teamHashNow && _teamHashNow !== _teamHashOld) {
+        var _idsAcc = [];
+        for (var _ea = 0; _ea < entries.length; _ea++) {
+          if (entries[_ea] && entries[_ea].id) _idsAcc.push(entries[_ea].id);
+        }
+        var _rAcc = _garantizarAccesosLote(_idsAcc, Date.now() + 90 * 1000);
+        if (_rAcc.completo) _consolProps().setProperty("ACCESOS_TEAM_HASH", _teamHashNow);
+        Logger.log("FASE 8.62 R1 accesos: aplicados=" + _rAcc.aplicados +
+                   " fallos=" + _rAcc.fallos + " completo=" + _rAcc.completo +
+                   " (equipo cambió)");
+      }
+    } catch (eAcc62) { Logger.log("FASE 8.62 R1 garantía accesos: " + eAcc62.message); }
 
     // FIX FASE 8.16 + 8.17: mensaje detallado por sección
     var partes = ["✅ Consolidación finalizada (modo " + modo.toUpperCase() + ", incluir " + incluir + "):",
@@ -4731,7 +4757,7 @@ function _consolHeartbeatVivo(ts) {
 function _consolEstadoIniciar(o) {
   _consolProps().setProperties({
     CONSOL_RUN_TOKEN: Utilities.getUuid(),
-    CONSOL_VERSION: "4",
+    CONSOL_VERSION: "5",
     CONSOL_SCHEMA_INV: "",
     CONSOL_SCHEMA_REG: "",
     CONSOL_KPI_RUN: "",
@@ -4823,32 +4849,43 @@ function _consolAccLeer() {
   var raw = _consolProps().getProperty("CONSOL_ACC");
   var d = { filas:0, cant:0, criticos:0, dups:0, erroresDet:0, excAud:0,
             leidas:0, regIncl:0, regDup:0, regVacias:0, reparados:0, maxColsReg:0 };
-  if (!raw) return d;
-  try { var o = JSON.parse(raw); for (var k in d) if (o[k] != null) d[k] = o[k]; } catch(e){}
+  if (raw) {
+    try { var o = JSON.parse(raw); for (var k in d) if (o[k] != null) d[k] = o[k]; } catch(e){}
+  }
+  if (_consolProps().getProperty("CONSOL_VERSION") === "5") {
+    var sh = _consolHojaCache(false);
+    var campos = ["filas", "cant", "criticos", "dups", "erroresDet", "excAud", "leidas", "regIncl", "regDup", "regVacias"];
+    campos.forEach(function(k) { d[k] = 0; });
+    if (sh && sh.getLastRow() > 1) {
+      sh.getRange(2, 6, sh.getLastRow() - 1, 1).getValues().forEach(function(r) {
+        if (!r[0]) return;
+        var aporte;
+        try { aporte = JSON.parse(r[0]); } catch(e) { throw _consolIntegridadError("Aporte de archivo ilegible en snapshot"); }
+        if (!aporte) return;
+        campos.forEach(function(k) {
+          var v = Number(aporte[k] || 0);
+          if (!isFinite(v)) throw _consolIntegridadError("Contador inválido en snapshot: " + k);
+          d[k] += v;
+        });
+      });
+    }
+  }
   return d;
 }
 
-function _consolAccSumar(delta, reparados, nextIdx) {
-  var a = _consolAccLeer();
-  a.filas      += delta.filas      || 0;
-  a.cant       += delta.cant       || 0;
-  a.criticos   += delta.criticos   || 0;
-  a.dups       += delta.dups       || 0;
-  a.erroresDet += delta.erroresDet || 0;
-  a.excAud     += delta.excAud     || 0;
-  a.leidas     += delta.leidas     || 0;
-  a.regIncl    += delta.regIncl    || 0;
-  a.regDup     += delta.regDup     || 0;
-  a.regVacias  += delta.regVacias  || 0;
-  if (reparados != null) a.reparados = reparados;
-  var props = { CONSOL_ACC: JSON.stringify(a) };
-  if (nextIdx != null) {
-    props.CONSOL_NEXT_IDX = String(nextIdx);
-    props.CONSOL_PROCESADOS = String(nextIdx);
-    props.CONSOL_STATUS = "EN_CURSO";
-    props.CONSOL_TS = String(Date.now());
+function _consolConfirmarLote(entries, desde, hasta, aportes, reparados) {
+  var sh = _consolHojaCache(false), filas = [];
+  for (var i = desde; i < hasta; i++) {
+    filas.push([JSON.stringify(aportes[entries[i].id] || null)]);
   }
-  _consolProps().setProperties(props, false);
+  if (filas.length) sh.getRange(desde + 2, 6, filas.length, 1).setValues(filas);
+  SpreadsheetApp.flush();
+  var a = _consolAccLeer();
+  if (reparados != null) a.reparados = reparados;
+  _consolProps().setProperties({
+    CONSOL_ACC: JSON.stringify(a), CONSOL_NEXT_IDX: String(hasta),
+    CONSOL_PROCESADOS: String(hasta), CONSOL_STATUS: "EN_CURSO", CONSOL_TS: String(Date.now())
+  }, false);
 }
 
 /* Devuelve el máximo corrido de columnas de REGISTRO entre lotes. */
@@ -4876,11 +4913,11 @@ function _consolSnapshotCrear(entries) {
   var sh = _consolHojaCache(true);
   sh.clear();
   var ahora = new Date();
-  var rows = [["idx","cliente","fileId","estado","timestamp"]];
+  var rows = [["idx","cliente","fileId","estado","timestamp","aporte_confirmado"]];
   for (var i = 0; i < entries.length; i++) {
-    rows.push([i, entries[i].cliente, entries[i].id || "", "PENDIENTE", ahora]);
+    rows.push([i, entries[i].cliente, entries[i].id || "", "PENDIENTE", ahora, ""]);
   }
-  sh.getRange(1, 1, rows.length, 5).setValues(rows);
+  sh.getRange(1, 1, rows.length, 6).setValues(rows);
 }
 
 function _consolSnapshotLeer() {
@@ -4923,9 +4960,15 @@ function _continuarConsolidacion() {
   var st = _consolEstadoLeer();
   if (st.STATUS !== "EN_CURSO") return;  // completado/cancelado → autodestrucción
 
+  var errorContinuacion = null;
   try {
-    _consolidarNucleo({ _continuacion: true });
+    var resultado = _consolidarNucleo({ _continuacion: true });
+    if (resultado && resultado.ocupado) {
+      Logger.log("Consolidación ocupada: otra ejecución conserva el lock; no se cuenta como estancamiento.");
+      return;
+    }
   } catch(e) {
+    errorContinuacion = e;
     Logger.log("FIX 8.33 _continuarConsolidacion error: " + e.message);
   }
 
@@ -4939,6 +4982,7 @@ function _continuarConsolidacion() {
     if (stalls >= 4) {
       p.setProperty("CONSOL_STATUS", "ERROR");
       Logger.log("FIX 8.33: consolidación detenida por estancamiento (4 intentos sin avance).");
+      if (errorContinuacion) throw errorContinuacion;
       return;
     }
     var yaProg = false;
@@ -4949,9 +4993,48 @@ function _continuarConsolidacion() {
     } catch(e){}
     if (!yaProg) { try { _programarContinuacionConsolidacion(); } catch(e){} }
   }
+  if (errorContinuacion) throw errorContinuacion;
 }
 
 /* ── Wrappers del dashboard para estado / control de la consolidación ──────── */
+/** Solo lectura. Ejecutar antes de cancelar/reiniciar para conservar evidencia. */
+function diagnosticarConsolidacionActual() {
+  var ss = _getSS(), estado = _consolEstadoLeer(), totales = _consolAccLeer();
+  var resultado = { estado: estado.STATUS, versionEstado: estado.VERSION,
+    procesados: estado.PROCESADOS, total: estado.TOTAL, contadores: totales,
+    filasReales: {}, filasPorFuentes: { INV: 0, REG: 0 }, criticosFilasDetalle: 0, criticosUnicos: 0,
+    criticosPorMotivo: {}, ejemplosCriticos: [] };
+  ["INVENTARIOS", "REGISTRO"].forEach(function(nombre) {
+    var sh = ss.getSheetByName(nombre);
+    resultado.filasReales[nombre] = sh ? Math.max(0, sh.getLastRow() - 1) : null;
+  });
+  var fuentes = ss.getSheetByName("__CONSOL_IDENTIDADES"), unicas = Object.create(null);
+  if (fuentes && fuentes.getLastRow() > 1) {
+    fuentes.getRange(2, 1, fuentes.getLastRow() - 1, 6).getValues().forEach(function(r) {
+      if (String(r[5]) === estado.RUN_TOKEN) unicas[r[0]] = r;
+    });
+    Object.keys(unicas).forEach(function(k) { var r = unicas[k]; resultado.filasPorFuentes[r[4]] += Number(r[3]) || 0; });
+  }
+  var det = ss.getSheetByName("ERRORES_VALIDACION_DETALLE"), criticosVistos = Object.create(null);
+  if (det && det.getLastRow() > 1) {
+    det.getRange(2, 1, det.getLastRow() - 1, 9).getValues().forEach(function(r) {
+      if (_consolNombreColumna(r[8]) !== "CRITICA") return;
+      resultado.criticosFilasDetalle++;
+      var clave = JSON.stringify([r[1], r[3], r[4], r[6]]);
+      if (criticosVistos[clave]) return;
+      criticosVistos[clave] = true;
+      resultado.criticosUnicos++;
+      var motivo = String(r[6] || "SIN_MOTIVO");
+      resultado.criticosPorMotivo[motivo] = (resultado.criticosPorMotivo[motivo] || 0) + 1;
+      if (resultado.ejemplosCriticos.length < 12) resultado.ejemplosCriticos.push({
+        cliente: r[0], archivo: r[1], fila: r[3], columna: r[4], motivo: motivo
+      });
+    });
+  }
+  Logger.log(JSON.stringify(resultado, null, 2));
+  return resultado;
+}
+
 function dash_estadoConsolidacion() {
   var st = _consolEstadoLeer();
   return {
