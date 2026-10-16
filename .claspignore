@@ -8,3 +8,9 @@ web/**
 node_modules/**
 .gitignore
 .claspignore
+
+# Pruebas locales Node: no pertenecen al runtime de Google.
+tests/**
+
+# Migraciones SQL: se ejecutan en Supabase, no en Apps Script.
+supabase/**

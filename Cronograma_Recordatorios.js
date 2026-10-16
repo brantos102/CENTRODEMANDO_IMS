@@ -802,7 +802,7 @@ function dash_repararPermisos(fileId) {
 
 /**
  * Ejecutable desde el editor de Apps Script con timeout extendido.
- * Procesa TODO el panel (modo tolerante, INV+REG) hasta 25 minutos.
+ * Procesa el panel por lotes (modo tolerante, INV+REG), con continuación automática.
  * Si se requieren más iteraciones, simplemente vuelve a correr la función
  * — la dedup global por hash evita duplicados, y la hoja ARCHIVOS_INACCESIBLES
  * acumula los problemas para reparación posterior.
@@ -810,7 +810,7 @@ function dash_repararPermisos(fileId) {
 function consolidarTodoDesdeEditor() {
   Logger.log("════════════════════════════════════════════════");
   Logger.log("FIX 8.31 CONSOLIDACIÓN MASIVA DESDE EDITOR");
-  Logger.log("Modo: TOLERANTE · Incluir: ALL · Timeout: 25 min");
+  Logger.log("Modo: TOLERANTE · Incluir: ALL · Lotes con continuación automática");
   Logger.log("════════════════════════════════════════════════");
   var resultado = consolidarConAuditoria({
     modo: "tolerante",
@@ -2665,9 +2665,9 @@ function instalarTriggersRecordatorios() {
    nombre. Llaman a las funciones del Código.gs viejo sin modificarlas.
    ========================================================================== */
 
-function dash_consolidarTodo()     { consolidarDatosFinal(false, "ALL"); return "ok"; }
-function dash_consolidarInv()      { consolidarDatosFinal(false, "INV"); return "ok"; }
-function dash_consolidarReg()      { consolidarDatosFinal(false, "REG"); return "ok"; }
+function dash_consolidarTodo()     { return consolidarDatosFinal(false, "ALL"); }
+function dash_consolidarInv()      { return consolidarDatosFinal(false, "INV"); }
+function dash_consolidarReg()      { return consolidarDatosFinal(false, "REG"); }
 function dash_preValidar()         { reportarErroresPrevio(); return "ok"; }
 function dash_limpiarDuplicados()  { limpiarHojaConsolidada(); return "ok"; }
 function dash_actualizarMetricas() { llenarDatosDesdeAnalisis(); return "ok"; }
@@ -3312,63 +3312,241 @@ function _detectarColumnasClave(headers) {
   return idx;
 }
 
-/* ==========================================================================
-   APILADO IDEMPOTENTE — un archivo no puede quedar dos veces
-   --------------------------------------------------------------------------
-   El apilado por lotes daba por hecho que el checkpoint siempre alcanzaba a
-   guardarse. No siempre: si la ejecución muere DESPUÉS de escribir un lote y
-   ANTES de guardar el índice, el watchdog la reanuda desde el índice viejo y
-   vuelve a apilar los mismos archivos. El archivo queda completo dos veces y
-   Power BI suma el doble — que es justo lo que se reportó.
+/* Una referencia de Drive solo se procesa una vez por corrida. No confundir
+   ese ID físico con el código de inventario (p.ej. 260227_SG) de las filas. */
+function _consolEntradasUnicas(entries) {
+  var vistos = Object.create(null);
+  return entries.filter(function(ent) {
+    var id = String(ent.id || "").trim();
+    if (!id || vistos[id]) return false;
+    vistos[id] = true;
+    ent.id = id;
+    return true;
+  });
+}
 
-   Afinar el checkpoint no basta: siempre queda una ventana entre escribir y
-   confirmar. La defensa es que volver a procesar un archivo sea inofensivo:
-   antes de apilar un lote se retiran las filas que esos mismos archivos
-   hubieran dejado antes. Reanudar REEMPLAZA en vez de sumar.
+/* Identidad del grupo que se reemplaza: código de inventario + cliente + sede
+   cuando esas columnas existen. Nunca SKU: un SKU puede tener varias líneas,
+   lotes, series, despachos y ubicaciones legítimas. */
+function _consolColumnasIdentidad(headers) {
+  var cols = { id: -1, cliente: -1, base: -1, origen: -1 };
+  (headers || []).forEach(function(h, i) {
+    var n = String(h || "").trim().toUpperCase();
+    if (n === "ID") cols.id = i;
+    if (n === "CLIENTE") cols.cliente = i;
+    if (n === "ORIGEN_DRIVE") cols.origen = i;
+    if (/^(BASE|SEDE|BODEGA)$/.test(n)) cols.base = i;
+  });
+  if (cols.id < 0) throw new Error("Consolidación detenida: falta la columna ID.");
+  return cols;
+}
 
-   La columna ID de la planilla (col C, que se propaga sola desde la fila 2)
-   identifica el archivo origen, y es la misma que Supabase guarda como
-   archivo_id. No hace falta añadir ninguna columna ni tocar el mapeo.
-   ========================================================================== */
-function _consolPurgarFilasDeArchivos(hoja, idsLote) {
-  if (!hoja || !idsLote || !idsLote.length) return 0;
+function _consolClaveInventario(row, cols) {
+  var id = String(row[cols.id] == null ? "" : row[cols.id]).trim();
+  if (!id) return "";
+  var clave = [id,
+    cols.cliente < 0 ? "" : String(row[cols.cliente] || "").trim(),
+    cols.base < 0 ? "" : String(row[cols.base] || "").trim()];
+  if (cols.origen >= 0) clave.push(String(row[cols.origen] || ""));
+  return JSON.stringify(clave);
+}
+
+/* Las filas REGISTRO sin ID también existen. Solo para ellas, el reintento
+   reemplaza las coincidencias exactas; conserva la multiplicidad del lote.
+   JSON evita colisiones entre celdas que contengan el separador de un hash. */
+function _consolClaveFilaSinId(row) {
+  var vals = row.map(function(v) { return v == null ? "" : String(v); });
+  while (vals.length && vals[vals.length - 1] === "") vals.pop();
+  return JSON.stringify(vals);
+}
+
+/* Preparar con las filas ORIGEN, no con los IDs largos del PANEL. Se valida
+   el esquema antes de borrar; una purga fallida debe abortar, nunca apilar. */
+function _consolPrepararReemplazo(hoja, filas, headers, fresco) {
+  if (!filas.length) return null;
+  var cols = _consolColumnasIdentidad(headers);
+  var destino = hoja.getLastRow() > 0
+    ? _consolColumnasIdentidad(hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0])
+    : cols;
+  ["id", "cliente", "base", "origen"].forEach(function(k) {
+    if (k === "origen" && fresco && destino[k] < 0) { destino[k] = cols[k]; return; }
+    if (destino[k] !== cols[k]) {
+      throw new Error("Consolidación detenida: columnas de identidad incompatibles en " + hoja.getName());
+    }
+  });
+  var claves = Object.create(null), sinId = Object.create(null);
+  filas.forEach(function(row) {
+    var clave = _consolClaveInventario(row, cols);
+    if (clave) claves[clave] = true;
+    else sinId[_consolClaveFilaSinId(row)] = true;
+  });
+  return { cols: destino, claves: claves, sinId: sinId };
+}
+
+function _consolPurgarFilasDelLote(hoja, plan) {
+  if (!plan || hoja.getLastRow() < 2) return 0;
   var ultima = hoja.getLastRow();
-  if (ultima < 2) return 0;
-
-  // Columna ID por nombre. Si la hoja no la tiene, no se toca nada.
-  var head = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0];
-  var colId = -1;
-  for (var i = 0; i < head.length; i++) {
-    if (String(head[i] || "").trim().toUpperCase() === "ID") { colId = i + 1; break; }
-  }
-  if (colId < 1) return 0;
-
-  var buscar = {}, hay = false;
-  for (var k = 0; k < idsLote.length; k++) {
-    var s = String(idsLote[k] || "").trim();
-    if (s) { buscar[s] = true; hay = true; }
-  }
-  if (!hay) return 0;
-
-  var col = hoja.getRange(2, colId, ultima - 1, 1).getValues();
-
-  // Las filas de un archivo se apilaron juntas: se agrupan en bloques contiguos
-  // y se borran de abajo hacia arriba, para que el borrado no desplace lo que
-  // aún falta por borrar.
+  var cols = plan.cols;
+  // Sin IDs vacíos solo hacen falta las columnas de identidad, no las 30+
+  // columnas completas de las ~180k filas del consolidado.
+  var ancho = Object.keys(plan.sinId).length ? hoja.getLastColumn()
+    : Math.max(cols.id, cols.cliente, cols.base, cols.origen) + 1;
+  var rows = hoja.getRange(2, 1, ultima - 1, ancho).getValues();
   var bloques = [], ini = -1, n = 0;
-  for (var r = 0; r < col.length; r++) {
-    if (buscar[String(col[r][0] || "").trim()]) {
-      if (ini < 0) { ini = r + 2; n = 1; } else { n++; }
+  for (var r = 0; r < rows.length; r++) {
+    var clave = _consolClaveInventario(rows[r], cols);
+    var coincide = clave ? plan.claves[clave] : plan.sinId[_consolClaveFilaSinId(rows[r])];
+    if (coincide) {
+      if (ini < 0) { ini = r + 2; n = 1; } else n++;
     } else if (ini >= 0) { bloques.push([ini, n]); ini = -1; n = 0; }
   }
   if (ini >= 0) bloques.push([ini, n]);
-
   var borradas = 0;
   for (var b = bloques.length - 1; b >= 0; b--) {
     hoja.deleteRows(bloques[b][0], bloques[b][1]);
     borradas += bloques[b][1];
   }
   return borradas;
+}
+
+/* Registro persistente por corrida: permite reconocer una copia física aun
+   cuando el archivo original se procesó en un lote anterior. */
+function _consolIntegridadError(mensaje) {
+  var e = new Error(mensaje);
+  e.integridadConsolidacion = true;
+  return e;
+}
+
+function _consolRegistroFuentes(fresco) {
+  var ss = _getSS(), nombre = "__CONSOL_IDENTIDADES";
+  var sh = ss.getSheetByName(nombre);
+  if (!sh) sh = ss.insertSheet(nombre);
+  if (fresco) {
+    sh.clear();
+    sh.appendRow(["Clave", "Firma", "Archivo Drive", "Filas", "Tabla", "Corrida"]);
+    sh.hideSheet();
+  }
+  var run = _consolProps().getProperty("CONSOL_RUN_TOKEN") || "";
+  var registro = { hoja: sh, run: run, mapa: Object.create(null), pendientes: [] };
+  if (!fresco && sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues().forEach(function(r) {
+      if (String(r[5]) !== run) throw _consolIntegridadError("Registro de fuentes de otra corrida; reinicia la consolidación.");
+      registro.mapa[r[0]] = r;
+    });
+  }
+  return registro;
+}
+
+function _consolFirmaFilas(filas) {
+  var texto = filas.map(_consolClaveFilaSinId).sort().join("\n");
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, texto,
+    Utilities.Charset.UTF_8).map(function(b) { return ("0" + ((b + 256) % 256).toString(16)).slice(-2); }).join("");
+}
+
+/* Decisiones del usuario sobre los adjuntos del 15/10/2026. No se infieren
+   versiones por fechas ni se mezclan cantidades de fuentes contradictorias. */
+function _consolClaveFuente(row, cols, tabla, archivo) {
+  var codigo = String(row[cols.id] || "").trim().toUpperCase();
+  var cliente = cols.cliente < 0 ? "" : String(row[cols.cliente] || "").trim().toUpperCase();
+  if (codigo === "260907_VENTURA" && cliente === "VENTURA") {
+    throw _consolIntegridadError("VENTURA 260907_VENTURA bloqueado por decisión del usuario: revisar los archivos de 53 y 64 filas antes de publicar KPI.");
+  }
+  var identidad = _consolClaveInventario(row, cols);
+  var distinta = codigo === "250724_IBM" && cliente === "IBM";
+  return JSON.stringify([tabla, identidad || ("sin-id:" + archivo), distinta ? archivo : ""]);
+}
+
+function _consolConOrigen(filas, headers, archivo) {
+  if (!filas.length) return [];
+  var ancho = headers.length;
+  return filas.map(function(row) {
+    var r = row.slice();
+    if (r.length > ancho) throw _consolIntegridadError("Columnas sin encabezado en " + archivo);
+    while (r.length < ancho) r.push("");
+    r.push(archivo);
+    return r;
+  });
+}
+
+function _consolFiltrarFuentes(filas, headers, tabla, archivo, registro) {
+  if (!filas.length) return { filas: [], omitidas: 0, copias: [] };
+  var cols = _consolColumnasIdentidad(headers), grupos = Object.create(null);
+  filas.forEach(function(row) {
+    // Sin código no se adivina que dos eventos de archivos diferentes son uno.
+    var key = _consolClaveFuente(row, cols, tabla, archivo);
+    if (!grupos[key]) grupos[key] = [];
+    grupos[key].push(row);
+  });
+  var aceptar = Object.create(null), copias = [], omitidas = 0;
+  Object.keys(grupos).forEach(function(key) {
+    var grupo = grupos[key], firma = _consolFirmaFilas(grupo), previo = registro.mapa[key];
+    if (previo && previo[1] !== firma) {
+      throw _consolIntegridadError("Inventario con contenido contradictorio: " + key +
+        ". Archivos " + previo[2] + " y " + archivo + ". Revisa las fuentes antes de publicar KPI.");
+    }
+    if (previo && previo[2] !== archivo) {
+      omitidas += grupo.length;
+      copias.push({ clave: key, original: previo[2], filas: grupo.length });
+      return;
+    }
+    aceptar[key] = true;
+    if (!previo) {
+      var r = [key, firma, archivo, grupo.length, tabla, registro.run];
+      registro.mapa[key] = r;
+      registro.pendientes.push(r);
+    }
+  });
+  return { filas: filas.filter(function(row) {
+    return aceptar[_consolClaveFuente(row, cols, tabla, archivo)];
+  }), omitidas: omitidas, copias: copias };
+}
+
+function _consolGuardarFuentes(registro) {
+  if (registro.pendientes.length) {
+    registro.hoja.getRange(registro.hoja.getLastRow() + 1, 1,
+      registro.pendientes.length, 6).setValues(registro.pendientes);
+    SpreadsheetApp.flush();
+  }
+}
+
+/* La auditoría también se reemplaza al repetir un lote. */
+function _consolPurgarAuditoria(hoja, columna, ids) {
+  if (!hoja || hoja.getLastRow() < 2) return;
+  var buscar = Object.create(null);
+  ids.forEach(function(id) { buscar[id] = true; });
+  var rows = hoja.getRange(2, 1, hoja.getLastRow() - 1, columna + 1).getValues();
+  var bloques = [], inicio = -1;
+  for (var i = 0; i <= rows.length; i++) {
+    var quitar = i < rows.length && (buscar[String(rows[i][columna])] || rows[i][0] === "TOTAL");
+    if (quitar && inicio < 0) inicio = i;
+    if (!quitar && inicio >= 0) { bloques.push([inicio + 2, i - inicio]); inicio = -1; }
+  }
+  for (var j = bloques.length - 1; j >= 0; j--) hoja.deleteRows(bloques[j][0], bloques[j][1]);
+}
+
+function _consolVerificarCierre(ss, incluir, totales, registro) {
+  var errores = [];
+  if (totales.criticos > 0) errores.push("hay " + totales.criticos + " errores críticos de validación");
+  [["INV", "INVENTARIOS", totales.filas, "AUDITORIA_CONSOLIDACION"],
+   ["REG", "REGISTRO", totales.regIncl, "AUDITORIA_REGISTRO"]].forEach(function(cfg) {
+    if (incluir !== "ALL" && incluir !== cfg[0]) return;
+    var sh = ss.getSheetByName(cfg[1]);
+    var reales = sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+    var esperadas = Object.keys(registro.mapa).reduce(function(n, key) {
+      var r = registro.mapa[key]; return n + (r[4] === cfg[0] ? Number(r[3]) : 0);
+    }, 0);
+    if (reales !== totales[cfg[0] === "INV" ? "filas" : "regIncl"] || reales !== esperadas) {
+      errores.push(cfg[1] + ": filas=" + reales + ", confirmadas=" + cfg[2] + ", fuentes=" + esperadas);
+    }
+    var aud = ss.getSheetByName(cfg[3]);
+    if (aud && aud.getLastRow() > 1) {
+      var datos = aud.getRange(2, 1, aud.getLastRow() - 1, cfg[0] === "INV" ? 11 : 9).getValues();
+      if (datos.some(function(r) { return String(r[r.length - 1]).indexOf("Error") >= 0; })) {
+        errores.push(cfg[1] + ": hay archivos sin procesar en la auditoría");
+      }
+    }
+  });
+  if (errores.length) throw _consolIntegridadError("KPI no validado: " + errores.join("; "));
 }
 
 function consolidarConAuditoria(opciones) {
@@ -3469,6 +3647,7 @@ function generarLogConsolidacion() {
 }
 
 function _consolidarNucleo(opciones) {
+  var tInicio = Date.now();
   // FIX FASE 8.16: acepta opciones = { modo: 'tolerante'|'estricto'|'reporte_solo' }
   // FIX FASE 8.17: acepta opciones = { incluir: 'INV'|'REG'|'ALL' } (default 'ALL')
   opciones = opciones || {};
@@ -3498,6 +3677,9 @@ function _consolidarNucleo(opciones) {
     // ── FIX FASE 8.33: determinar arranque fresco vs. reanudación ────────────
     var estPrev = _consolEstadoLeer();
     var debeReanudar = false;
+    if (esContinuacion && estPrev.STATUS === "EN_CURSO" && estPrev.VERSION !== "2") {
+      throw _consolIntegridadError("La corrida pendiente usa el código anterior. Cancélala y comienza una consolidación nueva.");
+    }
     if (estPrev.STATUS === "EN_CURSO") {
       if (esContinuacion) {
         // El trigger reanuda desde el checkpoint.
@@ -3575,6 +3757,7 @@ function _consolidarNucleo(opciones) {
           });
         }
       }
+      entries = _consolEntradasUnicas(entries);
       if (entries.length === 0) {
         _consolEstadoReset();
         return { ok:false, mensaje:"No hay archivos 'Entregado' en el Panel." };
@@ -3592,6 +3775,11 @@ function _consolidarNucleo(opciones) {
         return { ok:false, mensaje:"No hay snapshot de consolidación para reanudar." };
       }
     }
+
+    if (esFresh && !esBatch) {
+      _consolEstadoIniciar({ total: entries.length, modo: modo, incluir: incluir, ctx: ctx });
+    }
+    var registroFuentes = _consolRegistroFuentes(esFresh);
 
     // FIX FASE 8.32: auto-reparación proactiva de archivos inaccesibles previos.
     // Si en ejecuciones anteriores quedaron archivos en ARCHIVOS_INACCESIBLES,
@@ -3641,14 +3829,10 @@ function _consolidarNucleo(opciones) {
     var totalFilasRegVacias = 0;
     var hashesGlobalesReg = {}; // dedup entre archivos (registro suele tener id único por evento)
 
-    // FIX FASE 8.31/8.33: presupuesto de tiempo por lote.
-    // - Continuación por trigger: 5 min (seguro bajo el límite duro; la cadena
-    //   .after(90s) cubre cualquier volumen sin riesgo de timeout abrupto).
-    // - Web App fresco: 5 min · Editor fresco: 25 min (cuenta Workspace).
-    var tInicio = Date.now();
-    var LIMITE_MS = esContinuacion
-      ? (5 * 60 * 1000)
-      : ((ctx === "web") ? 5 * 60 * 1000 : 25 * 60 * 1000);
+    // Presupuesto único para editor, Web App y continuaciones.
+    // Reservar tiempo para escribir/confirmar antes del límite de Apps Script.
+    // Ejecutar desde el editor no garantiza 25 minutos disponibles.
+    var LIMITE_MS = 3.5 * 60 * 1000;
     var archivosOmitidosPorTiempo = 0;
     var archivoActual = 0;
     // FIX 8.31: progreso visible en log cada N archivos
@@ -3659,7 +3843,12 @@ function _consolidarNucleo(opciones) {
     var seAgotoTiempo = false;
     var nextIdx = entries.length;   // por defecto: se procesó todo
 
+    var archivosVistos = Object.create(null);
     entries.forEach(function(ent, idxEnt){
+      // También protege snapshots creados por versiones anteriores sin mover
+      // sus índices de checkpoint.
+      if (ent.id && archivosVistos[ent.id]) return;
+      if (ent.id) archivosVistos[ent.id] = true;
       archivoActual = idxEnt + 1;
       // FIX FASE 8.33: saltar lo ya procesado en lotes previos.
       if (idxEnt < startIdx) return;
@@ -3692,6 +3881,10 @@ function _consolidarNucleo(opciones) {
       // lo registramos en la auditoría, y CONTINUAMOS con los demás archivos.
       // Antes una sola excepción no atrapada cortaba TODA la consolidación
       // (causa del error "No cuentas con el permiso necesario..." visto en log).
+      var inicioDatos = todosLosDatos.length, inicioReg = todosLosRegistros.length;
+      var cantidadAntes = sumTotalCant, filasAntes = sumTotalFilas;
+      var regAntes = totalFilasRegIncluidas;
+      var auditAntes = auditRows.length, auditRegAntes = auditRegRows.length;
       try {
 
       var op = safeOpenSpreadsheet(ent.id);
@@ -3777,6 +3970,7 @@ function _consolidarNucleo(opciones) {
         }
 
         // ── Check 3: Cantidad
+        var numCant = 0;
         if (colCant !== null && colCant >= 0) {
           var v = row[colCant];
           if (valueNotEmpty(v) && !esNumeroValido(v)) {
@@ -3787,7 +3981,7 @@ function _consolidarNucleo(opciones) {
               "EXCLUIDA", "CRÍTICA"]);
             return;
           }
-          var numCant = esNumeroValido(v) ? parseFloat(String(v).replace(",", ".")) : 0;
+          numCant = esNumeroValido(v) ? parseFloat(String(v).replace(",", ".")) : 0;
           if (esNumeroValido(v) && numCant === 0) {
             exc++; conteoMotivos["CANTIDAD_CERO"] = (conteoMotivos["CANTIDAD_CERO"]||0) + 1;
             erroresDetalle.push([ent.cliente, ent.id, linkArchivo, filaOrigen,
@@ -3795,7 +3989,6 @@ function _consolidarNucleo(opciones) {
               "EXCLUIDA (conteo no realizado)", "MEDIA"]);
             return;
           }
-          sumCant += numCant;
         }
 
         // ── Check 4: Deduplicación intra-archivo
@@ -3814,6 +4007,7 @@ function _consolidarNucleo(opciones) {
         skus[String(sku).trim().toUpperCase()] = true;
         if (row[colsClave.posicion]) poss[String(row[colsClave.posicion]).trim().toUpperCase()] = true;
         inc++;
+        sumCant += numCant;  // solo cantidades de filas efectivamente incluidas
         todosLosDatos.push(row);
       });
 
@@ -3918,8 +4112,52 @@ function _consolidarNucleo(opciones) {
         }
       }
 
+      // Comparar contenido completo, después de validar las filas del archivo.
+      var invNuevas = _stringificarFechasFinales(todosLosDatos.slice(inicioDatos));
+      var regNuevas = _stringificarFechasFinales(todosLosRegistros.slice(inicioReg));
+      var fi = _consolFiltrarFuentes(invNuevas, headersInv, "INV", ent.id, registroFuentes);
+      var fr = _consolFiltrarFuentes(regNuevas, headersReg, "REG", ent.id, registroFuentes);
+      todosLosDatos.length = inicioDatos;
+      _consolConOrigen(fi.filas, headersInv, ent.id).forEach(function(row) { todosLosDatos.push(row); });
+      todosLosRegistros.length = inicioReg;
+      _consolConOrigen(fr.filas, headersReg, ent.id).forEach(function(row) { todosLosRegistros.push(row); });
+      sumTotalFilas = filasAntes + fi.filas.length;
+      totalFilasRegIncluidas = regAntes + fr.filas.length;
+      if (fi.omitidas) {
+        sumTotalCant = cantidadAntes + fi.filas.reduce(function(n, row) {
+          return n + (colCant >= 0 && esNumeroValido(row[colCant]) ? parseFloat(String(row[colCant]).replace(",", ".")) : 0);
+        }, 0);
+        totalDuplicados += fi.omitidas;
+      }
+      totalDuplicadosReg += fr.omitidas;
+      [[fi, auditRows, 10], [fr, auditRegRows, 8]].forEach(function(config) {
+        var resultado = config[0];
+        if (!resultado.omitidas) return;
+        config[1].forEach(function(r) {
+          if (r[2] !== ent.id) return;
+          r[4] = resultado.filas.length;
+          r[5] += resultado.omitidas;
+          r[6] = "COPIA_IDENTICA_ENTRE_ARCHIVOS";
+          r[config[2]] = resultado.filas.length ? "✅ OK (copia parcial excluida)" : "⚠️ Copia excluida";
+          if (config[2] === 10) r[7] = sumTotalCant - cantidadAntes;
+        });
+        resultado.copias.forEach(function(copia) {
+          erroresDetalle.push([ent.cliente, ent.id, linkArchivo, "—", "—", copia.filas,
+            "COPIA_IDENTICA_ENTRE_ARCHIVOS: original " + copia.original,
+            "EXCLUIDA (contenido completo idéntico)", "MEDIA"]);
+        });
+      });
+
       // FIX FASE 8.30: cierre del try/catch defensivo por archivo
       } catch (errArchivo) {
+        if (errArchivo.integridadConsolidacion) throw errArchivo;
+        todosLosDatos.length = inicioDatos;
+        todosLosRegistros.length = inicioReg;
+        sumTotalCant = cantidadAntes;
+        sumTotalFilas = filasAntes;
+        totalFilasRegIncluidas = regAntes;
+        auditRows.length = auditAntes;
+        auditRegRows.length = auditRegAntes;
         // CUALQUIER fallo no controlado dentro del procesamiento de este archivo
         // (permisos, hoja borrada, timeout intermedio en una llamada, formato corrupto)
         // se registra y se sigue con el siguiente — la consolidación NUNCA se aborta
@@ -3940,6 +4178,13 @@ function _consolidarNucleo(opciones) {
     // ── FIX FASE 8.33: contadores de auditoría de ESTE lote ──────────────────
     var leidasLote = auditRows.reduce(function(a,r){ return a + (Number(r[3])||0); }, 0);
     var excAudLote = auditRows.reduce(function(a,r){ return a + (Number(r[5])||0); }, 0);
+
+    var idsAuditoriaLote = entries.slice(startIdx, nextIdx).map(function(e) { return e.id; });
+    if (!esFresh) {
+      _consolPurgarAuditoria(detErr, 1, idsAuditoriaLote);
+      _consolPurgarAuditoria(aud, 2, idsAuditoriaLote);
+      _consolPurgarAuditoria(audReg, 2, idsAuditoriaLote);
+    }
 
     // Pintar reporte de errores con hipervínculos al archivo origen (APPEND por lote)
     if (erroresDetalle.length > 0) {
@@ -4010,26 +4255,21 @@ function _consolidarNucleo(opciones) {
       };
     }
 
-    // ── FIX FASE 8.33: acumular contadores de ESTE lote en el estado persistido
-    //    (batch) y marcar los archivos del lote como PROCESADO en el snapshot.
-    if (esBatch) {
-      _consolAccSumar({
-        filas: sumTotalFilas, cant: sumTotalCant, criticos: totalCriticos,
-        dups: totalDuplicados, erroresDet: erroresDetalle.length,
-        excAud: excAudLote, leidas: leidasLote,
-        regIncl: totalFilasRegIncluidas, regDup: totalDuplicadosReg, regVacias: totalFilasRegVacias
-      }, esFresh ? reparadosAuto : null);
-      _consolSnapshotMarcarRango(startIdx, nextIdx, "PROCESADO");
-    }
-
     // ── Escribir INVENTARIOS — tolerante/estricto (reporte_solo nunca escribe) ─
     //    FIX FASE 8.33: APPEND por lote. Solo el arranque fresco limpia la fila 2+.
-    // IDs de los archivos de ESTE lote: la llave para que reanudar reemplace.
-    var _idsLote = [];
-    for (var _il = startIdx; _il < nextIdx && _il < entries.length; _il++) {
-      var _eid = String((entries[_il] || {}).id || "").trim();
-      if (_eid) _idsLote.push(_eid);
+    if (headersInv) headersInv = headersInv.concat(["ORIGEN_DRIVE"]);
+    if (headersReg) headersReg = headersReg.concat(["ORIGEN_DRIVE"]);
+    // Comparar exactamente la representación que se escribe en Sheets.
+    todosLosDatos = _stringificarFechasFinales(todosLosDatos);
+    todosLosRegistros = _stringificarFechasFinales(todosLosRegistros);
+    // Validar ambos destinos ANTES de modificar cualquiera de ellos.
+    var planInv = null, planReg = null;
+    if (modo !== "reporte_solo") {
+      if (procInv) planInv = _consolPrepararReemplazo(inv, todosLosDatos, headersInv, esFresh);
+      if (procReg && reg) planReg = _consolPrepararReemplazo(reg, todosLosRegistros, headersReg, esFresh);
     }
+
+    _consolGuardarFuentes(registroFuentes);
 
     if (modo !== "reporte_solo" && procInv) {
       if (esFresh && inv.getLastRow() > 1) {
@@ -4038,16 +4278,12 @@ function _consolidarNucleo(opciones) {
       } else if (!esFresh) {
         // Reanudación: si este lote ya había escrito antes de morir sin guardar
         // el checkpoint, sus filas se retiran para no apilarlas dos veces.
-        try {
-          var _purgInv = _consolPurgarFilasDeArchivos(inv, _idsLote);
-          if (_purgInv) Logger.log("Consolidación: " + _purgInv +
-            " fila(s) de INVENTARIOS reemplazadas al reanudar (apilado idempotente).");
-        } catch (ePI) { Logger.log("Purga INVENTARIOS falló: " + ePI.message); }
+        var _purgInv = _consolPurgarFilasDelLote(inv, planInv);
+        if (_purgInv) Logger.log("Consolidación: " + _purgInv +
+          " fila(s) de INVENTARIOS reemplazadas al reanudar (apilado idempotente).");
       }
-      // Capa 3: stringificar cualquier Date que aún quede
-      todosLosDatos = _stringificarFechasFinales(todosLosDatos);
-
-      if (headersInv && inv.getLastRow() === 0) {
+      if (headersInv && (esFresh || inv.getLastRow() === 0)) {
+        ensureColumns(inv, headersInv.length);
         inv.getRange(1, 1, 1, headersInv.length).setValues([headersInv])
            .setFontWeight("bold");
       }
@@ -4066,14 +4302,14 @@ function _consolidarNucleo(opciones) {
         reg.getRange(2, 1, reg.getLastRow() - 1, reg.getLastColumn()).clearContent();
         SpreadsheetApp.flush();
       } else if (!esFresh) {
-        try {
-          var _purgReg = _consolPurgarFilasDeArchivos(reg, _idsLote);
-          if (_purgReg) Logger.log("Consolidación: " + _purgReg +
-            " fila(s) de REGISTRO reemplazadas al reanudar (apilado idempotente).");
-        } catch (ePR) { Logger.log("Purga REGISTRO falló: " + ePR.message); }
+        var _purgReg = _consolPurgarFilasDelLote(reg, planReg);
+        if (_purgReg) Logger.log("Consolidación: " + _purgReg +
+          " fila(s) de REGISTRO reemplazadas al reanudar (apilado idempotente).");
       }
-      todosLosRegistros = _stringificarFechasFinales(todosLosRegistros);
-
+      if (headersReg && esFresh) {
+        ensureColumns(reg, headersReg.length);
+        reg.getRange(1, 1, 1, headersReg.length).setValues([headersReg]);
+      }
       // Normalizar ancho de columnas (las hojas REGISTRO pueden tener filas con
       // ancho desigual). Calculamos el máximo y rellenamos con vacíos.
       if (todosLosRegistros.length > 0) {
@@ -4086,7 +4322,8 @@ function _consolidarNucleo(opciones) {
           return r.slice(0, maxColsReg);
         });
 
-        if (headersReg && reg.getLastRow() === 0) {
+        if (headersReg && (esFresh || reg.getLastRow() === 0)) {
+          ensureColumns(reg, headersReg.length);
           // Pad headers a maxColsReg
           while (headersReg.length < maxColsReg) headersReg.push("");
           reg.getRange(1, 1, 1, headersReg.length).setValues([headersReg])
@@ -4179,13 +4416,16 @@ function _consolidarNucleo(opciones) {
       Logger.log("FIX 8.31 ARCHIVOS_INACCESIBLES: " + eInac.message);
     }
 
-    // El checkpoint se guarda en cuanto el lote QUEDÓ ESCRITO, no solo cuando se
-    // agota el tiempo. Antes, una ejecución cortada por el límite duro dejaba el
-    // índice viejo y el watchdog reprocesaba el lote; con el apilado idempotente
-    // eso ya no duplica, pero tampoco tiene por qué repetirse el trabajo.
+    // Confirmar contadores e índice juntos DESPUÉS de ambas escrituras. Si
+    // una escritura falla, el reintento reemplaza las filas y no suma dos veces.
     if (esBatch) {
-      try { _consolEstadoCheckpoint(nextIdx); }
-      catch (eCk) { Logger.log("No se pudo guardar el checkpoint: " + eCk.message); }
+      _consolAccSumar({
+        filas: sumTotalFilas, cant: sumTotalCant, criticos: totalCriticos,
+        dups: totalDuplicados, erroresDet: erroresDetalle.length,
+        excAud: excAudLote, leidas: leidasLote,
+        regIncl: totalFilasRegIncluidas, regDup: totalDuplicadosReg, regVacias: totalFilasRegVacias
+      }, esFresh ? reparadosAuto : null, nextIdx);
+      _consolSnapshotMarcarRango(startIdx, nextIdx, "PROCESADO");
     }
 
     // ── FIX FASE 8.33: ¿quedan archivos pendientes? → checkpoint + trigger ────
@@ -4242,6 +4482,8 @@ function _consolidarNucleo(opciones) {
       regVacias: totalFilasRegVacias, reparados: reparadosAuto
     };
 
+    if (modo !== "reporte_solo") _consolVerificarCierre(ss, incluir, G, registroFuentes);
+
     // ── MODO REPORTE_SOLO: no escribe INVENTARIOS ni REGISTRO, sólo reporta ───
     if (modo === "reporte_solo") {
       if (esBatch) _consolEstadoFinalizar("COMPLETADO");
@@ -4289,7 +4531,14 @@ function _consolidarNucleo(opciones) {
       aud.autoResizeColumns(1, 11);
     }
 
-    if (esBatch) _consolEstadoFinalizar("COMPLETADO");
+    _consolEstadoFinalizar("COMPLETADO");
+
+    if (procInv) _consolProps().setProperties({
+      CONSOL_KPI_RUN: registroFuentes.run, CONSOL_KPI_FILAS: String(G.filas)
+    }, false);
+    if (procReg) _consolProps().setProperties({
+      CONSOL_KPI_REG_RUN: registroFuentes.run, CONSOL_KPI_REG_FILAS: String(G.regIncl)
+    }, false);
 
     // FIX FASE 8.16 + 8.17: mensaje detallado por sección
     var partes = ["✅ Consolidación finalizada (modo " + modo.toUpperCase() + ", incluir " + incluir + "):",
@@ -4340,6 +4589,10 @@ function _consolidarNucleo(opciones) {
 
   } catch (e) {
     // FIX FASE 8.10: no usar getUi en catch, lanzar para que dash_ lo capture
+    if (e.integridadConsolidacion) {
+      _consolProps().setProperties({ CONSOL_STATUS: "ERROR", CONSOL_KPI_RUN: "" }, false);
+      _borrarWatchdogConsolidacion();
+    }
     Logger.log("Error consolidarConAuditoria: " + e.message);
     throw new Error("Error en consolidación: " + e.message);
   } finally {
@@ -4365,6 +4618,7 @@ function _consolEstadoLeer() {
   var p = _consolProps();
   return {
     RUN_TOKEN:  p.getProperty("CONSOL_RUN_TOKEN") || "",
+    VERSION: p.getProperty("CONSOL_VERSION") || "",
     STATUS:     p.getProperty("CONSOL_STATUS") || "IDLE",
     NEXT_IDX:   parseInt(p.getProperty("CONSOL_NEXT_IDX") || "0", 10),
     TOTAL:      parseInt(p.getProperty("CONSOL_TOTAL") || "0", 10),
@@ -4385,6 +4639,9 @@ function _consolHeartbeatVivo(ts) {
 function _consolEstadoIniciar(o) {
   _consolProps().setProperties({
     CONSOL_RUN_TOKEN: Utilities.getUuid(),
+    CONSOL_VERSION: "2",
+    CONSOL_KPI_RUN: "",
+    CONSOL_KPI_REG_RUN: "",
     CONSOL_STATUS:    "EN_CURSO",
     CONSOL_NEXT_IDX:  "0",
     CONSOL_TOTAL:     String(o.total),
@@ -4423,7 +4680,7 @@ function _borrarWatchdogConsolidacion() {
 function _watchdogConsolidacion() {
   var st = _consolEstadoLeer();
   if (st.STATUS !== "EN_CURSO") { _borrarWatchdogConsolidacion(); return; }
-  if (st.NEXT_IDX >= st.TOTAL) return; // el ciclo COMPLETADO lo cerrará
+  // Un corte después del último checkpoint también necesita cerrar/validar.
   // ¿heartbeat frío? (nadie avanzó en >4 min → el trigger one-time se perdió)
   if ((Date.now() - st.TS) < (4 * 60 * 1000)) return;
   var yaProg = false;
@@ -4477,7 +4734,7 @@ function _consolAccLeer() {
   return d;
 }
 
-function _consolAccSumar(delta, reparados) {
+function _consolAccSumar(delta, reparados, nextIdx) {
   var a = _consolAccLeer();
   a.filas      += delta.filas      || 0;
   a.cant       += delta.cant       || 0;
@@ -4490,7 +4747,14 @@ function _consolAccSumar(delta, reparados) {
   a.regDup     += delta.regDup     || 0;
   a.regVacias  += delta.regVacias  || 0;
   if (reparados != null) a.reparados = reparados;
-  _consolProps().setProperty("CONSOL_ACC", JSON.stringify(a));
+  var props = { CONSOL_ACC: JSON.stringify(a) };
+  if (nextIdx != null) {
+    props.CONSOL_NEXT_IDX = String(nextIdx);
+    props.CONSOL_PROCESADOS = String(nextIdx);
+    props.CONSOL_STATUS = "EN_CURSO";
+    props.CONSOL_TS = String(Date.now());
+  }
+  _consolProps().setProperties(props, false);
 }
 
 /* Devuelve el máximo corrido de columnas de REGISTRO entre lotes. */
@@ -4573,7 +4837,7 @@ function _continuarConsolidacion() {
 
   // Salvaguarda: si sigue EN_CURSO con pendientes y nadie reprogramó, reintentar.
   var st2 = _consolEstadoLeer();
-  if (st2.STATUS === "EN_CURSO" && st2.NEXT_IDX < st2.TOTAL) {
+  if (st2.STATUS === "EN_CURSO") {
     var avanzo = st2.NEXT_IDX > st.NEXT_IDX;
     var p = _consolProps();
     var stalls = avanzo ? 0 : (parseInt(p.getProperty("CONSOL_STALLS") || "0", 10) + 1);
@@ -8769,122 +9033,10 @@ function mostrarMenuConsolidacion() {
 }
 
 function consolidarDatosFinal(soloReporte, tipo) {
-  tipo = tipo || 'ALL';
-  var procInv = (tipo==='ALL'||tipo==='INV'), procReg = (tipo==='ALL'||tipo==='REG');
-  var lock = LockService.getScriptLock(); 
-  if(!lock.tryLock(45000)) { SpreadsheetApp.getUi().alert("Sistema ocupado."); return; }
-
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet(), ui = SpreadsheetApp.getUi();
-    var p = ss.getSheetByName("PANEL DE CONTROL"), inv = ss.getSheetByName("INVENTARIOS"), reg = ss.getSheetByName("REGISTRO");
-    var errSh = ss.getSheetByName("ERRORES_VALIDACION") || ss.insertSheet("ERRORES_VALIDACION");
-    
-    errSh.clear(); errSh.appendRow(["Fecha","Cliente","ID","Fila","Valor","Col","Nota"]);
-    errSh.getRange("A1:G1").setFontWeight("bold").setBackground("#f4cccc");
-
-    if(!soloReporte) {
-      if(procInv && inv.getLastRow()>1) inv.getRange(2,1,inv.getLastRow()-1,inv.getLastColumn()).clearContent();
-      if(procReg && reg.getLastRow()>1) reg.getRange(2,1,reg.getLastRow()-1,reg.getLastColumn()).clearContent();
-    }
-
-    var data = p.getRange("A2:G"+p.getLastRow()).getValues();
-    var entries = [];
-    for(var i=0; i<data.length; i++) {
-      if(String(data[i][6]).toLowerCase().trim() === "entregado") {
-        entries.push({ cliente: data[i][0], id: extractIdFromUrl(data[i][2]) });
-      }
-    }
-
-    if(entries.length===0) { ui.alert("No hay archivos 'Entregado'."); return; }
-
-    var dInv=[], dReg=[], errs=[], headers=null;
-
-    for(var idx=0; idx<entries.length; idx++) {
-      var ent = entries[idx];
-      if(!ent.id) continue;
-      
-      var ap = safeOpenSpreadsheet(ent.id);
-      if(!ap.ss) { errs.push([new Date(), ent.cliente, ent.id, "-", "Error abrir: "+ap.error, "-", "-"]); continue; }
-      var ssFile = ap.ss;
-
-      if(procInv || soloReporte) {
-        var shC = ssFile.getSheetByName("PLANILLA DE CONTEO FISICO");
-        if(shC && shC.getLastRow()>0) {
-          var lastCol = shC.getLastColumn();
-          if(!headers) headers = shC.getRange(1,1,1,lastCol).getValues()[0];
-          
-          if(shC.getLastRow()>1) {
-            var vRaw = shC.getRange(2,1,shC.getLastRow()-1,lastCol).getValues();
-            // FIX FASE 8.14: usar displayValues del origen para evitar shift TZ
-            var vRawDisp = shC.getRange(2,1,shC.getLastRow()-1,lastCol).getDisplayValues();
-            vRaw = _normalizarFechasMatriz(vRaw, vRawDisp);
-            if (headers) {
-              var headersDisp = shC.getRange(1,1,1,lastCol).getDisplayValues();
-              headers = _normalizarFechasMatriz([headers], headersDisp)[0];
-            }
-            var colCnt = detectColumnCantidadSmart(headers, vRaw, lastCol);
-            
-            if (colCnt === null) {
-               var vDisp = shC.getRange(2,1,shC.getLastRow()-1,lastCol).getDisplayValues();
-               colCnt = detectColumnCantidadFromDisplay(vDisp, lastCol);
-            }
-
-            if(colCnt !== null) {
-              for(var r=0; r<vRaw.length; r++) {
-                var rowData = vRaw[r];
-                if(!rowData.some(c=>valueNotEmpty(c))) continue;
-                
-                var valC = rowData[colCnt];
-                if(valueNotEmpty(valC) && !esNumeroValido(valC)) {
-                  errs.push([new Date(), ent.cliente, ent.id, r+2, valC, columnLetter(colCnt+1), "EXCLUIDO (Alfanumérico)"]);
-                } else if(!soloReporte) {
-                  dInv.push(rowData);
-                }
-              }
-            } else { errs.push([new Date(), ent.cliente, ent.id, "-", "No Col Cantidad", "-", "-"]); }
-          }
-        }
-      }
-
-      if((procReg || soloReporte) && !soloReporte) {
-        var shR = ssFile.getSheetByName("REGISTRO");
-        if(shR && shR.getLastRow()>1) {
-          var vr = shR.getRange(2,1,shR.getLastRow()-1,shR.getLastColumn()).getValues();
-          dReg = dReg.concat(vr.filter(r=>r.some(c=>valueNotEmpty(c))));
-        }
-      }
-    }
-
-    if(errs.length) errSh.getRange(2,1,errs.length,errs[0].length).setValues(errs);
-    if(soloReporte) { ui.alert("Errores encontrados: "+errs.length); return; }
-
-    if(procInv) {
-      if(inv.getLastRow()===0 && headers) {
-         inv.getRange(1,1,1,headers.length).setValues([headers]);
-         inv.getRange(1,1,1,headers.length).setFontWeight("bold");
-      }
-      if(dInv.length) {
-        ensureColumns(inv, dInv[0].length);
-        // FIX FASE 8.12: formato texto para preservar dd/MM/yyyy literal
-        inv.getRange(2,1,dInv.length,dInv[0].length)
-           .setNumberFormat("@")
-           .setValues(dInv);
-      }
-      // FIX FASE 8.13: REMOVIDO espejo a MATRIZ_INVENTARIOS_UIO (archivo externo).
-      // Consolidación queda SOLO en hoja INVENTARIOS del libro base.
-    }
-
-    if(procReg && dReg.length) {
-      var max=0; dReg.forEach(r=>max=Math.max(max,r.length));
-      var nReg=dReg.map(r=>{while(r.length<max)r.push("");return r;});
-      ensureColumns(reg, max);
-      reg.getRange(2,1,nReg.length,max).setValues(nReg);
-    }
-
-    ui.alert("Proceso ("+tipo+") Finalizado.\nInv: "+dInv.length+" | Reg: "+dReg.length+" | Errores: "+errs.length);
-
-  } catch(e) { SpreadsheetApp.getUi().alert("Error fatal: "+e.message); }
-  finally { lock.releaseLock(); }
+  return consolidarConAuditoria({
+    modo: soloReporte ? "reporte_solo" : "tolerante",
+    incluir: tipo || "ALL", contexto: "web"
+  });
 }
 
 function reportarErroresPrevio() { consolidarDatosFinal(true, 'INV'); }

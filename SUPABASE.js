@@ -261,7 +261,7 @@ function _sbMigrarHoja(nombreHoja, tabla, propProgreso, colsFn, mapFn) {
 function _sbColsInventarios(head) {
       return {
         fIni: _sbCol(head, ["FECHA INICIO"]), fFin: _sbCol(head, ["FECHA FINAL"]),
-        id: _sbCol(head, ["ID"]), linea: _sbCol(head, ["N DE LINEA"]),
+        id: _sbCol(head, ["ID"]), origen: _sbCol(head, ["ORIGEN_DRIVE"]), linea: _sbCol(head, ["N DE LINEA"]),
         cli: _sbCol(head, ["CLIENTE"]), abc: _sbCol(head, ["ABC"]),
         sku: _sbCol(head, ["PRODUCTO"]), desc: _sbCol(head, ["DESCRIPCION DEL PRODUCTO"]),
         serie: _sbCol(head, ["SERIE"]), lote: _sbCol(head, ["LOTE"]),
@@ -293,6 +293,7 @@ function _sbMapInventarios(r, head, c) {
         motivo: T(c.mot), justificacion: T(c.jus), observacion: T(c.obs),
         nueva_posicion: T(c.nPos), actualizacion_depot: T(c.aDep), base: "UIO"
       };
+  if (c.origen >= 0) o.origen_drive = T(c.origen);
   if (!o.sku && !o.serie && !o.cliente) return null;
   return o;
 }
@@ -301,7 +302,7 @@ function _sbColsRegistro(head) {
       return {
         act: _sbCol(head, ["ACTUADOR"]), fec: _sbCol(head, ["FECHA"]), hora: _sbCol(head, ["HORA"]),
         usr: _sbCol(head, ["USUARIO"]), mail: _sbCol(head, ["CORREO"]), id: _sbCol(head, ["ID"]),
-        cli: _sbCol(head, ["CLIENTE"]), cod: _sbCol(head, ["CODIGO"]),
+        cli: _sbCol(head, ["CLIENTE"]), origen: _sbCol(head, ["ORIGEN_DRIVE"]), cod: _sbCol(head, ["CODIGO"]),
         pos: _sbCol(head, ["POSICION"]), cFis: _sbCol(head, ["CONTEO FISICO"]),
         rCon: _sbCol(head, ["RESULTADO CONTEO"]), c1: _sbCol(head, ["CONTEO N1"]),
         c2: _sbCol(head, ["CONTEO N2"]), c3: _sbCol(head, ["CONTEO N3"]), link: _sbCol(head, ["LINK"])
@@ -325,21 +326,20 @@ function _sbMapRegistro(r, head, c) {
 
 /** Hoja INVENTARIOS (30 col reales) -> tabla inventarios. */
 function migrarInventariosASupabase() {
-  return _sbMigrarHoja("INVENTARIOS", "inventarios", "SB_PROG_INV",
-    _sbColsInventarios, _sbMapInventarios);
+  return reconciliarInventariosSupabase();
 }
 
 /** Hoja REGISTRO (16 col reales) -> tabla registro. */
 function migrarRegistroASupabase() {
-  return _sbMigrarHoja("REGISTRO", "registro", "SB_PROG_REG",
-    _sbColsRegistro, _sbMapRegistro);
+  return reconciliarRegistroSupabase();
 }
 
 /** Reinicia el progreso si quieres volver a migrar desde cero. */
 function reiniciarProgresoMigracion() {
   var sp = PropertiesService.getScriptProperties();
   sp.deleteProperty("SB_PROG_INV"); sp.deleteProperty("SB_PROG_REG");
-  Logger.log("Progreso reiniciado. La próxima ejecución empieza desde la fila 2.");
+  reiniciarReconciliacionSupabase();
+  Logger.log("Progreso reiniciado. La próxima ejecución reconcilia desde el primer archivo.");
 }
 
 /** Diagnóstico: tamaño de las hojas y encabezados detectados. */
@@ -475,15 +475,47 @@ function _sbBloquesPorArchivo(sh, colId) {
   var ultima = sh.getLastRow();
   if (ultima < 2) return [];
   var col = sh.getRange(2, colId + 1, ultima - 1, 1).getValues();
-  var bloques = [], act = null;
+  var grupos = Object.create(null), orden = [];
   for (var i = 0; i < col.length; i++) {
     var id = String(col[i][0] || "").trim();
-    if (act && act.id === id) { act.n++; continue; }
-    if (act) bloques.push(act);
-    act = { id: id, fila: i + 2, n: 1 };
+    if (!grupos[id]) {
+      grupos[id] = { id: id, n: 0, bloques: [] };
+      orden.push(grupos[id]);
+    }
+    var grupo = grupos[id], bloques = grupo.bloques, anterior = bloques[bloques.length - 1];
+    if (anterior && anterior.fila + anterior.n === i + 2) anterior.n++;
+    else bloques.push({ fila: i + 2, n: 1 });
+    grupo.n++;
   }
-  if (act) bloques.push(act);
-  return bloques;
+  return orden;
+}
+
+/* Mismo lock que el consolidador: no leer un lote parcial ni sincronizar dos
+   veces en paralelo. La marca se emite solo tras conciliar fuentes y filas. */
+function _sbExigirConsolidadoVerificado(nombreHoja) {
+  var sp = PropertiesService.getScriptProperties();
+  var run = sp.getProperty("CONSOL_RUN_TOKEN");
+  if (!run || sp.getProperty("CONSOL_KPI_RUN") !== run || sp.getProperty("CONSOL_STATUS") !== "COMPLETADO") {
+    throw new Error("Supabase pausado: ejecuta y completa una consolidación con validación KPI.");
+  }
+  var sh = _getSS().getSheetByName("INVENTARIOS");
+  if (!sh || Math.max(0, sh.getLastRow() - 1) !== Number(sp.getProperty("CONSOL_KPI_FILAS"))) {
+    throw new Error("Supabase pausado: las filas de INVENTARIOS cambiaron después de la validación.");
+  }
+  if (nombreHoja === "REGISTRO") {
+    var reg = _getSS().getSheetByName("REGISTRO");
+    if (sp.getProperty("CONSOL_KPI_REG_RUN") !== run || !reg || Math.max(0, reg.getLastRow() - 1) !== Number(sp.getProperty("CONSOL_KPI_REG_FILAS"))) {
+      throw new Error("Supabase pausado: REGISTRO requiere consolidación y validación de esta corrida.");
+    }
+  }
+  return run;
+}
+
+function _sbConFuenteVerificada(trabajo) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return { ok: false, mensaje: "Consolidación o sincronización en curso; reintenta más tarde." };
+  try { _sbExigirConsolidadoVerificado(); return trabajo(); }
+  finally { lock.releaseLock(); }
 }
 
 /**
@@ -492,10 +524,14 @@ function _sbBloquesPorArchivo(sh, colId) {
  * siguiente corrida. Volver a pasar por un archivo es inofensivo (borra e
  * inserta), así que una interrupción nunca deja filas duplicadas.
  */
-function _sbReconciliarPorArchivo(nombreHoja, tabla, propProg, colsFn, mapFn) {
+function _sbReconciliarPorArchivo(nombreHoja, tabla, propProg, colsFn, mapFn, limiteHasta) {
+  var run = _sbExigirConsolidadoVerificado(nombreHoja);
   var t0 = new Date().getTime();
   var LIMITE_MS = 4.5 * 60 * 1000;
   var sp = PropertiesService.getScriptProperties();
+  if (sp.getProperty(propProg + "_DONE_RUN") === run) {
+    return { ok: true, completo: true, filas: 0, yaSincronizado: true, hoja: nombreHoja };
+  }
   var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(nombreHoja);
   if (!sh) return { ok: false, mensaje: nombreHoja + " no existe." };
@@ -509,13 +545,16 @@ function _sbReconciliarPorArchivo(nombreHoja, tabla, propProg, colsFn, mapFn) {
   if (colId < 0) return { ok: false, mensaje: nombreHoja + " no tiene columna ID; sin ella no se puede sincronizar por archivo." };
 
   var bloques = _sbBloquesPorArchivo(sh, colId);
+  if (sp.getProperty(propProg + "_RUN") !== run) {
+    sp.setProperties((function() { var p = {}; p[propProg] = "0"; p[propProg + "_RUN"] = run; return p; })(), false);
+  }
   var desdeIdx = parseInt(sp.getProperty(propProg) || "0", 10);
   if (isNaN(desdeIdx) || desdeIdx < 0 || desdeIdx >= bloques.length) desdeIdx = 0;
 
   var archivos = 0, filas = 0, sinId = 0, fallidos = [];
   var i = desdeIdx;
   for (; i < bloques.length; i++) {
-    if (new Date().getTime() - t0 > LIMITE_MS) break;
+    if (new Date().getTime() - t0 > LIMITE_MS || (limiteHasta && Date.now() >= limiteHasta)) break;
     var b = bloques[i];
 
     // Las filas sin ID de archivo también viajan: se tratan como un grupo
@@ -528,35 +567,42 @@ function _sbReconciliarPorArchivo(nombreHoja, tabla, propProg, colsFn, mapFn) {
 
     // 1) Fuera lo que Supabase tenga de este archivo
     var del = _supabaseFetch(tabla + "?" + filtro, "delete", null, "return=minimal");
-    if (del.code >= 300) { fallidos.push((b.id || "(sin id)") + " (borrado HTTP " + del.code + ")"); continue; }
+    if (del.code < 200 || del.code >= 300) { fallidos.push((b.id || "(sin id)") + " (borrado HTTP " + del.code + ")"); break; }
 
-    // 2) Dentro lo que la hoja tiene ahora
-    var vals = sh.getRange(b.fila, 1, b.n, ancho).getValues();
-    var lote = [], enviadas = 0;
-    for (var r = 0; r < vals.length; r++) {
-      var obj = mapFn(vals[r], head, cols);
-      if (!obj) continue;
-      obj.fila_origen = b.fila + r;
-      lote.push(obj);
-      if (lote.length >= SB_LOTE) {
-        if (_sbEnviarLote(tabla, lote, fallidos, b.id || "(sin id)")) enviadas += lote.length;
-        lote = [];
+    // Un DELETE por ID; reunir TODOS sus tramos, aunque no sean contiguos.
+    var lote = [], enviadas = 0, esperadas = 0;
+    b.bloques.forEach(function(tramo) {
+      var vals = sh.getRange(tramo.fila, 1, tramo.n, ancho).getValues();
+      for (var r = 0; r < vals.length; r++) {
+        var obj = mapFn(vals[r], head, cols);
+        if (!obj) continue;
+        obj.fila_origen = tramo.fila + r;
+        lote.push(obj); esperadas++;
+        if (lote.length >= SB_LOTE) {
+          enviadas += _sbEnviarLote(tabla, lote, fallidos, b.id || "(sin id)");
+          lote = [];
+        }
       }
-    }
-    if (lote.length && _sbEnviarLote(tabla, lote, fallidos, b.id || "(sin id)")) enviadas += lote.length;
+    });
+    if (lote.length) enviadas += _sbEnviarLote(tabla, lote, fallidos, b.id || "(sin id)");
+    filas += enviadas;
+    if (enviadas !== esperadas) break; // reintentar este archivo desde DELETE
 
-    archivos++; filas += enviadas;
+    archivos++;
     sp.setProperty(propProg, String(i + 1));
   }
 
   var completo = (i >= bloques.length);
-  if (completo) sp.deleteProperty(propProg);
+  if (completo) {
+    sp.deleteProperty(propProg);
+    sp.setProperty(propProg + "_DONE_RUN", run);
+  }
 
   return {
-    ok: true, hoja: nombreHoja, archivos: archivos, filas: filas,
+    ok: fallidos.length === 0, hoja: nombreHoja, archivos: archivos, filas: filas,
     totalArchivos: bloques.length, sinId: sinId,
     fallidos: fallidos.slice(0, 10), completo: completo,
-    mensaje: completo
+    mensaje: fallidos.length ? ("Error de reconciliación: " + fallidos.join("; ")) : completo
       ? ("✓ " + nombreHoja + ": " + archivos + " archivo(s) y " + filas + " fila(s) reconciliados.")
       : ("⏳ " + nombreHoja + ": " + i + " de " + bloques.length + " archivos. Continúa en la próxima corrida.")
   };
@@ -565,7 +611,7 @@ function _sbReconciliarPorArchivo(nombreHoja, tabla, propProg, colsFn, mapFn) {
 /** Envía un lote; si falla, reintenta fila a fila para no perder el resto. */
 function _sbEnviarLote(tabla, lote, fallidos, idArchivo) {
   var res = _supabaseFetch(tabla, "post", lote, "return=minimal");
-  if (res.code >= 200 && res.code < 300) return true;
+  if (res.code >= 200 && res.code < 300) return lote.length;
   var okN = 0;
   for (var j = 0; j < lote.length; j++) {
     var r1 = _supabaseFetch(tabla, "post", [lote[j]], "return=minimal");
@@ -574,19 +620,21 @@ function _sbEnviarLote(tabla, lote, fallidos, idArchivo) {
   if (okN < lote.length) {
     fallidos.push(idArchivo + " (" + (lote.length - okN) + " fila(s) rechazadas)");
   }
-  return okN > 0;
+  return okN;
 }
 
 /** INVENTARIOS -> Supabase, reemplazando archivo por archivo. */
 function reconciliarInventariosSupabase() {
-  return _sbReconciliarPorArchivo("INVENTARIOS", "inventarios", "SB_RECON_INV",
-    _sbColsInventarios, _sbMapInventarios);
+  return _sbConFuenteVerificada(function() {
+    return _sbReconciliarPorArchivo("INVENTARIOS", "inventarios", "SB_RECON_INV", _sbColsInventarios, _sbMapInventarios);
+  });
 }
 
 /** REGISTRO -> Supabase, reemplazando archivo por archivo. */
 function reconciliarRegistroSupabase() {
-  return _sbReconciliarPorArchivo("REGISTRO", "registro", "SB_RECON_REG",
-    _sbColsRegistro, _sbMapRegistro);
+  return _sbConFuenteVerificada(function() {
+    return _sbReconciliarPorArchivo("REGISTRO", "registro", "SB_RECON_REG", _sbColsRegistro, _sbMapRegistro);
+  });
 }
 
 /** Vuelve a empezar la reconciliación desde el primer archivo. */
@@ -594,20 +642,20 @@ function reiniciarReconciliacionSupabase() {
   var sp = PropertiesService.getScriptProperties();
   sp.deleteProperty("SB_RECON_INV");
   sp.deleteProperty("SB_RECON_REG");
+  sp.deleteProperty("SB_RECON_INV_DONE_RUN");
+  sp.deleteProperty("SB_RECON_REG_DONE_RUN");
   Logger.log("Reconciliación reiniciada: la próxima corrida empieza desde el primer archivo.");
   return { ok: true };
 }
 
 /** Sincroniza INVENTARIOS (solo filas nuevas). */
 function sincronizarInventariosSupabase() {
-  return _sbSyncIncremental("INVENTARIOS", "inventarios", "SB_SYNC_INV",
-    _sbColsInventarios, _sbMapInventarios);
+  return reconciliarInventariosSupabase();
 }
 
 /** Sincroniza REGISTRO (solo filas nuevas). */
 function sincronizarRegistroSupabase() {
-  return _sbSyncIncremental("REGISTRO", "registro", "SB_SYNC_REG",
-    _sbColsRegistro, _sbMapRegistro);
+  return reconciliarRegistroSupabase();
 }
 
 /**
@@ -615,21 +663,25 @@ function sincronizarRegistroSupabase() {
  * PANEL completo (cambia en filas existentes) + INVENTARIOS/REGISTRO incremental.
  */
 function sincronizarTodoSupabase() {
+  return _sbConFuenteVerificada(function() {
   var res = { hora: new Date().toISOString() };
+  var limiteHasta = Date.now() + 3.5 * 60 * 1000;
   try { res.panel = migrarPanelASupabase(); }           catch (e) { res.panel = { error: e.message }; }
   // INVENTARIOS y REGISTRO van por ARCHIVO, no por posición de fila: la
   // consolidación los vacía y reescribe, y el puntero de "última fila enviada"
   // quedaba apuntando a un contenido que ya no existe. Las funciones viejas
-  // (sincronizarInventariosSupabase / sincronizarRegistroSupabase) siguen ahí
-  // por si hiciera falta, pero no deben usarse sobre hojas que se reescriben.
-  try { res.inventarios = reconciliarInventariosSupabase(); } catch (e) { res.inventarios = { error: e.message }; }
-  try { res.registro = reconciliarRegistroSupabase(); } catch (e) { res.registro = { error: e.message }; }
+  // Los nombres de entrada antiguos también delegan en esta reconciliación.
+  try { res.inventarios = _sbReconciliarPorArchivo("INVENTARIOS", "inventarios", "SB_RECON_INV", _sbColsInventarios, _sbMapInventarios, limiteHasta); } catch (e) { res.inventarios = { error: e.message }; }
+  try { res.registro = _sbReconciliarPorArchivo("REGISTRO", "registro", "SB_RECON_REG", _sbColsRegistro, _sbMapRegistro, limiteHasta); } catch (e) { res.registro = { error: e.message }; }
   // El cronograma cambia en filas existentes (estado, entrega, %), así que va completo.
   try { res.cronograma = migrarCronogramaASupabase(); } catch (e) { res.cronograma = { error: e.message }; }
   try { migrarEquipoASupabase(); } catch (e) {}
   try { migrarClientesASupabase(); } catch (e) {}
   Logger.log("SYNC: " + JSON.stringify(res));
+  res.ok = [res.panel, res.inventarios, res.registro, res.cronograma].every(function(r) { return r && r.ok !== false && !r.error; });
+  res.completo = res.ok && !!res.inventarios.completo && !!res.registro.completo;
   return res;
+  });
 }
 
 /** Instala el disparador horario (ejecutar UNA vez desde el editor). */
