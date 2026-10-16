@@ -183,3 +183,36 @@ test('VENTURA habilitado conserva 53 y 64 filas de dos orígenes aun tras una in
  assert.equal(sheets.INVENTARIOS.rows.filter(r=>r.at(-1)===ids[1]).length,64);
  assert.equal(props.CONSOL_STATUS,'COMPLETADO');assert.equal(props.CONSOL_KPI_RUN,props.CONSOL_RUN_TOKEN);
 });
+test('REGISTRO BELIA en archivo IBM: conserva eventos distintos y excluye solo copias completas entre lotes',()=>{
+ const {c,props,setTime,sheets,ids}=workflow();const abrir=c.safeOpenSpreadsheet;
+ const comun=line('240219_BEL',1,'BELIA','POS-A',1);
+ const eventoB=line('240219_BEL',2,'BELIA','POS-B',2);
+ const eventoC=line('240219_BEL',3,'BELIA','POS-C',3);
+ c.safeOpenSpreadsheet=id=>{
+  const r=abrir(id);r.ss.getSheetByName('REGISTRO').rows=[head,comun,id===ids[0]?eventoB:eventoC];return r;
+ };
+ c._consolidarNucleo({contexto:'web'});setTime(303000);sheets.REGISTRO.failWrite=true;
+ assert.throws(()=>c._consolidarNucleo({_continuacion:true}),/write failure/);setTime(304000);
+ const result=c._consolidarNucleo({_continuacion:true});
+ assert.equal(result.ok,true);assert.equal(result.registroIncluidas,3);assert.equal(result.registroDuplicados,1);
+ assert.deepEqual(businessRows(sheets.REGISTRO),[head,comun,eventoB,eventoC]);
+ assert.equal(props.CONSOL_KPI_RUN,props.CONSOL_RUN_TOKEN);
+});
+test('REGISTRO: fecha, cantidad, usuario o posición diferentes son eventos distintos',()=>{
+ const {c}=context();const registro={mapa:Object.create(null),pendientes:[],run:'eventos'};
+ const original=line('240219_BEL',1,'BELIA','A',1);
+ const variantes=[original.slice(),original.slice(),original.slice()];variantes[0][0]='28/2/2026';variantes[1][9]=2;variantes[2][8]='B';
+ c._consolFiltrarFuentes([original],head,'REG','fuente-A',registro);
+ const r=c._consolFiltrarFuentes(variantes,head,'REG','fuente-B',registro);
+ assert.equal(r.filas.length,3);assert.equal(r.omitidas,0);
+});
+test('REGISTRO sin ID no fusiona eventos de fuentes distintas',()=>{
+ const {c}=context();const registro={mapa:Object.create(null),pendientes:[],run:'eventos'};const row=line('',1,'BELIA');
+ c._consolFiltrarFuentes([row],head,'REG','fuente-A',registro);
+ assert.equal(c._consolFiltrarFuentes([row],head,'REG','fuente-B',registro).filas.length,1);
+});
+test('corrida de la versión 2 se rechaza tras cambiar la identidad de REGISTRO',()=>{
+ const {c,props}=workflow();props.CONSOL_STATUS='EN_CURSO';props.CONSOL_VERSION='2';
+ assert.throws(()=>c._consolidarNucleo({_continuacion:true}),/código anterior/);
+ assert.equal(props.CONSOL_STATUS,'ERROR');
+});

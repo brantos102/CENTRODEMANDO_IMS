@@ -3468,8 +3468,38 @@ function _consolConOrigen(filas, headers, archivo) {
   });
 }
 
+/* REGISTRO es un historial: el mismo inventario puede aportar conjuntos de
+   eventos distintos desde varios archivos. Comparar cada evento completo,
+   nunca exigir que coincidan todos los eventos de un inventario. */
+function _consolFiltrarEventosRegistro(filas, headers, archivo, registro) {
+  var cols = _consolColumnasIdentidad(headers);
+  var aceptadas = [], omitidas = 0, copias = Object.create(null);
+  filas.forEach(function(row) {
+    var firma = _consolFirmaFilas([row]);
+    // Sin ID no se puede asegurar que dos eventos de fuentes distintas sean
+    // el mismo. Se conserva la separación por archivo en ese caso.
+    var sinId = !String(row[cols.id] == null ? "" : row[cols.id]).trim();
+    var key = JSON.stringify(["REG_EVENTO", firma, sinId ? archivo : ""]);
+    var previo = registro.mapa[key];
+    if (previo && previo[2] !== archivo) {
+      omitidas++;
+      if (!copias[previo[2]]) copias[previo[2]] = { clave: "REG_EVENTO", original: previo[2], filas: 0 };
+      copias[previo[2]].filas++;
+      return;
+    }
+    aceptadas.push(row);
+    if (!previo) {
+      var r = [key, firma, archivo, 1, "REG", registro.run];
+      registro.mapa[key] = r;
+      registro.pendientes.push(r);
+    }
+  });
+  return { filas: aceptadas, omitidas: omitidas, copias: Object.keys(copias).map(function(k) { return copias[k]; }) };
+}
+
 function _consolFiltrarFuentes(filas, headers, tabla, archivo, registro) {
   if (!filas.length) return { filas: [], omitidas: 0, copias: [] };
+  if (tabla === "REG") return _consolFiltrarEventosRegistro(filas, headers, archivo, registro);
   var cols = _consolColumnasIdentidad(headers), grupos = Object.create(null);
   filas.forEach(function(row) {
     // Sin código no se adivina que dos eventos de archivos diferentes son uno.
@@ -3677,7 +3707,7 @@ function _consolidarNucleo(opciones) {
     // ── FIX FASE 8.33: determinar arranque fresco vs. reanudación ────────────
     var estPrev = _consolEstadoLeer();
     var debeReanudar = false;
-    if (esContinuacion && estPrev.STATUS === "EN_CURSO" && estPrev.VERSION !== "2") {
+    if (esContinuacion && estPrev.STATUS === "EN_CURSO" && estPrev.VERSION !== "3") {
       throw _consolIntegridadError("La corrida pendiente usa el código anterior. Cancélala y comienza una consolidación nueva.");
     }
     if (estPrev.STATUS === "EN_CURSO") {
@@ -3827,7 +3857,6 @@ function _consolidarNucleo(opciones) {
     var totalDuplicadosReg = 0;
     var totalFilasRegIncluidas = 0;
     var totalFilasRegVacias = 0;
-    var hashesGlobalesReg = {}; // dedup entre archivos (registro suele tener id único por evento)
 
     // Presupuesto único para editor, Web App y continuaciones.
     // Reservar tiempo para escribir/confirmar antes del límite de Apps Script.
@@ -4081,17 +4110,8 @@ function _consolidarNucleo(opciones) {
             }
             hashesArchivoReg[hashR] = filaOrigenReg;
 
-            // Check 3: dedup global (entre archivos) — en REGISTRO, un mismo evento
-            // no debería repetirse en varios archivos hijo. Reportar pero NO excluir
-            // (el operario decide).
-            if (hashR && hashesGlobalesReg[hashR]) {
-              erroresDetalle.push([ent.cliente, ent.id, linkArchivo, filaOrigenReg,
-                "—", "Fila también en archivo " + hashesGlobalesReg[hashR],
-                "DUPLICADO_ENTRE_ARCHIVOS_REGISTRO", "INCLUIDA con advertencia", "BAJA"]);
-            } else {
-              hashesGlobalesReg[hashR] = ent.id;
-            }
-
+            // La deduplicación entre archivos se realiza por evento completo
+            // y persiste entre lotes en _consolFiltrarEventosRegistro.
             // Fila válida
             incReg++;
             todosLosRegistros.push(rowReg);
@@ -4639,7 +4659,7 @@ function _consolHeartbeatVivo(ts) {
 function _consolEstadoIniciar(o) {
   _consolProps().setProperties({
     CONSOL_RUN_TOKEN: Utilities.getUuid(),
-    CONSOL_VERSION: "2",
+    CONSOL_VERSION: "3",
     CONSOL_KPI_RUN: "",
     CONSOL_KPI_REG_RUN: "",
     CONSOL_STATUS:    "EN_CURSO",
