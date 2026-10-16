@@ -3369,7 +3369,7 @@ function _consolPrepararReemplazo(hoja, filas, headers, fresco) {
     ? _consolColumnasIdentidad(hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0])
     : cols;
   ["id", "cliente", "base", "origen"].forEach(function(k) {
-    if (k === "origen" && fresco && destino[k] < 0) { destino[k] = cols[k]; return; }
+    if (k === "origen" && fresco) { destino[k] = cols[k]; return; }
     if (destino[k] !== cols[k]) {
       throw new Error("Consolidación detenida: columnas de identidad incompatibles en " + hoja.getName());
     }
@@ -3456,12 +3456,80 @@ function _consolClaveFuente(row, cols, tabla, archivo) {
   return JSON.stringify([tabla, identidad || ("sin-id:" + archivo), distinta ? archivo : ""]);
 }
 
+/* Cada archivo tiene su propia cabecera. El consolidado conserva un esquema
+   común por corrida; las columnas nuevas se añaden sin desplazar valores. */
+function _consolNombreColumna(valor) {
+  return String(valor == null ? "" : valor).normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function _consolLeerEsquema(hoja, tabla, fresco) {
+  var guardado = fresco ? "" : _consolProps().getProperty("CONSOL_SCHEMA_" + tabla);
+  if (guardado) return JSON.parse(guardado);
+  if (!hoja || !hoja.getLastRow()) return [];
+  var head = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0];
+  return head.filter(function(h) { return _consolNombreColumna(h) !== "ORIGENDRIVE"; })
+    .map(function(h, i) { return String(h || "").trim() || ("SIN_ENCABEZADO_" + (i + 1)); });
+}
+
+function _consolAlinearColumnas(filas, fuente, esquema, acumuladas, archivo) {
+  var indice = Object.create(null), usadas = Object.create(null), mapa = [];
+  esquema.forEach(function(h, i) { indice[_consolNombreColumna(h)] = i; });
+  var ancho = filas.reduce(function(n, r) { return Math.max(n, r.length); }, fuente.length);
+  for (var c = 0; c < ancho; c++) {
+    var nombre = String(fuente[c] || "").trim(), clave = _consolNombreColumna(nombre);
+    if (clave === "ORIGENDRIVE") throw _consolIntegridadError("Columna reservada ORIGEN_DRIVE en archivo hijo " + archivo);
+    if (!clave) {
+      // Columnas vacías sobrantes de tablas/fórmulas no cambian el esquema.
+      if (!filas.some(function(r) { return valueNotEmpty(r[c]); })) { mapa[c] = -1; continue; }
+      nombre = esquema[c] || ("SIN_ENCABEZADO_" + (c + 1));
+      clave = _consolNombreColumna(nombre);
+    }
+    if (usadas[clave]) throw _consolIntegridadError("Encabezado ambiguo " + nombre + " en " + archivo);
+    usadas[clave] = true;
+    if (indice[clave] == null) { indice[clave] = esquema.length; esquema.push(nombre); }
+    mapa[c] = indice[clave];
+  }
+  // Las filas anteriores del lote ya llevan ORIGEN_DRIVE al final.
+  acumuladas.forEach(function(r) {
+    var origen = r.pop();
+    while (r.length < esquema.length) r.push("");
+    r.push(origen);
+  });
+  return filas.map(function(row) {
+    var alineada = esquema.map(function() { return ""; });
+    for (var i = 0; i < mapa.length; i++) if (mapa[i] >= 0) alineada[mapa[i]] = row[i] == null ? "" : row[i];
+    return alineada;
+  });
+}
+
+function _consolAjustarDestino(hoja, headers, fresco) {
+  if (!headers || !headers.length || fresco || !hoja.getLastRow()) return;
+  var actuales = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0];
+  var origen = actuales.map(_consolNombreColumna).indexOf("ORIGENDRIVE");
+  if (origen < 0 || origen !== actuales.length - 1) {
+    throw _consolIntegridadError("Esquema de destino incompatible en " + hoja.getName() + "; iniciar una corrida nueva.");
+  }
+  var nuevas = headers.length - actuales.length;
+  if (nuevas < 0) throw _consolIntegridadError("El esquema no puede reducir columnas en " + hoja.getName());
+  for (var i = 0; i < origen; i++) {
+    if (actuales[i] && _consolNombreColumna(actuales[i]) !== _consolNombreColumna(headers[i])) {
+      throw _consolIntegridadError("Cambió el orden del consolidado " + hoja.getName() + " en columna " + (i + 1));
+    }
+  }
+  if (!nuevas && headers.every(function(h, i) { return h === actuales[i]; })) return;
+  // Sheets desplaza conjuntamente los valores y su cabecera de procedencia.
+  if (nuevas) hoja.insertColumnsBefore(origen + 1, nuevas);
+  hoja.getRange(1, 1, 1, headers.length).setValues([headers]);
+  SpreadsheetApp.flush();
+}
+
 function _consolConOrigen(filas, headers, archivo) {
   if (!filas.length) return [];
   var ancho = headers.length;
   return filas.map(function(row) {
     var r = row.slice();
-    if (r.length > ancho) throw _consolIntegridadError("Columnas sin encabezado en " + archivo);
+    if (r.length > ancho) throw _consolIntegridadError("Fila no alineada en " + archivo + ": " + r.length + " campos frente a " + ancho + " columnas de destino");
     while (r.length < ancho) r.push("");
     r.push(archivo);
     return r;
@@ -3707,7 +3775,7 @@ function _consolidarNucleo(opciones) {
     // ── FIX FASE 8.33: determinar arranque fresco vs. reanudación ────────────
     var estPrev = _consolEstadoLeer();
     var debeReanudar = false;
-    if (esContinuacion && estPrev.STATUS === "EN_CURSO" && estPrev.VERSION !== "3") {
+    if (esContinuacion && estPrev.STATUS === "EN_CURSO" && estPrev.VERSION !== "4") {
       throw _consolIntegridadError("La corrida pendiente usa el código anterior. Cancélala y comienza una consolidación nueva.");
     }
     if (estPrev.STATUS === "EN_CURSO") {
@@ -3845,14 +3913,14 @@ function _consolidarNucleo(opciones) {
     }
 
     var sumTotalCant = 0, sumTotalFilas = 0, todosLosDatos = [];
-    var headersInv = null;
+    var headersInv = _consolLeerEsquema(inv, "INV", esFresh);
     var auditRows = [];
     var erroresDetalle = [];   // [Cliente, ID, Link, Fila, Columna, Valor, Motivo, Acción, Severidad]
     var totalDuplicados = 0;
     var totalCriticos = 0;     // SKU vacío + Cantidad inválida (modo estricto detiene si > 0)
     // FIX FASE 8.17: acumuladores para REGISTRO
     var todosLosRegistros = [];
-    var headersReg = null;
+    var headersReg = _consolLeerEsquema(reg, "REG", esFresh);
     var auditRegRows = [];
     var totalDuplicadosReg = 0;
     var totalFilasRegIncluidas = 0;
@@ -3963,11 +4031,11 @@ function _consolidarNucleo(opciones) {
           var raw     = todosValues.slice(1);
           var rawDisp = todosDisplay.slice(1);
 
-          if (!headersInv) headersInv = headersFila;
           raw = _normalizarFechasMatriz(raw, rawDisp, tzOrigen);
-          headersInv = _normalizarFechasMatriz([headersInv], headersDispOrigen, tzOrigen)[0];
-      var colCnt = detectColumnCantidadSmart(headersInv, raw, lastCol);
-      if (colCnt === null) colCnt = detectColumnCantidadFromDisplay(rawDisp, lastCol);
+          var fuenteInv = _normalizarFechasMatriz([headersFila], headersDispOrigen, tzOrigen)[0];
+          raw = _consolAlinearColumnas(raw, fuenteInv, headersInv, todosLosDatos, ent.id);
+      var colCnt = detectColumnCantidadSmart(headersInv, raw, headersInv.length);
+      if (colCnt === null) colCnt = detectColumnCantidadFromDisplay(raw, headersInv.length);
 
       var colsClave = _detectarColumnasClave(headersInv);
       // Resolver índice de cantidad: preferir el detectado por nombre, luego smart
@@ -4080,9 +4148,9 @@ function _consolidarNucleo(opciones) {
           var rawReg     = regValues.slice(1);
           var rawRegDisp = regDisplay.slice(1);
 
-          if (!headersReg) headersReg = headersRegFila;
           rawReg = _normalizarFechasMatriz(rawReg, rawRegDisp, tzOrigen);
-          headersReg = _normalizarFechasMatriz([headersReg], headersRegDisp, tzOrigen)[0];
+          var fuenteReg = _normalizarFechasMatriz([headersRegFila], headersRegDisp, tzOrigen)[0];
+          rawReg = _consolAlinearColumnas(rawReg, fuenteReg, headersReg, todosLosRegistros, ent.id);
 
           var incReg = 0, excReg = 0, motivoRegTop = "—";
           var conteoMotivosReg = {};
@@ -4277,18 +4345,22 @@ function _consolidarNucleo(opciones) {
 
     // ── Escribir INVENTARIOS — tolerante/estricto (reporte_solo nunca escribe) ─
     //    FIX FASE 8.33: APPEND por lote. Solo el arranque fresco limpia la fila 2+.
-    if (headersInv) headersInv = headersInv.concat(["ORIGEN_DRIVE"]);
-    if (headersReg) headersReg = headersReg.concat(["ORIGEN_DRIVE"]);
+    var esquemas = { CONSOL_SCHEMA_INV: JSON.stringify(headersInv), CONSOL_SCHEMA_REG: JSON.stringify(headersReg) };
+    if (headersInv.length) headersInv = headersInv.concat(["ORIGEN_DRIVE"]);
+    if (headersReg.length) headersReg = headersReg.concat(["ORIGEN_DRIVE"]);
     // Comparar exactamente la representación que se escribe en Sheets.
     todosLosDatos = _stringificarFechasFinales(todosLosDatos);
     todosLosRegistros = _stringificarFechasFinales(todosLosRegistros);
     // Validar ambos destinos ANTES de modificar cualquiera de ellos.
     var planInv = null, planReg = null;
     if (modo !== "reporte_solo") {
+      if (procInv) _consolAjustarDestino(inv, headersInv, esFresh);
+      if (procReg && reg) _consolAjustarDestino(reg, headersReg, esFresh);
       if (procInv) planInv = _consolPrepararReemplazo(inv, todosLosDatos, headersInv, esFresh);
       if (procReg && reg) planReg = _consolPrepararReemplazo(reg, todosLosRegistros, headersReg, esFresh);
     }
 
+    _consolProps().setProperties(esquemas, false);
     _consolGuardarFuentes(registroFuentes);
 
     if (modo !== "reporte_solo" && procInv) {
@@ -4659,7 +4731,9 @@ function _consolHeartbeatVivo(ts) {
 function _consolEstadoIniciar(o) {
   _consolProps().setProperties({
     CONSOL_RUN_TOKEN: Utilities.getUuid(),
-    CONSOL_VERSION: "3",
+    CONSOL_VERSION: "4",
+    CONSOL_SCHEMA_INV: "",
+    CONSOL_SCHEMA_REG: "",
     CONSOL_KPI_RUN: "",
     CONSOL_KPI_REG_RUN: "",
     CONSOL_STATUS:    "EN_CURSO",

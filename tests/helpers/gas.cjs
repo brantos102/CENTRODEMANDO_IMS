@@ -7,6 +7,7 @@ class Sheet {
   getLastRow(){let n=this.rows.length;while(n&&!this.rows[n-1].some(x=>x!==''&&x!=null))n--;return n}
   getLastColumn(){return Math.max(0,...this.rows.map(r=>r.length))}
   getMaxColumns(){return 100}
+  insertColumnsBefore(col,n){for(const row of this.rows)row.splice(col-1,0,...Array(n).fill(''))}
   clear(){this.rows=[];return this}
   appendRow(row){this.rows.push(structuredClone(row));return this}
   hideSheet(){} autoResizeColumns(){} setFrozenRows(){}

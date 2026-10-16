@@ -216,3 +216,75 @@ test('corrida de la versión 2 se rechaza tras cambiar la identidad de REGISTRO'
  assert.throws(()=>c._consolidarNucleo({_continuacion:true}),/código anterior/);
  assert.equal(props.CONSOL_STATUS,'ERROR');
 });
+test('FLUKE con columnas adicionales y orden distinto en un lote posterior conserva campos y ORIGEN_DRIVE',()=>{
+ const {c,setTime,sheets,ids,rows}=workflow();const abrir=c.safeOpenSpreadsheet;
+ c.safeOpenSpreadsheet=id=>{
+  const r=abrir(id);
+  if(id===ids[1]){
+   const h=[...head,'CAMPO ADICIONAL'];const row=[...rows[1],'dato-FLUKE'];
+   [h[2],h[6]]=[h[6],h[2]];[row[2],row[6]]=[row[6],row[2]];
+   r.ss.getSheetByName('PLANILLA DE CONTEO FISICO').rows=[h,row];
+  }
+  return r;
+ };
+ c._consolidarNucleo({contexto:'web'});setTime(303000);
+ const result=c._consolidarNucleo({_continuacion:true});assert.equal(result.ok,true);
+ const data=sheets.INVENTARIOS.rows;
+ assert.deepEqual(data[0],[...head,'CAMPO ADICIONAL','ORIGEN_DRIVE']);
+ assert.deepEqual(data[1],[...rows[0],'',ids[0]]);assert.deepEqual(data[2],[...rows[1],'dato-FLUKE',ids[1]]);
+});
+test('columna sobrante totalmente vacía no cambia esquema ni impide consolidar',()=>{
+ const {c,setTime,sheets,ids}=workflow();const abrir=c.safeOpenSpreadsheet;
+ c.safeOpenSpreadsheet=id=>{const r=abrir(id);if(id===ids[1]){
+  const sh=r.ss.getSheetByName('PLANILLA DE CONTEO FISICO');sh.rows[0].push('','');sh.rows[1].push('','');
+ }return r};
+ c._consolidarNucleo({contexto:'web'});setTime(303000);assert.equal(c._consolidarNucleo({_continuacion:true}).ok,true);
+ assert.deepEqual(sheets.INVENTARIOS.rows[0],[...head,'ORIGEN_DRIVE']);
+});
+test('columna con datos y cabecera vacía se conserva con nombre explícito',()=>{
+ const {c,setTime,sheets,ids}=workflow();const abrir=c.safeOpenSpreadsheet;
+ c.safeOpenSpreadsheet=id=>{const r=abrir(id);if(id===ids[1]){
+  const sh=r.ss.getSheetByName('PLANILLA DE CONTEO FISICO');sh.rows[0].push('');sh.rows[1].push(false);
+ }return r};
+ c._consolidarNucleo({contexto:'web'});setTime(303000);assert.equal(c._consolidarNucleo({_continuacion:true}).ok,true);
+ assert.equal(sheets.INVENTARIOS.rows[0][10],'SIN_ENCABEZADO_11');assert.equal(sheets.INVENTARIOS.rows[2][10],false);
+ assert.equal(sheets.INVENTARIOS.rows[2][11],ids[1]);
+});
+test('REGISTRO alinea y preserva columnas nuevas sin desplazar valores anteriores',()=>{
+ const {c,setTime,sheets,ids,rows}=workflow();const abrir=c.safeOpenSpreadsheet;
+ c.safeOpenSpreadsheet=id=>{const r=abrir(id);if(id===ids[1])r.ss.getSheetByName('REGISTRO').rows=[[...head,'DETALLE EXTRA'],[...rows[1],'nota']];return r};
+ c._consolidarNucleo({contexto:'web'});setTime(303000);assert.equal(c._consolidarNucleo({_continuacion:true}).ok,true);
+ assert.deepEqual(sheets.REGISTRO.rows[1],[...rows[0],'',ids[0]]);
+ assert.deepEqual(sheets.REGISTRO.rows[2],[...rows[1],'nota',ids[1]]);
+});
+test('cabecera ausente en una columna conocida conserva su posición histórica',()=>{
+ const {c}=context();const esquema=[...head],fuente=[...head];fuente[3]='';
+ const r=c._consolAlinearColumnas([line('260311_FLUKE',1,'FLUKE')],fuente,esquema,[],'archivo-FLUKE');
+ assert.equal(r[0][3],1);assert.equal(esquema[3],'N de línea');
+});
+test('columnas añadidas dentro del mismo lote amplían filas anteriores sin mezclar su procedencia',()=>{
+ const {c,sheets,ids,rows}=workflow();const abrir=c.safeOpenSpreadsheet;
+ c.safeOpenSpreadsheet=id=>{const r=abrir(id);const sh=r.ss.getSheetByName('PLANILLA DE CONTEO FISICO');sh.onRead=null;
+  if(id===ids[1])sh.rows=[[...head,'NUEVO'],[...rows[1],'nuevo']];return r};
+ assert.equal(c._consolidarNucleo({contexto:'web'}).ok,true);
+ assert.deepEqual(sheets.INVENTARIOS.rows[1],[...rows[0],'',ids[0]]);
+ assert.deepEqual(sheets.INVENTARIOS.rows[2],[...rows[1],'nuevo',ids[1]]);
+});
+test('cabecera repetida se reporta como ambigua y no sobrescribe dos campos en uno',()=>{
+ const {c}=context();assert.throws(()=>c._consolAlinearColumnas([['A','B']],['ID','ID'],[],[],'archivo'),/ambiguo/);
+});
+test('interrupción al actualizar cabecera después de insertar columnas permite recuperación sin perder procedencia',()=>{
+ const {c,setTime,sheets,ids,rows}=workflow();const abrir=c.safeOpenSpreadsheet;
+ c.safeOpenSpreadsheet=id=>{const r=abrir(id);if(id===ids[1])r.ss.getSheetByName('PLANILLA DE CONTEO FISICO').rows=[[...head,'EXTRA'],[...rows[1],'valor']];return r};
+ c._consolidarNucleo({contexto:'web'});setTime(303000);sheets.INVENTARIOS.failWrite=true;
+ assert.throws(()=>c._consolidarNucleo({_continuacion:true}),/write failure/);setTime(304000);
+ assert.equal(c._consolidarNucleo({_continuacion:true}).ok,true);
+ assert.deepEqual(sheets.INVENTARIOS.rows[1],[...rows[0],'',ids[0]]);
+ assert.deepEqual(sheets.INVENTARIOS.rows[2],[...rows[1],'valor',ids[1]]);
+});
+test('columna vacía no interfiere cuando un encabezado nuevo se sitúa antes de las columnas históricas',()=>{
+ const {c}=context();const esquema=[...head];
+ const fuente=['EXTRA',...head,''];const row=['dato',...line('260311_FLUKE',1,'FLUKE'),''];
+ const r=c._consolAlinearColumnas([row],fuente,esquema,[],'FLUKE');
+ assert.equal(r[0][2],'260311_FLUKE');assert.equal(r[0][10],'dato');assert.equal(esquema.length,11);
+});
