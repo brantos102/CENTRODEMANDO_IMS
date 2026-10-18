@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
   <base target="_top">
   <meta charset="utf-8">
@@ -315,10 +315,94 @@
       .mini-btn,.icon-btn{min-height:30px;min-width:30px}
       .actbox .btn{padding:10px 12px}
     }
+
+    /* Legibilidad del panel: estilos compartidos por ambos temas. */
+    :root { --muted:#a3b1c9; }
+    body { font-size:14px; }
+    .app-header { position:sticky; top:0; z-index:50; }
+    .app-header .topbar, .app-header .nav { position:static; }
+    .topbar { padding:16px 24px; gap:16px; }
+    .brand .name { font-size:20px; }
+    .brand .sub, .user-info .r { font-size:12px; }
+    .nav { padding:10px 24px; }
+    .nav button { font-size:13px; padding:9px 15px; }
+    .container { padding:20px 24px; max-width:1440px; }
+    .grid { grid-template-columns:minmax(0,1fr) 260px; gap:16px; }
+    .grid > *, .card, .actbox, .brand, .user-info { min-width:0; }
+    .kpis { gap:12px; }
+    .kpi { padding:16px 18px; border-radius:12px; }
+    .kpi .lbl { font-size:11px; }
+    .kpi .val { font-size:30px; font-variant-numeric:tabular-nums; }
+    .kpi .sub { font-size:12px; }
+    .card { border-radius:12px; padding:18px; }
+    .card .ttl { font-size:14px; flex-wrap:wrap; gap:8px; }
+    .card .ttl small { font-size:12px; }
+    .tbl { font-size:13px; max-width:100%; overflow-x:auto; }
+    .tbl .hd { font-size:11px; }
+    .tbl .rw { padding:11px 4px; }
+    .tbl-cron .hd, .tbl-cron .rw { grid-template-columns:62px minmax(0,1fr) 130px 95px 145px; min-width:620px; }
+    .tbl .scroll { max-height:300px; }
+    .actbox { padding:14px; border-radius:12px; }
+    .actbox .lbl { font-size:11px; }
+    .actbox .btn { font-size:13px; padding:10px; }
+    .cal-cli { font-size:12px; }
+    .cal-cli small, .cal-day-head { font-size:10px; }
+    .cal-cell { height:23px; }
+    .cal-wrap { max-height:300px; }
+    .pill { font-size:11px; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline:2px solid var(--accent); outline-offset:3px;
+    }
+
+    /* La consulta del panel y el cierre del histórico son estados distintos. */
+    .data-state { display:flex; align-items:center; justify-content:space-between; gap:12px;
+      flex-wrap:wrap; padding:11px 14px; margin-bottom:12px; border:1px solid var(--border);
+      border-radius:10px; background:var(--panel); font-size:12px; }
+    .data-state .data-time { color:var(--muted); margin-top:3px; }
+    .data-state[data-state="error"] { border-left:4px solid var(--danger); }
+    .data-state[data-state="cache"], .data-state[data-state="loading"] { border-left:4px solid var(--warn); }
+    .data-state[data-state="fresh"] { border-left:4px solid var(--ok); }
+    .data-state button { background:var(--panel-2); color:var(--text); border:1px solid var(--border);
+      border-radius:6px; padding:7px 12px; font-size:12px; }
+    .consol-state { padding:14px; margin-bottom:16px; border:1px solid var(--border);
+      border-left:4px solid var(--muted); border-radius:10px; background:var(--panel);
+      display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+    .consol-state--error { border-left-color:var(--danger); }
+    .consol-state--running, .consol-state--cancelled { border-left-color:var(--warn); }
+    .consol-state--complete { border-left-color:var(--ok); }
+    .consol-state .consol-copy { flex:1; min-width:180px; }
+    .consol-state .consol-title { font-size:14px; font-weight:600; }
+    .consol-state .consol-detail { font-size:12px; color:var(--muted); margin-top:4px; line-height:1.5; }
+    .consol-state .consol-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .consol-state button { background:var(--panel-2); color:var(--text); border:1px solid var(--border);
+      padding:8px 12px; border-radius:6px; font-size:12px; }
+    .consol-state button:disabled { opacity:.5; cursor:wait; }
+    .consol-state progress { display:block; width:100%; height:7px; margin-top:8px; accent-color:var(--accent); }
+    .consol-state[hidden], .data-state button[hidden] { display:none; }
+    @media (max-width:1000px) {
+      .grid { grid-template-columns:minmax(0,1fr); }
+      .sidebar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
+    @media (max-width:640px) {
+      .topbar { flex-wrap:wrap; gap:10px; padding:12px 16px; }
+      .brand .name { font-size:17px; }
+      .user-box { margin-left:auto; max-width:100%; gap:8px; }
+      .user-info .n { overflow-wrap:anywhere; }
+      .nav { padding:8px 16px; }
+      .container { padding:14px 12px; }
+      .sidebar { display:flex; }
+      .card { padding:12px; }
+      .kpi { padding:12px; }
+      .kpi .val { font-size:26px; }
+      .tbl-pan .hd, .tbl-pan .rw { min-width:540px; }
+      .tbl-usr .hd, .tbl-usr .rw { min-width:620px; }
+      .modal-bg { padding:8px; }
+    }
   </style>
 </head>
 <body>
 
+  <header class="app-header">
   <!-- TOPBAR -->
   <div class="topbar">
     <div class="brand">
@@ -375,7 +459,16 @@
     <button data-sec="analytics" id="nav-analytics" onclick="nav('analytics')">📈 Analytics</button>
   </div>
 
+  </header>
   <div class="container">
+    <div class="data-state" id="datos-estado" data-state="loading" role="status" aria-live="polite">
+      <div>
+        <div id="datos-mensaje">Cargando datos operativos…</div>
+        <div class="data-time" id="datos-actualizados">Última consulta al panel: pendiente</div>
+      </div>
+      <button type="button" id="datos-reintentar" onclick="cargarDashboard(true)" hidden>Reintentar actualización</button>
+    </div>
+    <div class="consol-state" id="consol-banner" role="status" aria-live="polite" hidden></div>
 
     <!-- ===== SECCIÓN DASHBOARD ===== -->
     <div class="section active" id="sec-dashboard">

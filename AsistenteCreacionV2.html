@@ -31,6 +31,14 @@
     #wizard-loader.hidden { display: none; }
   </style>
 
+  <script>
+    // Compartir la preferencia visual guardada por el panel cuando está disponible.
+    (function(){
+      var tema = 'dark';
+      try { if (localStorage.getItem('ims_tema') === 'light') tema = 'light'; } catch(e){}
+      document.documentElement.setAttribute('data-theme', tema);
+    })();
+  </script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -195,6 +203,59 @@
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
     ::-webkit-scrollbar-track { background: transparent; }
+
+    /* Presentación del asistente: no cambia validación ni creación de archivos. */
+    :root { --muted:#a3b1c9; }
+    :root[data-theme="light"] {
+      --bg:#f1f5f9; --panel:#ffffff; --panel-2:#eef2f7; --border:#cbd5e6;
+      --text:#0f1e33; --muted:#475569; --accent:#2563eb; --ok:#15803d;
+      --warn:#92400e; --danger:#b91c1c; --info:#6d28d9;
+    }
+    body { font-size:14px; }
+    .wiz-header { padding:20px 24px; }
+    .wiz-header h2 { font-size:20px; }
+    .wiz-header .sub { font-size:12px; line-height:1.5; }
+    .wiz-body { width:100%; max-width:1280px; margin:0 auto; padding:24px; }
+    .grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; }
+    .grid > *, .card, .field { min-width:0; }
+    .card { padding:20px; border-radius:12px; margin-bottom:16px; }
+    .card .ttl { font-size:14px; gap:10px; flex-wrap:wrap; }
+    .card .ttl .step-num { width:25px; height:25px; font-size:12px; flex-shrink:0; }
+    .card .ttl small { font-size:11px; }
+    label { font-size:12px; }
+    input[type="text"], input[type="date"], select, textarea { font-size:14px; padding:10px 12px; }
+    input[type="file"] { max-width:100%; min-width:0; font-size:12px; }
+    .radio-mini { font-size:12px; padding:10px; }
+    .radio-block .info .t { font-size:13px; }
+    .radio-block .info .d { font-size:12px; }
+    .folder-item { font-size:12px; overflow-wrap:anywhere; }
+    .wiz-footer { padding:14px 24px; position:sticky; bottom:0; z-index:10; }
+    .wiz-footer .status { font-size:13px; overflow-wrap:anywhere; }
+    .btn { font-size:13px; padding:10px 16px; }
+    #resumen { font-size:13px !important; overflow-wrap:anywhere; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline:2px solid var(--accent); outline-offset:3px;
+    }
+    :root[data-theme="light"] .radio-mini.selected { color:#1e40af; }
+    :root[data-theme="light"] [style*="background:#1c2740"],
+    :root[data-theme="light"] [style*="background:#131c2e"] { background:var(--panel-2) !important; color:var(--text) !important; }
+    :root[data-theme="light"] [style*="color:#93c5fd"] { color:#1e40af !important; }
+    :root[data-theme="light"] [style*="color:#86efac"] { color:#166534 !important; }
+    :root[data-theme="light"] [style*="color:#fca5a5"] { color:#b91c1c !important; }
+    @media (max-width:860px) {
+      .grid { grid-template-columns:minmax(0,1fr); }
+      .wiz-body { padding:16px; }
+    }
+    @media (max-width:480px) {
+      .wiz-header { padding:16px; }
+      .wiz-header h2 { font-size:17px; }
+      .card { padding:14px; }
+      .row-2 { grid-template-columns:minmax(0,1fr); }
+      .radio-row { flex-wrap:wrap; }
+      .wiz-footer { padding:12px; flex-wrap:wrap; }
+      .wiz-footer .status { flex-basis:100%; }
+      .wiz-footer .btn { flex:1; }
+    }
   </style>
 </head>
 <body>
@@ -204,7 +265,7 @@
        con mensaje claro, en vez de pantalla blanca silenciosa. -->
   <div id="wizard-loader">
     <div class="spinner"></div>
-    <div style="font-size:14px;font-weight:600;margin-bottom:6px;">📦 Cargando wizard de inventario...</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px;">📦 Cargando asistente de inventario…</div>
     <div id="wizard-loader-status" style="font-size:11px;color:#94a3b8;">Inicializando módulo de creación</div>
     <div id="wizard-loader-error" style="display:none;margin-top:18px;max-width:520px;background:#7f1d1d;color:#fecaca;padding:14px 18px;border-radius:8px;font-size:12px;text-align:left;border-left:4px solid #ef4444;"></div>
   </div>
@@ -264,8 +325,8 @@
 
   <!-- HEADER -->
   <div class="wiz-header">
-    <h2>📦 Crear archivo de inventario & vincular cronograma</h2>
-    <div class="sub">Diseño técnico formal · todos los controles a la vista · validación integral antes de procesar</div>
+    <h2>📦 Crear inventario y vincular al cronograma</h2>
+    <div class="sub">Selecciona el cliente, valida la fuente de datos y elige el destino del inventario.</div>
   </div>
 
   <!-- BODY (scroll) -->

@@ -19,9 +19,29 @@ function aplicarTema(t) {
   document.documentElement.setAttribute('data-theme', claro ? 'light' : 'dark');
   try { localStorage.setItem('ims_tema', claro ? 'light' : 'dark'); } catch(e){}
   var b = document.getElementById('theme-toggle');
-  if (b) { b.innerText = claro ? '☀️' : '🌙'; b.title = claro ? 'Cambiar a modo noche' : 'Cambiar a modo día'; }
+  if (b) { b.innerText = claro ? '☀️' : '🌙'; b.title = claro ? 'Cambiar a modo noche' : 'Cambiar a modo día'; b.setAttribute('aria-label', b.title); }
   var meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', claro ? '#f1f5f9' : '#0b1220');
+  _actualizarTemaGrafico();
+}
+
+function _coloresGrafico() {
+  var css = getComputedStyle(document.documentElement);
+  return { text:css.getPropertyValue('--text').trim(), muted:css.getPropertyValue('--muted').trim(),
+    panel:css.getPropertyValue('--panel').trim(), border:css.getPropertyValue('--border').trim() };
+}
+
+function _actualizarTemaGrafico() {
+  if (!chart || !chart.options) return;
+  var c = _coloresGrafico(), opts = chart.options;
+  opts.plugins.legend.labels.color = c.text;
+  Object.assign(opts.plugins.tooltip, { backgroundColor:c.panel, borderColor:c.border, titleColor:c.text, bodyColor:c.text });
+  ['x','y1'].forEach(function(eje) {
+    opts.scales[eje].ticks.color = c.muted;
+    opts.scales[eje].grid.color = c.border;
+    if (opts.scales[eje].title) opts.scales[eje].title.color = c.muted;
+  });
+  chart.update('none');
 }
 function toggleTema() {
   var actual = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -102,15 +122,51 @@ var AUTO_REFRESH_MS = 30000; // FASE 8.61: 30s — auditoría en vivo necesita d
 var _autoTimer = null;
 
 var _dashCargando = false;
+var _panelUltimaLectura = 0;
+
+function _claveCacheDashboard() {
+  // Una copia local pertenece al usuario y al proyecto que la generaron.
+  var email = String(U.email || '').trim().toLowerCase();
+  return email ? 'ims_estado_cache:v2:' + encodeURIComponent(window.__WEBAPP_URL__ || window.location.pathname) + ':' + email : '';
+}
+
+function _mostrarEstadoDatos(tipo, fecha) {
+  if (Number(fecha) > 0) _panelUltimaLectura = Number(fecha);
+  var box = $('datos-estado'), msg = $('datos-mensaje'), hora = $('datos-actualizados');
+  if (!box || !msg || !hora) return;
+  box.setAttribute('data-state', tipo);
+  msg.innerText = tipo === 'fresh' ? 'Datos operativos actualizados' :
+    tipo === 'cache' ? 'Mostrando una copia local; pendiente de actualizar' :
+    tipo === 'error' ? (estado ? 'No se pudo actualizar; se conservan los últimos datos disponibles' : 'No se pudieron cargar los datos del panel') :
+    'Actualizando datos operativos…';
+  hora.innerText = 'Última consulta al panel: ' + (_panelUltimaLectura ?
+    new Date(_panelUltimaLectura).toLocaleString('es-EC', { timeZone:'America/Guayaquil', day:'2-digit', month:'short',
+      year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }) + ' · Ecuador' : 'pendiente');
+  var retry = $('datos-reintentar');
+  if (retry) retry.hidden = tipo !== 'error';
+}
+
+function _falloDashboard(err, silencioso) {
+  _dashCargando = false;
+  _mostrarCargandoDashboard(false);
+  _mostrarEstadoDatos('error');
+  if (!silencioso) toast('Error: ' + ((err && err.message) || 'No se pudo consultar el panel'), 'error');
+}
+
 function cargarDashboard(silencioso) {
+  if (_dashCargando) return;
   var scrollY = window.scrollY;
   var qActual = $('f-cliente') ? $('f-cliente').value : '';
   // FASE 8.65 (perf): indicador visible SOLO en carga no silenciosa sin datos.
   if (!silencioso && !estado) _mostrarCargandoDashboard(true);
-  if (_dashCargando && silencioso) return;   // no encimar refrescos
   _dashCargando = true;
+  _mostrarEstadoDatos('loading');
   google.script.run
     .withSuccessHandler(d => {
+      if (!d || !d.kpis || !Array.isArray(d.cronograma)) {
+        _falloDashboard({ message:'El servidor devolvió una respuesta incompleta' }, silencioso);
+        return;
+      }
       _dashCargando = false;
       estado = d;
       // FIX FASE 8.23: timestamp para invalidar cache del calendario
@@ -118,16 +174,17 @@ function cargarDashboard(silencioso) {
       _calCacheKey = ''; // forzar repintado
       _mostrarCargandoDashboard(false);
       pintarDashboard();
+      _mostrarEstadoDatos('fresh', Date.now());
       // FASE 8.65 (perf): cachear el último estado para pintado INSTANTÁNEO
       // en la próxima carga (evita 1 min con módulos vacíos).
-      try { localStorage.setItem('ims_estado_cache', JSON.stringify({ t: Date.now(), d: d })); } catch(e){}
+      try { var key = _claveCacheDashboard(); if (key) localStorage.setItem(key, JSON.stringify({ t: _panelUltimaLectura, d: d })); } catch(e){}
       if (silencioso) {
         if ($('f-cliente') && qActual) { $('f-cliente').value = qActual; pintarCron(); }
         window.scrollTo(0, scrollY);
         mostrarIndicadorRefresh();
       }
     })
-    .withFailureHandler(err => { _dashCargando = false; _mostrarCargandoDashboard(false); if (!silencioso) toast('Error: ' + err.message, 'error'); })
+    .withFailureHandler(err => _falloDashboard(err, silencioso))
     .obtenerEstadoIntegralDashboard();
 }
 
@@ -151,14 +208,17 @@ function _mostrarCargandoDashboard(on) {
    reciente) para que NO se vea el panel vacío mientras llega el fresco. */
 function _pintarDesdeCache() {
   try {
-    var raw = localStorage.getItem('ims_estado_cache');
+    var key = _claveCacheDashboard();
+    if (!key) return false;
+    var raw = localStorage.getItem(key);
     if (!raw) return false;
     var o = JSON.parse(raw);
-    if (!o || !o.d) return false;
+    if (!o || !o.d || !o.d.kpis || !Array.isArray(o.d.cronograma)) return false;
     // Solo si es de las últimas 12 h (evita datos rancios)
-    if (Date.now() - (o.t||0) > 12*3600*1000) return false;
+    if (!Number(o.t) || Number(o.t) > Date.now() || Date.now() - Number(o.t) > 12*3600*1000) return false;
     estado = o.d; estado._cronoStamp = Date.now(); _calCacheKey='';
     pintarDashboard();
+    _mostrarEstadoDatos('cache', o.t);
     return true;
   } catch(e){ return false; }
 }
@@ -225,37 +285,42 @@ function pintarActivos() {
     : 'Sin usuarios activos en los últimos 5 min';
 }
 
-/* FIX FASE 8.33: indicador flotante del progreso de la consolidación por lotes.
-   Se crea/actualiza dinámicamente (sin tocar el HTML) leyendo estado.consolidacion.
-   Solo se muestra mientras una corrida está EN_CURSO; ofrece "Cancelar". */
+/* El estado del histórico permanece visible al terminar o fallar. La consulta
+   del panel no convierte ese estado en una marca nueva de validación KPI. */
 function pintarConsolidacion() {
   var c = estado && estado.consolidacion;
   var banner = document.getElementById('consol-banner');
-  if (!c || !c.enCurso) { if (banner) banner.remove(); return; }
-  if (!banner) {
-    banner = document.createElement('div');
-    banner.id = 'consol-banner';
-    banner.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:70;' +
-      'background:#131c2e;border:1px solid #283352;border-left:3px solid #f59e0b;border-radius:10px;' +
-      'padding:10px 14px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,0.45);' +
-      'font-size:12px;color:#e8ecf3;max-width:92vw;';
-    document.body.appendChild(banner);
+  if (!banner) return;
+  banner.hidden = false;
+  var status = String((c && c.status) || 'IDLE').toUpperCase();
+  var reporte = c && c.modo === 'reporte_solo';
+  var titulo = reporte ? 'Prevalidación del histórico' : 'Consolidación del histórico';
+  var clase = '', detalle = 'No hay una corrida reciente informada por el panel.';
+  var enCurso = status === 'EN_CURSO' || (c && c.enCurso);
+  if (enCurso) {
+    clase = 'running'; titulo += ' en curso';
+    detalle = 'Continuará automáticamente en segundo plano.';
+  } else if (status === 'ERROR') {
+    clase = 'error'; titulo += ' con incidencias';
+    detalle = 'Revisa la auditoría antes de utilizar el histórico para KPI.';
+  } else if (status === 'CANCELADO') {
+    clase = 'cancelled'; titulo += ' cancelada';
+    detalle = 'El histórico puede estar incompleto. Revisa el resultado antes de utilizarlo.';
+  } else if (status === 'COMPLETADO') {
+    clase = reporte ? '' : 'complete'; titulo += reporte ? ' terminada' : ' completada';
+    detalle = reporte ? 'Consulta las incidencias de la prevalidación; este proceso no reemplaza el histórico.' :
+      'Consulta la auditoría para comprobar el resultado de la consolidación.';
   }
-  var pct = c.total > 0 ? Math.round((c.procesados / c.total) * 100) : 0;
-  banner.innerHTML =
-    '<span style="font-size:16px;">⏳</span>' +
-    '<div style="min-width:200px;">' +
-      '<div style="font-weight:600;margin-bottom:4px;">Consolidación en curso · ' +
-        c.procesados + '/' + c.total + ' (' + pct + '%)</div>' +
-      '<div style="height:5px;background:#0d1424;border-radius:3px;overflow:hidden;">' +
-        '<div style="height:100%;width:' + pct + '%;background:#f59e0b;transition:width .4s;"></div>' +
-      '</div>' +
-      '<div style="color:#7d8aa8;margin-top:4px;font-size:10.5px;">Termina automáticamente en segundo plano.</div>' +
-    '</div>' +
-    '<button id="consol-resume" style="background:#1d2c3a;color:#93c5fd;border:1px solid #2b485c;' +
-      'padding:5px 10px;border-radius:7px;cursor:pointer;font-size:11px;white-space:nowrap;">Reanudar</button>' +
-    '<button id="consol-cancel" style="background:#3a1d1d;color:#fca5a5;border:1px solid #5c2b2b;' +
-      'padding:5px 10px;border-radius:7px;cursor:pointer;font-size:11px;white-space:nowrap;">Cancelar</button>';
+  var total = Math.max(0, Number(c && c.total) || 0);
+  var procesados = Math.max(0, Number(c && c.procesados) || 0);
+  var pct = total > 0 ? Math.min(100, Math.round(procesados / total * 100)) : 0;
+  var controles = enCurso && (P.baseDatos || P.consolidar || P.admin);
+  banner.className = 'consol-state' + (clase ? ' consol-state--' + clase : '');
+  banner.innerHTML = '<div class="consol-copy"><div class="consol-title">' + titulo + '</div>' +
+    '<div class="consol-detail">' + detalle + (total ? ' · ' + procesados + '/' + total + ' archivos recorridos' : '') + '</div>' +
+    (enCurso ? '<progress max="100" value="' + pct + '" aria-label="Archivos procesados: ' + pct + '%"></progress>' : '') +
+    '</div>' + (controles ? '<div class="consol-actions"><button type="button" id="consol-resume">Reanudar</button>' +
+      '<button type="button" id="consol-cancel">Cancelar</button></div>' : '');
   var btnR = document.getElementById('consol-resume');
   if (btnR) btnR.onclick = function() {
     btnR.disabled = true; btnR.innerText = '…';
@@ -292,6 +357,7 @@ function pintarChart() {
   }
   window._chartHash = _hash;
   if (chart) chart.destroy();
+  var colores = _coloresGrafico();
   chart = new Chart($('chart-anual').getContext('2d'), {
     type:'line',
     data:{ labels:meses, datasets:[
@@ -301,10 +367,10 @@ function pintarChart() {
         backgroundColor:'rgba(168,85,247,0.08)', yAxisID:'y1', tension:0.25, borderWidth:2, pointRadius:3, borderDash:[4,3], fill:false }
     ]},
     options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
-      plugins:{ legend:{labels:{color:'#e8ecf3',font:{size:11},boxWidth:12,usePointStyle:true}},
-        tooltip:{backgroundColor:'#131c2e',borderColor:'#283352',borderWidth:1,titleColor:'#e8ecf3',bodyColor:'#e8ecf3',padding:10}},
-      scales:{ x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8aa8',font:{size:10}}},
-        y1:{type:'linear',position:'left',beginAtZero:true,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8aa8',font:{size:10},stepSize:1,precision:0},title:{display:true,text:'Eventos (cantidad)',color:'#7d8aa8',font:{size:10}}}}}
+      plugins:{ legend:{labels:{color:colores.text,font:{size:11},boxWidth:12,usePointStyle:true}},
+        tooltip:{backgroundColor:colores.panel,borderColor:colores.border,borderWidth:1,titleColor:colores.text,bodyColor:colores.text,padding:10}},
+      scales:{ x:{grid:{color:colores.border},ticks:{color:colores.muted,font:{size:10}}},
+        y1:{type:'linear',position:'left',beginAtZero:true,grid:{color:colores.border},ticks:{color:colores.muted,font:{size:10},stepSize:1,precision:0},title:{display:true,text:'Eventos (cantidad)',color:colores.muted,font:{size:10}}}}}
   });
   // FIX FASE 8.19: si el calendario estaba activo, re-renderizar con datos frescos
   if (vistaTendActual === 'cal') pintarCalendario();
