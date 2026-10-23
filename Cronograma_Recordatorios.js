@@ -3362,7 +3362,7 @@ function _consolClaveFilaSinId(row) {
 
 /* Preparar con las filas ORIGEN, no con los IDs largos del PANEL. Se valida
    el esquema antes de borrar; una purga fallida debe abortar, nunca apilar. */
-function _consolPrepararReemplazo(hoja, filas, headers, fresco) {
+function _pbiAnterior_consolPrepararReemplazo(hoja, filas, headers, fresco) {
   if (!filas.length) return null;
   var cols = _consolColumnasIdentidad(headers);
   var destino = hoja.getLastRow() > 0
@@ -3387,7 +3387,7 @@ function _consolPrepararReemplazo(hoja, filas, headers, fresco) {
   return { cols: destino, claves: claves, sinId: sinId, origenes: origenes, sinIdOrigen: sinIdOrigen, origenVacio: origenVacio };
 }
 
-function _consolPurgarFilasDelLote(hoja, plan) {
+function _pbiAnterior_consolPurgarFilasDelLote(hoja, plan) {
   if (!plan || hoja.getLastRow() < 2) return 0;
   var ultima = hoja.getLastRow();
   var cols = plan.cols;
@@ -3480,7 +3480,7 @@ function _consolNombreColumna(valor) {
     .replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-function _consolLeerEsquema(hoja, tabla, fresco) {
+function _pbiAnterior_consolLeerEsquema(hoja, tabla, fresco) {
   var guardado = fresco ? "" : _consolProps().getProperty("CONSOL_SCHEMA_" + tabla);
   if (guardado) return JSON.parse(guardado);
   if (!hoja || !hoja.getLastRow()) return [];
@@ -3489,7 +3489,7 @@ function _consolLeerEsquema(hoja, tabla, fresco) {
     .map(function(h, i) { return String(h || "").trim() || ("SIN_ENCABEZADO_" + (i + 1)); });
 }
 
-function _consolAlinearColumnas(filas, fuente, esquema, acumuladas, archivo) {
+function _pbiAnterior_consolAlinearColumnas(filas, fuente, esquema, acumuladas, archivo) {
   var indice = Object.create(null), usadas = Object.create(null), mapa = [];
   esquema.forEach(function(h, i) { indice[_consolNombreColumna(h)] = i; });
   var ancho = filas.reduce(function(n, r) { return Math.max(n, r.length); }, fuente.length);
@@ -3520,7 +3520,7 @@ function _consolAlinearColumnas(filas, fuente, esquema, acumuladas, archivo) {
   });
 }
 
-function _consolAjustarDestino(hoja, headers, fresco) {
+function _pbiAnterior_consolAjustarDestino(hoja, headers, fresco) {
   if (!headers || !headers.length || fresco || !hoja.getLastRow()) return;
   var actuales = hoja.getRange(1, 1, 1, hoja.getLastColumn()).getValues()[0];
   var origen = actuales.map(_consolNombreColumna).indexOf("ORIGENDRIVE");
@@ -3792,7 +3792,7 @@ function _consolidarNucleo(opciones) {
     // ── FIX FASE 8.33: determinar arranque fresco vs. reanudación ────────────
     var estPrev = _consolEstadoLeer();
     var debeReanudar = false;
-    if (esContinuacion && estPrev.STATUS === "EN_CURSO" && estPrev.VERSION !== "5") {
+    if (esContinuacion && estPrev.STATUS === "EN_CURSO" && estPrev.VERSION !== (_pbiActivo() ? "6" : "5")) {
       throw _consolIntegridadError("La corrida pendiente usa el código anterior. Cancélala y comienza una consolidación nueva.");
     }
     if (estPrev.STATUS === "EN_CURSO") {
@@ -4394,7 +4394,11 @@ function _consolidarNucleo(opciones) {
     _consolProps().setProperties(esquemas, false);
     _consolGuardarFuentes(registroFuentes);
 
-    if (modo !== "reporte_solo" && procInv) {
+    if (_pbiActivo()) {
+  if (modo !== "reporte_solo" && procInv) _pbiEscribir(inv, todosLosDatos, headersInv, esFresh, planInv);
+  if (modo !== "reporte_solo" && procReg && reg) _pbiEscribir(reg, todosLosRegistros, headersReg, esFresh, planReg);
+} else {
+if (modo !== "reporte_solo" && procInv) {
       if (esFresh && inv.getLastRow() > 1) {
         inv.getRange(2, 1, inv.getLastRow() - 1, inv.getLastColumn()).clearContent();
         SpreadsheetApp.flush();   // getLastRow() debe ver la hoja ya vacía
@@ -4460,6 +4464,8 @@ function _consolidarNucleo(opciones) {
       }
     }
 
+
+}
     // Escribir AUDITORÍA INVENTARIOS de este lote (APPEND, sin fila TOTAL aún).
     // reporte_solo no escribe auditoría INV (comportamiento histórico).
     if (modo !== "reporte_solo" && procInv && auditRows.length > 0) {
@@ -4757,7 +4763,7 @@ function _consolHeartbeatVivo(ts) {
 function _consolEstadoIniciar(o) {
   _consolProps().setProperties({
     CONSOL_RUN_TOKEN: Utilities.getUuid(),
-    CONSOL_VERSION: "5",
+    CONSOL_VERSION: (_pbiActivo() ? "6" : "5"), CONSOL_PBI_INIT_INV: "", CONSOL_PBI_INIT_REG: "",
     CONSOL_SCHEMA_INV: "",
     CONSOL_SCHEMA_REG: "",
     CONSOL_KPI_RUN: "",
@@ -4852,7 +4858,7 @@ function _consolAccLeer() {
   if (raw) {
     try { var o = JSON.parse(raw); for (var k in d) if (o[k] != null) d[k] = o[k]; } catch(e){}
   }
-  if (_consolProps().getProperty("CONSOL_VERSION") === "5") {
+  if (/^[56]$/.test(_consolProps().getProperty("CONSOL_VERSION") || "")) {
     var sh = _consolHojaCache(false);
     var campos = ["filas", "cant", "criticos", "dups", "erroresDet", "excAud", "leidas", "regIncl", "regDup", "regVacias"];
     campos.forEach(function(k) { d[k] = 0; });
@@ -10170,3 +10176,154 @@ function prepararDescargaZip() {
 }
 
 /* ====================== FIN SECCIÓN LEGACY ====================== */
+
+/* Esquema publico Power BI: procedencia en notas, nunca en columnas. */
+function _pbiActivo() { return _consolProps().getProperty("CONSOL_PBI_FIJO") === "1"; }
+function _pbiClave(x) {
+  var n = typeof x === "string" ? x : x.getName();
+  if (n === "INV" || n === "INVENTARIOS") return "INV";
+  if (n === "REG" || n === "REGISTRO") return "REG";
+  throw new Error("Destino Power BI desconocido: " + n);
+}
+function _pbiHead(x) {
+  var k = _pbiClave(x), h = JSON.parse(_consolProps().getProperty("CONSOL_PBI_HEAD_" + k) || "null");
+  if (!Array.isArray(h) || h.length !== (k === "INV" ? 30 : 15)) throw new Error("Falta activar el esquema Power BI: " + k);
+  return h;
+}
+function _pbiOrigen(nota) {
+  var m = String(nota || "").match(/^IMS_ORIGEN_DRIVE=([^\r\n]*)/m);
+  return m ? m[1] : "";
+}
+function _pbiNota(nota, origen) {
+  var resto = String(nota || "").replace(/^IMS_ORIGEN_DRIVE=[^\r\n]*(?:\r?\n|$)/gm, "");
+  if (!origen) return resto;
+  if (/[\r\n]/.test(String(origen))) throw new Error("Procedencia invalida.");
+  return resto + (resto && !/\n$/.test(resto) ? "\n" : "") + "IMS_ORIGEN_DRIVE=" + origen;
+}
+function _pbiVirtual(sh) {
+  var head = _pbiHead(sh), n = head.length, id = head.map(_consolNombreColumna).indexOf("ID");
+  if (id < 0) throw new Error("Falta ID en " + sh.getName());
+  return {
+    getName: function() { return sh.getName(); },
+    getLastRow: function() { return sh.getLastRow(); },
+    getLastColumn: function() { return n + 1; },
+    deleteRows: function(f, cantidad) { return sh.deleteRows(f, cantidad); },
+    getRange: function(f, c, cantidad, ancho) {
+      cantidad = cantidad == null ? 1 : cantidad; ancho = ancho == null ? 1 : ancho;
+      if (c < 1 || c + ancho - 1 > n + 1) throw new Error("Lectura fuera del esquema fijo.");
+      return { getValues: function() {
+        var fisicas = Math.max(0, Math.min(ancho, n - c + 1));
+        var vals = fisicas ? sh.getRange(f, c, cantidad, fisicas).getValues() : [];
+        var usaOrigen = c + ancho - 1 === n + 1;
+        var notas = usaOrigen ? sh.getRange(f, id + 1, cantidad, 1).getNotes() : [];
+        var salida = [];
+        for (var i = 0; i < cantidad; i++) {
+          var row = vals[i] ? vals[i].slice() : [];
+          if (usaOrigen) row.push(f + i === 1 ? "ORIGEN_DRIVE" : _pbiOrigen(notas[i][0]));
+          salida.push(row);
+        }
+        return salida;
+      } };
+    }
+  };
+}
+function _consolLeerEsquema(hoja, tabla, fresco) {
+  return _pbiActivo() ? _pbiHead(tabla).slice() : _pbiAnterior_consolLeerEsquema(hoja, tabla, fresco);
+}
+function _consolAlinearColumnas(filas, fuente, esquema, acumuladas, archivo) {
+  if (!_pbiActivo()) return _pbiAnterior_consolAlinearColumnas(filas, fuente, esquema, acumuladas, archivo);
+  var esperado = _pbiHead(esquema.length === 30 ? "INV" : "REG");
+  if (JSON.stringify(esquema) !== JSON.stringify(esperado)) throw new Error("El esquema publico cambio durante la corrida.");
+  var indice = Object.create(null), usadas = Object.create(null), mapa = [], omitidas = [];
+  esquema.forEach(function(h, i) { indice[_consolNombreColumna(h)] = i; });
+  var ancho = filas.reduce(function(n, r) { return Math.max(n, r.length); }, fuente.length);
+  for (var c = 0; c < ancho; c++) {
+    var nombre = String(fuente[c] || "").trim(), clave = _consolNombreColumna(nombre);
+    if (clave === "ORIGENDRIVE") throw _consolIntegridadError("Columna reservada en archivo hijo " + archivo);
+    if (!clave && !filas.some(function(r) { return valueNotEmpty(r[c]); })) { mapa[c] = -1; continue; }
+    if (!clave && c < esquema.length) clave = _consolNombreColumna(esquema[c]);
+    if (indice[clave] == null) { mapa[c] = -1; omitidas.push(nombre || ("SIN_ENCABEZADO_" + (c + 1))); continue; }
+    if (usadas[clave]) throw _consolIntegridadError("Encabezado ambiguo " + nombre + " en " + archivo);
+    usadas[clave] = true; mapa[c] = indice[clave];
+  }
+  if (omitidas.length) Logger.log("Power BI: campos ajenos al esquema en " + archivo + ": " + omitidas.join(", "));
+  return filas.map(function(row) {
+    var nueva = esquema.map(function() { return ""; });
+    for (var i = 0; i < mapa.length; i++) if (mapa[i] >= 0) nueva[mapa[i]] = row[i] == null ? "" : row[i];
+    return nueva;
+  });
+}
+function _consolAjustarDestino(sh, headers, fresco) {
+  if (!_pbiActivo()) return _pbiAnterior_consolAjustarDestino(sh, headers, fresco);
+  var h = _pbiHead(sh);
+  if (JSON.stringify(headers) !== JSON.stringify(h.concat(["ORIGEN_DRIVE"]))) throw new Error("Ancho publico incompatible.");
+  if (sh.getLastRow()) {
+    var actual = sh.getRange(1, 1, 1, h.length).getValues()[0];
+    if (JSON.stringify(actual) !== JSON.stringify(h)) throw new Error("Se modificaron los encabezados de " + sh.getName());
+  }
+}
+function _consolPrepararReemplazo(sh, filas, headers, fresco) {
+  return _pbiAnterior_consolPrepararReemplazo(_pbiActivo() ? _pbiVirtual(sh) : sh, filas, headers, fresco);
+}
+function _consolPurgarFilasDelLote(sh, plan) {
+  return _pbiAnterior_consolPurgarFilasDelLote(_pbiActivo() ? _pbiVirtual(sh) : sh, plan);
+}
+function _pbiEscribir(sh, filas, headers, fresco, plan) {
+  var sp = _consolProps(), head = _pbiHead(sh), n = head.length;
+  var id = head.map(_consolNombreColumna).indexOf("ID");
+  var run = sp.getProperty("CONSOL_RUN_TOKEN"), marca = "CONSOL_PBI_INIT_" + _pbiClave(sh);
+  if (!run || id < 0) throw new Error("Corrida Power BI sin identidad.");
+  filas.forEach(function(row) {
+    if (row.length !== n + 1) throw new Error("Fila fuera del esquema de " + sh.getName());
+  });
+  if (sp.getProperty(marca) !== run) {
+    var ultima = sh.getLastRow();
+    if (ultima > 1) {
+      var notas = sh.getRange(2, id + 1, ultima - 1, 1).getNotes();
+      sh.getRange(2, id + 1, ultima - 1, 1).setNotes(notas.map(function(r) { return [_pbiNota(r[0], "")]; }));
+      sh.getRange(2, 1, ultima - 1, sh.getLastColumn()).clearContent();
+    }
+    if (sh.getMaxColumns() < n) throw new Error("Faltan columnas originales en " + sh.getName());
+    if (sh.getMaxColumns() > n) sh.deleteColumns(n + 1, sh.getMaxColumns() - n);
+    sh.getRange(1, 1, 1, n).setValues([head]);
+    SpreadsheetApp.flush();
+    sp.setProperty(marca, run);
+  } else {
+    _consolPurgarFilasDelLote(sh, plan);
+  }
+  if (!filas.length) return;
+  var destino = Math.max(sh.getLastRow() + 1, 2), faltan = destino + filas.length - 1 - sh.getMaxRows();
+  if (faltan > 0) sh.insertRowsAfter(sh.getMaxRows(), faltan);
+  var previas = sh.getRange(destino, id + 1, filas.length, 1).getNotes();
+  sh.getRange(destino, id + 1, filas.length, 1).setNotes(filas.map(function(r, i) { return [_pbiNota(previas[i][0], String(r[n] || ""))]; }));
+  SpreadsheetApp.flush();
+  sh.getRange(destino, 1, filas.length, n).setNumberFormat("@").setValues(filas.map(function(r) { return r.slice(0, n); }));
+}
+function activarEsquemaFijoPowerBI_() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw new Error("Hay otra operacion activa.");
+  try {
+    var sp = _consolProps(), estado = sp.getProperty("CONSOL_STATUS") || "";
+    if (_pbiActivo()) { Logger.log("Esquema fijo ya activado. Respaldo: " + sp.getProperty("CONSOL_PBI_RESPALDO")); return; }
+    if (["", "COMPLETADO", "ERROR", "CANCELADO", "DETENIDO"].indexOf(estado) < 0) throw new Error("Primero detener la consolidacion: " + estado);
+    var ss = _getSS(), datos = {};
+    [["INVENTARIOS", "INV", 30, 2], ["REGISTRO", "REG", 15, 5]].forEach(function(d) {
+      var sh = ss.getSheetByName(d[0]);
+      if (!sh || sh.getLastColumn() < d[2]) throw new Error("Esquema original incompleto: " + d[0]);
+      var head = sh.getRange(1, 1, 1, d[2]).getValues()[0];
+      if (head.some(function(h) { return !String(h || "").trim(); }) ||
+          _consolNombreColumna(head[d[3]]) !== "ID" ||
+          (d[1] === "INV" && (_consolNombreColumna(head[6]) !== "PRODUCTO" || _consolNombreColumna(head[29]) !== "ACTUALIZACIONDEPOT")) ||
+          (d[1] === "REG" && _consolNombreColumna(head[14]) !== "LINK")) throw new Error("Revisar encabezados originales: " + d[0]);
+      datos["CONSOL_PBI_HEAD_" + d[1]] = JSON.stringify(head);
+    });
+    var copia = DriveApp.getFileById(ss.getId()).makeCopy("IMS_RESPALDO_POWERBI_" + new Date().toISOString().replace(/[:.]/g, "-"));
+    datos.CONSOL_PBI_RESPALDO = copia.getId();
+    datos.CONSOL_PBI_FIJO = "1"; datos.CONSOL_VERSION = "6"; datos.CONSOL_STATUS = "ERROR";
+    datos.CONSOL_RUN_TOKEN = ""; datos.CONSOL_KPI_RUN = ""; datos.CONSOL_KPI_REG_RUN = "";
+    datos.CONSOL_PBI_INIT_INV = ""; datos.CONSOL_PBI_INIT_REG = "";
+    sp.setProperties(datos, false);
+    Logger.log("Respaldo completo: https://docs.google.com/spreadsheets/d/" + copia.getId() + "/edit");
+    Logger.log("Esquema fijo activado. Iniciar una consolidacion NUEVA, sin reanudar la anterior.");
+  } finally { lock.releaseLock(); }
+}

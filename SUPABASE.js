@@ -534,6 +534,7 @@ function _sbReconciliarPorArchivo(nombreHoja, tabla, propProg, colsFn, mapFn, li
   }
   var ss = (typeof _getSS === "function") ? _getSS() : SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(nombreHoja);
+  if (typeof _pbiActivo === "function" && _pbiActivo() && sh) sh = _pbiVirtual(sh);
   if (!sh) return { ok: false, mensaje: nombreHoja + " no existe." };
   if (sh.getLastRow() < 2) { sp.deleteProperty(propProg); return { ok: true, archivos: 0, filas: 0, mensaje: nombreHoja + " está vacía." }; }
 
