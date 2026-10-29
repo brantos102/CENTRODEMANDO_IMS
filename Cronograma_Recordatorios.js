@@ -10299,6 +10299,14 @@ function _pbiEscribir(sh, filas, headers, fresco, plan) {
   SpreadsheetApp.flush();
   sh.getRange(destino, 1, filas.length, n).setNumberFormat("@").setValues(filas.map(function(r) { return r.slice(0, n); }));
 }
+/* Apps Script no ofrece en el botón ▶ las funciones cuyo nombre termina en
+   guion bajo: las trata como privadas. activarEsquemaFijoPowerBI_ es una de
+   ellas, así que sin este envoltorio no hay forma de lanzarla desde el editor.
+   El prefijo AA_ la deja primera en el desplegable de funciones. */
+function AA_ActivarPowerBI() {
+  return activarEsquemaFijoPowerBI_();
+}
+
 function activarEsquemaFijoPowerBI_() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) throw new Error("Hay otra operacion activa.");
