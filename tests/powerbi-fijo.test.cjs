@@ -126,3 +126,19 @@ test("Encabezados modificados y filas demasiado anchas se rechazan sin escribir"
   f=fixture();const before=JSON.stringify(f.inv.rows);
   fails(()=>send(f,f.inv,[pbiRow(INV,"Drive_A").concat(["EXTRA"])],true));check(JSON.stringify(f.inv.rows)===before);
 });
+
+
+test("Cabecera de producto incompatible se reporta por archivo antes de producir SKU vacios",()=>{
+  const f=fixture(),head=INV.slice();head[6]="PRODUCTOS";
+  const row=INV.map(()=>"");row[2]="260406_FLUKE";row[6]="3807928";
+  const before=JSON.stringify(f.inv.rows);let error;
+  try { f.c._consolAlinearColumnas([row],head,INV.slice(),[],"fluke-fuente"); }
+  catch(e){ error=e; }
+  check(error && /PRODUCTO/.test(error.message) && /fluke-fuente/.test(error.message));
+  check(JSON.stringify(f.inv.rows)===before && row[6]==="3807928");
+});
+test("Cabecera PRODUCTO correcta permite que la validacion posterior detecte un SKU realmente vacio",()=>{
+  const f=fixture(),row=INV.map(()=>"");row[2]="INV";
+  const aligned=f.c._consolAlinearColumnas([row],INV.slice(),INV.slice(),[],"fuente");
+  check(aligned.length===1 && aligned[0][6]==="");
+});

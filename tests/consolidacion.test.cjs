@@ -348,3 +348,14 @@ test('continuación ocupada no incrementa el contador de estancamiento',()=>{
  const {c,props}=workflow();props.CONSOL_STATUS='EN_CURSO';props.CONSOL_STALLS='0';
  c.LockService={getScriptLock:()=>({tryLock:()=>false})};c._continuarConsolidacion();assert.equal(props.CONSOL_STALLS,'0');
 });
+
+for (const estadoPendiente of ['En Proceso','En validación','No entregado','Entregado pendiente de validación']) {
+ test('núcleo real: '+estadoPendiente+' no se consolida y conserva los datos de su archivo',()=>{
+  const {c,sheets,rows,ids}=workflow();
+  sheets['PANEL DE CONTROL'].rows=[sheets['PANEL DE CONTROL'].rows[0],['SG','',ids[0],'','','UIO','Entregado'],['SG','',ids[1],'','','UIO',estadoPendiente]];
+  const open=c.safeOpenSpreadsheet,pending=open(ids[1]).ss.getSheetByName('PLANILLA DE CONTEO FISICO');const before=structuredClone(pending.rows),opened=[];
+  c.safeOpenSpreadsheet=id=>{opened.push(id);const res=open(id);res.ss.getSheetByName('PLANILLA DE CONTEO FISICO').onRead=null;return res;};
+  const result=c._consolidarNucleo({contexto:'web'});
+  assert.equal(result.ok,true);assert.equal(result.archivosProcesados,1);assert.deepEqual(businessRows(sheets.INVENTARIOS),[head,rows[0]]);assert.deepEqual(pending.rows,before);assert.equal(opened.includes(ids[1]),false);
+ });
+}

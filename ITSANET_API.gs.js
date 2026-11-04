@@ -331,6 +331,18 @@ function _filaRmDesdeStock(o) {
   return f;
 }
 
+/* Identidad ERP por cliente y dimensiones logísticas. JSON evita colisiones
+   entre valores que contengan separadores; la cantidad no agrupa clientes. */
+function _claveStockItsanet(f, conSerie) {
+  var campos = [4, 6, 9, 10, 11, 12, 13, 14, 15];
+  var partes = [conSerie ? "SERIE" : "CANTIDAD"];
+  if (conSerie) partes.push(String(f[8] == null ? "" : f[8]).trim().toUpperCase());
+  campos.forEach(function(i) {
+    partes.push(String(f[i] == null ? "" : f[i]).trim());
+  });
+  return JSON.stringify(partes);
+}
+
 function _setCodigos(listaCodigos) {
   if (!listaCodigos) return null;
   var raw = Array.isArray(listaCodigos) ? listaCodigos.join(',') : String(listaCodigos);
@@ -350,8 +362,29 @@ function _clienteCoincideItsanet(cliFila, cliSel) {
   return !!(rC && rC===rS);
 }
 
+/**
+ * ¿Se acepta esta fila para el cliente pedido?
+ *
+ * Sin `codigosCliente` se aplica el criterio de siempre. Con lista, se aceptan
+ * SOLO esos códigos: hace falta porque en el ERP el "COD. CLIENTE" no siempre
+ * coincide con el nombre de la credencial — la credencial NOKIACNTLTE devuelve
+ * su stock bajo el código NOKIACNT (su razón social es la que dice "LTE").
+ */
+function _aceptaClienteItsanet(cliFila, cliSel, codigosCliente) {
+  if (codigosCliente && codigosCliente.length) {
+    var c = String(cliFila || "").trim().toUpperCase();
+    for (var i = 0; i < codigosCliente.length; i++) {
+      if (c === String(codigosCliente[i] || "").trim().toUpperCase()) return true;
+    }
+    return false;
+  }
+  return _clienteCoincideItsanet(cliFila, cliSel);
+}
+
 // ORQUESTADOR para el wizard
-function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVariantes) {
+// `codigosCliente` (opcional) fuerza qué COD. CLIENTE se aceptan; si no se pasa,
+// el comportamiento es exactamente el de siempre.
+function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVariantes, codigosCliente) {
   var r = consultarStockItsanet(clienteSeleccionado);
   if (r.code !== 200) throw new Error('El servidor reporta HTTP ' + r.code);
   
@@ -382,7 +415,7 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
     var cliRow = String(o['COD. CLIENTE']||"").trim().toUpperCase();
     if (cliRow) clientes[cliRow] = (clientes[cliRow]||0)+1;
     if (!sku){ rep.skuVacio++; rep.excluidas++; continue; }
-    if (!_clienteCoincideItsanet(cliRow, clienteSeleccionado)){ rep.filtradasPorCliente++; rep.excluidas++; continue; }
+    if (!_aceptaClienteItsanet(cliRow, clienteSeleccionado, codigosCliente)){ rep.filtradasPorCliente++; rep.excluidas++; continue; }
     if (setCods){
       var m = !!setCods[sku];
       if (!m && incluirVariantes){ for (var kk in setCods){ if (sku.indexOf(kk)===0){ m=true; break; } } }
@@ -413,7 +446,7 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
       if (seriesVistas[serie]){ if (rep.seriesDuplicadasEnCSV.length<50) rep.seriesDuplicadasEnCSV.push({sku:sku, serie:serie}); }
       else seriesVistas[serie]=true;
 
-      key = 'S§'+f[6]+'|'+serie+'|'+f[9]+'|'+f[14];
+      key = _claveStockItsanet(f, true);
       if (grupos[key]){ rep.seriesDuplicadas++; continue; } // duplicado exacto → omitir
       rep.filasConSerie++;
       f[16]=cant; grupos[key]=f; orden.push(key);
@@ -424,7 +457,7 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
 
     // Sin serie → consolidación histórica (comportamiento previo intacto)
     rep.filasSinSerie++;
-    key = 'N§'+f[6]+'|'+f[9]+'|'+f[10]+'|'+f[11]+'|'+f[14];
+    key = _claveStockItsanet(f, false);
     if (grupos[key]){ grupos[key][16] = (parseFloat(grupos[key][16])||0) + cant; rep.filasIdenticasDuplicadas++; }
     else { f[16]=cant; grupos[key]=f; orden.push(key); rep.incluidas++; skusUnicos[sku]=true; }
     rep.sumaCantidad += cant;
@@ -433,7 +466,13 @@ function previsualizarStockItsanet(clienteSeleccionado, listaCodigos, incluirVar
   rep.skusUnicosCount = Object.keys(skusUnicos).length;
   rep.clientesDetalle = Object.keys(clientes).map(function(k){ return {cliente:k, filas:clientes[k]}; }).sort(function(a,b){ return b.filas-a.filas; });
   
-  if (!datosLimpios.length) throw new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de Quito.');
+  if (!datosLimpios.length) {
+    // El informe viaja CON el error: quien llama puede ver bajo qué
+    // COD. CLIENTE respondió la credencial sin repetir la consulta al ERP.
+    var _vacio = new Error('No hay stock para el cliente "'+clienteSeleccionado+'" en la bodega de Quito.');
+    _vacio.reporte = rep;
+    throw _vacio;
+  }
 
   return { datosLimpios: datosLimpios, reporte: rep };
 }

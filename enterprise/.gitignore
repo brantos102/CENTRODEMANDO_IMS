@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.*
+!.env.example
+datos/
+snapshots/
+*.xlsx
+*.jsonl
+__pycache__/
+*.pyc

@@ -1,16 +1,19 @@
-# Archivos que NO forman parte del proyecto Apps Script.
-# clasp NO los sube; el codigo real (.js .gs .html y appsscript.json) se sube normal.
-**/*.md
-**/*.txt
-standalone_produccion/**
-api/**
-web/**
-node_modules/**
-.gitignore
-.claspignore
-
-# Pruebas locales Node: no pertenecen al runtime de Google.
-tests/**
-
-# Migraciones SQL: se ejecutan en Supabase, no en Apps Script.
-supabase/**
+**/**
+!AccesoDenegado.html
+!appsscript.json
+!ARCHIVO_HISTORICO.js
+!AsistenteCreacionV2.html
+!BlindInventory.html
+!CentroDeMandoIntegral.html
+!Cronograma_Recordatorios.js
+!Descargarzipui.html
+!Exportarreporteform.html
+!FormularioEvento.html
+!ITSANET_API.gs.js
+!SelectorZip.html
+!SUPABASE.js
+!WebApp_JS.html
+!WebApp.html
+!ITSANET_API_GYE.js
+!ITSANET_MULTI.js
+!ITSANET_ROUTER.js

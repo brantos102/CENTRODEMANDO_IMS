@@ -1,0 +1,14 @@
+{
+  "name": "centro-mando-ims-migracion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:mysql": "node --test tests/mysql/*.integration.mjs",
+    "validar": "node tools/importar-snapshot.mjs --validar",
+    "importar": "node tools/importar-snapshot.mjs --importar"
+  },
+  "dependencies": { "mysql2": "3.11.5" }
+}

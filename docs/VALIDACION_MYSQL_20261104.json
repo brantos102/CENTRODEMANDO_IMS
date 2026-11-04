@@ -1,0 +1,146 @@
+{
+  "fecha": "2026-11-04",
+  "mysql": "8.0.46",
+  "entorno": "contenedor local desechable, no servidor empresarial",
+  "node": "v24.19.0",
+  "pruebas": {
+    "candidata_anterior": 95,
+    "enterprise_node": 17,
+    "exportador_python": 5,
+    "integracion_mysql_real": 12
+  },
+  "staging": {
+    "snapshot_id": "8f565334499e252fecbe5ea1a9e4607e40f60c004e094b5e7015a25166d2d16c",
+    "estado": "VERIFICADO",
+    "hojas": 19,
+    "filas": 277731,
+    "datos": [
+      {
+        "hoja": "INVENTARIOS",
+        "filas_datos": "100835"
+      },
+      {
+        "hoja": "REGISTRO",
+        "filas_datos": "64486"
+      }
+    ],
+    "detalle": [
+      {
+        "hoja": "ARCHIVOS_INACCESIBLES",
+        "filas": "2",
+        "origenes": "0"
+      },
+      {
+        "hoja": "AUDITORIA_CONSOLIDACION",
+        "filas": "350",
+        "origenes": "0"
+      },
+      {
+        "hoja": "AUDITORIA_REGISTRO",
+        "filas": "349",
+        "origenes": "0"
+      },
+      {
+        "hoja": "BD",
+        "filas": "37",
+        "origenes": "0"
+      },
+      {
+        "hoja": "CRONOGRAMA - 2026",
+        "filas": "399",
+        "origenes": "0"
+      },
+      {
+        "hoja": "CRONOGRAMA -2025",
+        "filas": "132",
+        "origenes": "0"
+      },
+      {
+        "hoja": "CRONOGRAMA_CODIGOS",
+        "filas": "5159",
+        "origenes": "0"
+      },
+      {
+        "hoja": "EQUIPOS_TAREA",
+        "filas": "231",
+        "origenes": "0"
+      },
+      {
+        "hoja": "ERRORES_REPORTES_CLIENTE",
+        "filas": "35620",
+        "origenes": "0"
+      },
+      {
+        "hoja": "ERRORES_VALIDACION_DETALLE",
+        "filas": "1382",
+        "origenes": "0"
+      },
+      {
+        "hoja": "HISTORIAL_REPORTES",
+        "filas": "10",
+        "origenes": "0"
+      },
+      {
+        "hoja": "INVENTARIOS",
+        "filas": "100836",
+        "origenes": "347"
+      },
+      {
+        "hoja": "LOG_ACTIVIDAD",
+        "filas": "1740",
+        "origenes": "0"
+      },
+      {
+        "hoja": "LOG_CONSOLIDACION",
+        "filas": "1426",
+        "origenes": "0"
+      },
+      {
+        "hoja": "PANEL DE CONTROL",
+        "filas": "364",
+        "origenes": "0"
+      },
+      {
+        "hoja": "REGISTRO",
+        "filas": "64487",
+        "origenes": "334"
+      },
+      {
+        "hoja": "USUARIOS",
+        "filas": "16",
+        "origenes": "0"
+      },
+      {
+        "hoja": "__CACHE_CONSOLIDACION",
+        "filas": "349",
+        "origenes": "0"
+      },
+      {
+        "hoja": "__CONSOL_IDENTIDADES",
+        "filas": "64842",
+        "origenes": "0"
+      }
+    ],
+    "reintento": {
+      "yaImportado": true,
+      "filas": 277731
+    }
+  },
+  "aplicacion_activada": false,
+  "autenticacion_http_implementada": false,
+  "datos_normalizados_operativos_importados": false,
+  "runtime_servidor_comprobado": "v22.23.3",
+  "pruebas_node22": {
+    "enterprise": 17,
+    "mysql_real": 12,
+    "candidata_anterior": 95,
+    "fallos": 0
+  },
+  "imagen_mysql": "mysql:8.0.46@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b",
+  "imagen_node": "node:22.23.3-bookworm-slim@sha256:3ed98443660ff48413b5af19ecefce3b9d50845a901a43420d47cc63a9fddbe9",
+  "laboratorio_temporal_retirado": true,
+  "credenciales_temporales_eliminadas": true,
+  "wtw_destino_aprobado": "MIGRACION_PENDIENTE",
+  "wtw_codigo_externo_pendiente": true,
+  "wtw_en_fase_actual": false
+}

@@ -1786,6 +1786,15 @@ function crearEventoYAsignarArchivo(datosEvento, fileId, fileUrl, fileName) {
    Esta es la función original del wizard histórico, restaurada porque
    procesarCreacionArchivoIntegral la llama internamente.
    ========================================================================== */
+/* Sede explícita del archivo nuevo; no altera inventarios históricos. */
+function _sedeCreacionArchivo(datos) {
+  var sede = String((datos && datos.sede) || "UIO").trim().toUpperCase();
+  if (sede === "QUITO") sede = "UIO";
+  if (sede === "GUAYAQUIL" || sede === "G") sede = "GYE";
+  if (sede !== "UIO" && sede !== "GYE") throw new Error("Sede de inventario inválida: " + sede);
+  return sede;
+}
+
 function procesarCreacionArchivo(datos) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) {
@@ -1793,6 +1802,7 @@ function procesarCreacionArchivo(datos) {
   }
 
   try {
+    var sede = _sedeCreacionArchivo(datos);
     var ss = _getSS();
     var sheet = ss.getSheetByName("PANEL DE CONTROL");
 
@@ -1855,6 +1865,7 @@ function procesarCreacionArchivo(datos) {
     sheet.getRange(newRow, 2).setValue(newFile.getUrl());
     sheet.getRange(newRow, 3).setValue(newFile.getId());
     sheet.getRange(newRow, 4).setValue(fechaFormateada);
+    sheet.getRange(newRow, 6).setValue(sede);
 
     // FIX FASE 8.55: estado inicial "En Proceso" (col G) + responsable = usuario
     // creador/vinculador (col I). Best-effort: nunca bloquea la creación.
@@ -1890,6 +1901,7 @@ function _procesarCreacionArchivoInline(datos) {
     throw new Error("El sistema está ocupado por otro operador. Intenta de nuevo en unos segundos.");
   }
   try {
+    var sede = _sedeCreacionArchivo(datos);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     // Si no hay spreadsheet activo (Web App context), usar _getSS
     if (!ss) ss = _getSS();
@@ -1933,6 +1945,7 @@ function _procesarCreacionArchivoInline(datos) {
     sheet.getRange(newRow, 2).setValue(newFile.getUrl());
     sheet.getRange(newRow, 3).setValue(newFile.getId());
     sheet.getRange(newRow, 4).setValue(fechaFormateada);
+    sheet.getRange(newRow, 6).setValue(sede);
 
     // FIX FASE 8.55: estado inicial "En Proceso" (col G) + responsable = usuario
     // creador/vinculador (col I). Best-effort: nunca bloquea la creación.
@@ -3030,8 +3043,25 @@ function invalidarCacheSeries() {
    Devuelve { datosLimpios, reporte } con métricas y advertencias.
    ========================================================================== */
 
+/**
+ * @param {Array}          csvData             filas a validar
+ * @param {string|Array}   clienteSeleccionado un cliente, o VARIOS cuando el
+ *   inventario combina clientes distintos (NOKIA5G + NOKIACNT3G, SG + HYCITE…).
+ *   Con un solo cliente el comportamiento es exactamente el de siempre.
+ */
 function validarCSVAvanzado(csvData, clienteSeleccionado) {
   if (!Array.isArray(csvData)) throw new Error("csvData inválido.");
+
+  // Varios clientes: se valida contra la lista completa, aceptando la fila si
+  // coincide con CUALQUIERA de ellos.
+  var _multiCli = null;
+  if (Array.isArray(clienteSeleccionado)) {
+    _multiCli = clienteSeleccionado
+      .map(function (c) { return String(c || "").trim().toUpperCase(); })
+      .filter(Boolean);
+    clienteSeleccionado = _multiCli.length === 1 ? _multiCli[0] : "";
+    if (_multiCli.length < 2) _multiCli = null;
+  }
 
   var TOPE_FILAS = 50000;
   if (csvData.length > TOPE_FILAS) {
@@ -3119,7 +3149,15 @@ function validarCSVAvanzado(csvData, clienteSeleccionado) {
     // FIX FASE 8.7: Match flexible — HYCITE2/HYCITE3 cuentan como HYCITE.
     // Si el cliente del CSV empieza igual al seleccionado y solo difiere en sufijo numérico,
     // se acepta. Mismo trato para casos al revés (CSV=HYCITE, seleccionado=HYCITE2).
-    if (cli && cliN && cli !== cliN) {
+    // Con varios clientes, basta con que la fila sea de alguno de ellos.
+    if (_multiCli && cli) {
+      var enLista = false;
+      for (var mi = 0; mi < _multiCli.length; mi++) {
+        if (_clienteCoincideItsanet(cli, _multiCli[mi])) { enLista = true; break; }
+      }
+      if (!enLista) { rep.filtradasPorCliente++; rep.excluidas++; continue; }
+    }
+    else if (cli && cliN && cli !== cliN) {
       var coincide = false;
       // Caso A: CSV es variante con sufijo numérico del seleccionado
       // Ej: seleccionado=HYCITE, csv=HYCITE2 → coincide
@@ -3314,6 +3352,12 @@ function _detectarColumnasClave(headers) {
 
 /* Una referencia de Drive solo se procesa una vez por corrida. No confundir
    ese ID físico con el código de inventario (p.ej. 260227_SG) de las filas. */
+/* Solo el estado Entregado habilita la consolidación. No coincide por fragmentos:
+   "No entregado" y "Entregado pendiente de validación" siguen fuera del histórico. */
+function _consolEsEntregado(estado) {
+  return String(estado == null ? "" : estado).trim().toUpperCase() === "ENTREGADO";
+}
+
 function _consolEntradasUnicas(entries) {
   var vistos = Object.create(null);
   return entries.filter(function(ent) {
@@ -3865,7 +3909,7 @@ function _consolidarNucleo(opciones) {
       var pData = pan.getRange(2, 1, pan.getLastRow() - 1, 7).getValues();
       entries = [];
       for (var i = 0; i < pData.length; i++) {
-        if (String(pData[i][CRON_CFG.PA_COL_AVANCE - 1] || "").toLowerCase().indexOf("entregado") !== -1) {
+        if (_consolEsEntregado(pData[i][CRON_CFG.PA_COL_AVANCE - 1])) {
           entries.push({
             cliente: pData[i][CRON_CFG.PA_COL_CLIENTE - 1],
             id: extractIdFromUrl(pData[i][CRON_CFG.PA_COL_ID - 1])
@@ -9041,8 +9085,9 @@ const CONFIG = {
   INVENTARIO_GLOBAL_NAME: "MATRIZ_INVENTARIOS_UIO",
   INVENTARIO_GLOBAL_ID: "1npxaCwfbwTJ-c8qpcw7qAhVT_CAXi4gUduPe2WuFXK4",
   ROOT_FOLDER_IDS: [
-    "12QkkKJ61AisU7vsNDqSuw03LGd4MSZFY",   // INT
-    "1HAqPpumvBKREO8vLeKp2kD-5WIoNdAsV"    // SLOT
+    "12QkkKJ61AisU7vsNDqSuw03LGd4MSZFY",   // Quito · INT
+    "1HAqPpumvBKREO8vLeKp2kD-5WIoNdAsV",   // Quito · SLOT
+    "1vClQh7AOD1oeVaThMH-4H6eTROVv3HJr"    // Guayaquil (GYE)
     // Agrega aquí más IDs de raíz cuando abras nuevos clientes/operativos
   ]
 };
@@ -10245,6 +10290,13 @@ function _consolAlinearColumnas(filas, fuente, esquema, acumuladas, archivo) {
     if (indice[clave] == null) { mapa[c] = -1; omitidas.push(nombre || ("SIN_ENCABEZADO_" + (c + 1))); continue; }
     if (usadas[clave]) throw _consolIntegridadError("Encabezado ambiguo " + nombre + " en " + archivo);
     usadas[clave] = true; mapa[c] = indice[clave];
+  }
+  // Un encabezado de producto no reconocido es un error de formato del archivo,
+  // no miles de SKU realmente vacíos. Se detecta antes de proyectar sus filas.
+  if (indice.PRODUCTO != null && !usadas.PRODUCTO &&
+      filas.some(function(row) { return row.some(valueNotEmpty); })) {
+    throw _consolIntegridadError("No se reconoció el encabezado PRODUCTO en " + archivo +
+      ". Revisa los encabezados de PLANILLA DE CONTEO FISICO; el esquema Power BI se conserva.");
   }
   if (omitidas.length) Logger.log("Power BI: campos ajenos al esquema en " + archivo + ": " + omitidas.join(", "));
   return filas.map(function(row) {
