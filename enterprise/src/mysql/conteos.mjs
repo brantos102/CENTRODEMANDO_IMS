@@ -9,7 +9,7 @@ export async function crearPoolConteos(env){
 }
 
 /** Módulo interno, NO endpoint HTTP. principal debe venir de la sesión validada
- * por el futuro adaptador de autenticación, nunca de req.body ni de localStorage.
+ * por el adaptador de autenticación, nunca de req.body ni de localStorage.
  * La base vuelve a comprobar actor y permiso para cada operación/reintento.
  */
 export async function guardarConteo({pool,principal,solicitud}){
@@ -25,6 +25,17 @@ export async function guardarConteo({pool,principal,solicitud}){
       await c.beginTransaction();abierta=true;
       const [[actor]]=await c.execute('SELECT activo FROM ims_op_actor WHERE id=? FOR SHARE',[p.actorId]);
       exigir(actor&&Number(actor.activo)===1,'SIN_PERMISO','Acceso no autorizado.');
+      // El adaptador HTTP siempre aporta el hash de la sesión validada.
+      // Se comprueba dentro de la transacción para ordenar logout/revocación
+      // respecto a la escritura; nunca se obtiene de la solicitud del navegador.
+      if(principal.sesionHash!==undefined){
+        exigir(/^[a-f0-9]{64}$/.test(principal.sesionHash),'NO_AUTENTICADO','Sesión inválida.');
+        const [[sesion]]=await c.execute(`SELECT s.actor_id FROM ims_auth_sesion s
+          JOIN ims_auth_usuario u ON u.actor_id=s.actor_id AND u.version=s.usuario_version
+          WHERE s.sesion_hash=? AND s.actor_id=? AND s.revocada=0 AND s.expira_en>UTC_TIMESTAMP(6) FOR SHARE`,
+          [principal.sesionHash,p.actorId]);
+        exigir(sesion,'NO_AUTENTICADO','La sesión ya no está vigente.');
+      }
       // Bloqueo compartido: cierre no puede adelantarse al conteo; líneas distintas
       // pueden avanzar en paralelo dentro de un inventario.
       const [[inv]]=await c.execute('SELECT estado FROM ims_op_inventario WHERE id=? FOR SHARE',[p.inventarioId]);

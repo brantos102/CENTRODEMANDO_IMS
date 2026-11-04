@@ -1,6 +1,6 @@
 # Núcleo candidato de conteo — 4 de noviembre de 2026
 
-Esta entrega implementa un módulo interno de conteo en MySQL; no sustituye todavía el WMS ni la aplicación actual. No tiene servidor HTTP ni puerto escuchando, no publica KPI, no se conecta a Google/Supabase y no modifica las aplicaciones del servidor empresarial.
+Esta entrega implementa un módulo interno de conteo en MySQL; no sustituye todavía el WMS ni la aplicación actual. Ahora dispone del adaptador HTTP candidato documentado en AUTENTICACION_API.md, deshabilitado por defecto. No publica KPI, no se conecta a Google/Supabase y no modifica las aplicaciones del servidor empresarial.
 
 ## Cambio implementado
 
@@ -37,7 +37,7 @@ await guardarConteo({
 });
 ```
 
-`principal` es un dato interno confiable que deberá construir el adaptador de autenticación tras validar una sesión. **No se debe aceptar desde el cuerpo HTTP, querystring o localStorage. Ese adaptador todavía no existe.** El permiso de la base es una segunda comprobación y no reemplaza autenticar al visitante. El módulo no ofrece un login ni debe montarse directamente como endpoint.
+`principal` es un dato interno confiable que construye el adaptador de autenticación tras validar una sesión. **No se acepta desde el cuerpo HTTP, querystring o localStorage.** La API aporta además sesionHash, que el núcleo comprueba dentro de la transacción para ordenar revocación/logout respecto a escrituras. El permiso de la base es una segunda comprobación y no reemplaza autenticar al visitante. No montar directamente el módulo como endpoint fuera de ese adaptador.
 
 La solicitud rechaza campos como email, rol o actorId. SKU y cliente se obtienen de la línea almacenada; no de la carga del navegador. El resultado devuelve operación, inventario, línea, cliente, SKU, etapa, cantidad exacta y versión. `repetida` distingue la recuperación de un resultado previo sin volver a escribir. Esa respuesta conserva la versión original del evento: el futuro cliente debe usarla como confirmación y no sustituir con ella una versión más reciente ya mostrada.
 
@@ -96,4 +96,4 @@ Las de integración requieren una base **exclusiva de ensayo**, nunca la base op
 node --env-file=/ruta/privada/pruebas.env --test tests/mysql/conteos.integration.mjs
 ```
 
-No ejecutar SQL 002 ni iniciar servicios en producción como consecuencia de recibir este paquete. Esta entrega prepara un núcleo revisable; el siguiente bloque debe integrar autenticación/sesión y lectura autorizada, después la interfaz y los demás escritores WMS. La publicación KPI y sus definiciones se validarán separadamente.
+No ejecutar SQL 002 ni iniciar servicios en producción como consecuencia de recibir este paquete. El adaptador de autenticación/sesión y lectura autorizada ya se agregó y tiene 24 pruebas unitarias y 26 de integración aprobadas; véase AUTENTICACION_API.md. Siguen pendientes la interfaz, los demás escritores WMS y la migración de usuarios/datos operativos. La publicación KPI y sus definiciones se validarán separadamente.

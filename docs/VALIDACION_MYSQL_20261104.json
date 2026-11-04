@@ -158,5 +158,23 @@
     "fallos": 0,
     "corte_reimportado_sin_duplicados": 277731,
     "contenedor_y_credenciales_temporales_retirados": true
+  },
+  "api_autenticacion": {
+    "estado": "CANDIDATA_DESHABILITADA_POR_DEFECTO",
+    "node": "22.23.3",
+    "mysql": "8.0.46",
+    "mysql2": "3.24.6",
+    "pruebas_unitarias": 24,
+    "pruebas_integracion": 26,
+    "fallos": 0,
+    "usuarios_sinteticos": true,
+    "migracion_usuarios_reales": false,
+    "datos_operativos_normalizados_cargados": false,
+    "frontend_implementado": false,
+    "wtw": "PENDIENTE",
+    "servicio_en_servidor_empresarial": false,
+    "puertos_publicados_laboratorio": false,
+    "laboratorio_y_credenciales_temporales_retirados": true,
+    "npm_audit_vulnerabilidades_conocidas": 0
   }
 }

@@ -2,7 +2,7 @@
 
 Estado: **extracción, staging y núcleo candidato de conteo transaccional**, no aplicación empresarial terminada. La operación actual sigue en Apps Script. Este directorio no está permitido por `.claspignore` y no se publica mediante clasp.
 
-Actualización del 4 de noviembre de 2026: se implementó y probó el núcleo de conteo contra MySQL **8.0.46 real**, en un contenedor local desechable del entorno de trabajo. No se conectó al servidor empresarial. Su contrato, alcance y pruebas están en [CONTEO_TRANSACCIONAL.md](CONTEO_TRANSACCIONAL.md). No expone rutas HTTP: aún requiere autenticación, interfaz y migración a las tablas operativas.
+Actualización del 4 de noviembre de 2026: se implementó y probó el núcleo de conteo contra MySQL **8.0.46 real**, en un contenedor local desechable del entorno de trabajo. No se conectó al servidor empresarial. Su contrato está en [CONTEO_TRANSACCIONAL.md](CONTEO_TRANSACCIONAL.md). Ahora dispone de un adaptador HTTP candidato con login, sesiones y lectura por cliente, documentado en [AUTENTICACION_API.md](AUTENTICACION_API.md); su arranque está deshabilitado por defecto. Aún requiere interfaz, identidades/datos operativos migrados y aceptación del flujo completo.
 
 Fuente autorizada: el Google Sheets vigente de Centro de Mando, con INVENTARIOS como base del inventario. Supabase está desactualizado y no se usa como origen ni necesita actualizarse.
 
@@ -58,7 +58,7 @@ El importador valida todos los archivos antes de conectarse. Usa parámetros SQL
 - URL propuesta por evaluar: `https://apps.flexnetuio.com:8445/`. El 8445 no se ha validado ni abierto; requiere revisar listeners, configuraciones y firewall/NAT con TI. Anteponer 10, 11 o 12 al puerto 8443 produciría 108443/118443/128443, fuera del máximo 65535.
 - Conservar IV_ITSANET en 8443→3002, RRHH en 8444→8010 y Data Sync en 80/443→8080. No reutilizar esos vhosts ni los puertos 3000, 3001 y 8000 indicados como reservados.
 
-No se entrega todavía un servicio systemd ni un vhost para activar: esta etapa no inicia un backend en 3003 y configurar un proxy hacia él sería prematuro. La siguiente etapa debe portar la autenticación, autorización por sede, servicios de negocio, WMS, notificaciones y frontend de Apps Script a HTTP y MySQL.
+No se entrega todavía un servicio systemd ni un vhost para activar. La API candidata solo arranca con configuración expresa; no está habilitada en 3003. Autenticación y autorización por inventario/cliente ya están ensayadas; faltan gestión/migración de usuarios, servicios de negocio restantes, WMS, notificaciones y frontend nativo.
 
 ## Validación local realizada
 
@@ -69,7 +69,8 @@ No se entrega todavía un servicio systemd ni un vhost para activar: esta etapa 
 - Corte real «CONTEOS CICLICOS ITSANET (2).xlsx»: 19 hojas y 277.731 filas de copia bruta, incluidas cabeceras y registros auxiliares; INVENTARIOS 100.835 y REGISTRO 64.486 filas de datos. Extracción y validación de hashes aprobadas, sin base modificada.
 - Núcleo de conteo: 6 pruebas de dominio y 12 de integración aprobadas contra MySQL 8.0.46 real; consulta el alcance en CONTEO_TRANSACCIONAL.md.
 - Driver instalado y DDL 001/002 comprobados en el contenedor local. Importación completa y reintento del corte real verificados sin aplicación activada.
-- Pendiente: autenticación HTTP y sesiones, frontend WMS, escritura masiva/series/ajustes, migración desde staging a entidades operativas, indicadores acordados, dependencias EAN/WTW, aceptación en servidor por roles/sede y corte final. No publicar estos resultados como aplicación migrada o producción ya validada.
+- API/sesiones: 24 pruebas unitarias y 26 de integración aprobadas con Node 22.23.3 y MySQL 8.0.46, usando cuentas sintéticas. Consulte AUTENTICACION_API.md.
+- Pendiente: frontend WMS, gestión/migración de usuarios, escritura masiva/series/ajustes, carga desde staging a entidades operativas, indicadores acordados, EAN, aceptación en servidor por roles/sede y corte final. WTW queda aplazado. No publicar estos resultados como aplicación migrada o producción ya validada.
 
 Pruebas reproducibles:
 
