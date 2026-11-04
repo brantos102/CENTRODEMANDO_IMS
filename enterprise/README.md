@@ -34,7 +34,9 @@ La importación escribe solo `ims_snapshot`, `ims_snapshot_hoja` e `ims_snapshot
 
 Antes de ejecutarla deben existir la base y el usuario exclusivos, respaldos, capacidad de disco y una prueba en una base de ensayo. El nombre debe ser `centromando_ims` o `centromando_ims_*`. Rechaza nombres ajenos y usuario root. El usuario de migración recibe permisos únicamente en esa base; el usuario de la futura aplicación tendrá permisos reducidos. No modificar parámetros globales del MySQL compartido.
 
-Se instaló mysql2 3.11.5 y se generó package-lock.json. El 4 de noviembre se importó el corte completo de 19 hojas/277.731 filas en MySQL 8.0.46 local, con lectura y verificación de hashes antes del commit; se repitió la importación para comprobar que no añade otra copia. Las nueve pruebas anteriores con conexión simulada se mantienen. Sigue pendiente el ensayo en una base exclusiva del servidor empresarial y la conciliación del delta al corte final.
+El controlador está fijado en **mysql2 3.24.6**, con package-lock.json reproducible. La versión inicial 3.11.5 se sustituyó tras identificar los avisos GHSA-3f6p-5ww8-9rcr y GHSA-rgwj-5xj2-c3m3; npm audit no reportó vulnerabilidades conocidas en el árbol actualizado del módulo. Se actualizó esta dependencia dentro de su versión mayor 3, sin ejecutar npm audit fix --force.
+
+El 4 de noviembre se importó el corte completo de 19 hojas/277.731 filas en MySQL 8.0.46 local, con lectura y verificación de hashes antes del commit; se repitió la importación para comprobar que no añade otra copia. Las nueve pruebas anteriores con conexión simulada se mantienen. Sigue pendiente el ensayo en una base exclusiva del servidor empresarial y la conciliación del delta al corte final.
 
 Con esa prueba y configuración resueltas, el comando previsto es:
 

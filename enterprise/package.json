@@ -10,5 +10,5 @@
     "validar": "node tools/importar-snapshot.mjs --validar",
     "importar": "node tools/importar-snapshot.mjs --importar"
   },
-  "dependencies": { "mysql2": "3.11.5" }
+  "dependencies": { "mysql2": "3.24.6" }
 }

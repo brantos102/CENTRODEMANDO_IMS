@@ -142,5 +142,21 @@
   "credenciales_temporales_eliminadas": true,
   "wtw_destino_aprobado": "MIGRACION_PENDIENTE",
   "wtw_codigo_externo_pendiente": true,
-  "wtw_en_fase_actual": false
+  "wtw_en_fase_actual": false,
+  "actualizacion_controlador": {
+    "anterior": "mysql2 3.11.5",
+    "actual": "mysql2 3.24.6",
+    "avisos_corregidos": [
+      "GHSA-3f6p-5ww8-9rcr",
+      "GHSA-rgwj-5xj2-c3m3"
+    ],
+    "npm_audit_vulnerabilidades_conocidas": 0,
+    "node": "22.23.3",
+    "mysql": "8.0.46",
+    "pruebas_modulo": 17,
+    "pruebas_integracion_mysql": 12,
+    "fallos": 0,
+    "corte_reimportado_sin_duplicados": 277731,
+    "contenedor_y_credenciales_temporales_retirados": true
+  }
 }
