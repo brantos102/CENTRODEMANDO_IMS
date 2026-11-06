@@ -96,4 +96,4 @@ Las de integración requieren una base **exclusiva de ensayo**, nunca la base op
 node --env-file=/ruta/privada/pruebas.env --test tests/mysql/conteos.integration.mjs
 ```
 
-No ejecutar SQL 002 ni iniciar servicios en producción como consecuencia de recibir este paquete. El adaptador de autenticación/sesión y lectura autorizada ya se agregó y tiene 24 pruebas unitarias y 26 de integración aprobadas; véase AUTENTICACION_API.md. Siguen pendientes la interfaz, los demás escritores WMS y la migración de usuarios/datos operativos. La publicación KPI y sus definiciones se validarán separadamente.
+No ejecutar SQL 002 ni iniciar servicios en producción como consecuencia de recibir este paquete. El adaptador de sesiones/lectura ya se agregó; desde el 6 de noviembre hay pantallas base conectadas con 29 pruebas unitarias, 27 de integración y nueve de navegador aprobadas. Véase docs/INTERFAZ_CANDIDATA_20261106.md. Faltan los demás flujos WMS y la migración de usuarios/datos operativos. La publicación KPI y sus definiciones se validarán separadamente.

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Centro de Mando · ITSANET</title>
+  <link rel="stylesheet" href="/assets/estilos.css"><script type="module" src="/assets/app.mjs"></script>
+</head>
+<body>
+  <header class="cabecera"><a class="marca" href="/" aria-label="Centro de Mando, inicio"><span class="isotipo" aria-hidden="true">I</span><span>Centro de Mando<small>ITSANET · Inventarios</small></span></a>
+    <div class="cabecera-derecha"><span class="etiqueta candidata">Candidata en validación</span><span id="red" class="etiqueta">Conectado</span></div></header>
+  <main>
+    <div id="aviso" class="aviso" role="status" aria-live="polite" hidden></div>
+    <section id="acceso" class="acceso" aria-labelledby="acceso-titulo">
+      <div class="presentacion"><span class="sobrelinea">OPERACIÓN DE INVENTARIOS</span><h1>Una operación.<br>Un registro confiable.</h1><p>Consulta y captura los conteos de tus inventarios con acceso a las cuentas asignadas.</p><div class="promesas"><span>Conteo por etapas</span><span>Trazabilidad por operación</span><span>Acceso por cliente</span></div></div>
+      <form id="form-login" class="tarjeta login"><span class="sobrelinea">ACCESO AL SISTEMA</span><h2 id="acceso-titulo">Iniciar sesión</h2><p>Usa tu cuenta asignada a esta candidata.</p>
+        <label for="correo">Correo electrónico</label><input id="correo" type="email" autocomplete="username" maxlength="254" required>
+        <label for="contrasena">Contraseña</label><input id="contrasena" type="password" autocomplete="current-password" maxlength="1024" required>
+        <button id="entrar" type="submit" class="primario ancho">Ingresar</button><p id="login-error" class="error" role="alert"></p>
+        <small class="nota">Cada cuenta muestra únicamente sus inventarios y clientes autorizados.</small>
+      </form>
+    </section>
+    <section id="operacion" hidden>
+      <div class="barra-usuario"><div><span class="sobrelinea">ESPACIO DE TRABAJO</span><h1>Inventarios</h1><p id="usuario"></p></div><button id="salir" type="button" class="secundario">Cerrar sesión</button></div>
+      <div class="distribucion">
+        <aside class="tarjeta inventarios" aria-labelledby="inventarios-titulo"><div class="titulo-panel"><h2 id="inventarios-titulo">Tus inventarios</h2><button id="actualizar-inv" class="texto-boton" type="button">Actualizar</button></div><p class="nota">Selecciona una operación para consultar sus líneas.</p><div id="lista-inventarios" class="lista-inventarios"></div><button id="mas-inventarios" class="secundario ancho" type="button" hidden>Cargar más inventarios</button></aside>
+        <div class="contenido">
+          <section id="pendientes-panel" class="tarjeta pendientes" hidden><div class="titulo-panel"><div><span class="sobrelinea">ENVÍOS POR CONFIRMAR</span><h2 id="pendientes-titulo">Capturas pendientes</h2></div><button id="sincronizar" class="secundario" type="button">Reintentar envíos</button></div><p class="nota">Se conservan en este navegador hasta recibir confirmación. Reintentar mantiene la misma operación.</p><ul id="lista-pendientes"></ul></section>
+          <section id="seleccion-vacia" class="tarjeta vacio"><span class="icono-grande" aria-hidden="true">▦</span><h2>Selecciona un inventario</h2><p>Verás sus productos, ubicaciones y etapas de conteo.</p></section>
+          <section id="detalle" class="tarjeta detalle" hidden>
+            <div class="titulo-panel"><div><span id="sede" class="sobrelinea"></span><h2 id="codigo"></h2><p id="estado-inventario" class="nota"></p></div><button id="actualizar-lineas" class="secundario" type="button">Actualizar líneas</button></div>
+            <p class="nota">Cada fila es una línea independiente. Un mismo producto puede aparecer en varias ubicaciones.</p>
+            <div class="tabla-scroll"><table><thead><tr><th>Producto / cliente</th><th>Posición / serie</th><th>Conteo 1</th><th>Conteo 2</th><th>Final</th><th>Acción</th></tr></thead><tbody id="lineas"></tbody></table></div>
+            <div class="pie-tabla"><span id="resumen-lineas" class="nota"></span><button id="mas-lineas" class="secundario" type="button" hidden>Cargar más líneas</button></div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+  <dialog id="modal-conteo" aria-labelledby="conteo-titulo"><form id="form-conteo"><div class="titulo-panel"><div><span class="sobrelinea">CAPTURA DE INVENTARIO</span><h2 id="conteo-titulo">Registrar conteo</h2></div><button id="cerrar-conteo" type="button" class="texto-boton">Cerrar</button></div><p id="producto-conteo" class="nota"></p>
+    <label for="cantidad">Cantidad</label><input id="cantidad" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej. 12 o 0,25" maxlength="40" required>
+    <label for="observacion">Observación</label><textarea id="observacion" rows="3" maxlength="4000"></textarea>
+    <label for="nueva-posicion">Nueva posición</label><input id="nueva-posicion" maxlength="255" autocomplete="off">
+    <p id="conteo-error" class="error" role="alert"></p><button id="guardar-conteo" type="submit" class="primario ancho">Guardar conteo</button>
+  </form></dialog>
+</body>
+</html>

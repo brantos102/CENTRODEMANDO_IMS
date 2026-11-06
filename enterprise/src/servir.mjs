@@ -20,9 +20,10 @@ async function main(){
     await pool.query('SELECT actor_id FROM ims_auth_usuario LIMIT 0');
     await pool.query('SELECT clave FROM ims_auth_limite LIMIT 0');
     await pool.query('SELECT id FROM ims_op_linea LIMIT 0');
+    await pool.query('SELECT linea_id FROM ims_op_detalle_linea LIMIT 0');
     server=crearApi({pool,publicUrl:config.publicUrl});
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,config.host,resolve);});
-    console.log(`API candidata disponible en ${config.host}:${config.port}; frontend pendiente.`);
+    console.log(`Centro de Mando candidato disponible en ${config.host}:${config.port}; datos y usuarios operativos pendientes de migración.`);
     let cerrando=false;
     const cerrar=()=>{if(cerrando)return;cerrando=true;server.close(async()=>{await pool.end();process.exitCode=0;});};
     process.once('SIGTERM',cerrar);process.once('SIGINT',cerrar);

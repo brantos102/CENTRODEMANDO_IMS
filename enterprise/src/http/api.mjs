@@ -3,6 +3,7 @@ import {ErrorAuth,tokensIguales} from '../auth/credenciales.mjs';
 import {iniciarSesion,autenticar,cerrarSesion} from '../auth/sesiones.mjs';
 import {guardarConteo} from '../mysql/conteos.mjs';
 import {listarInventarios,listarLineas} from '../mysql/consultas.mjs';
+import {servirEstatico} from './estaticos.mjs';
 
 export const COOKIE='__Host-ims_cm_session';
 export function origenPublico(value){
@@ -66,6 +67,7 @@ export function crearApi({pool,publicUrl}){
       const url=new URL(req.url,origin);
       if(req.headers.origin&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
       if(req.method==='POST'&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
+      if(await servirEstatico(req,res,url))return;
       if(req.method==='GET'&&url.pathname==='/salud')return json(res,200,{ok:true,servicio:'centro-mando-ims-candidata'});
       if(req.method==='POST'&&url.pathname==='/api/sesion'){
         const ahora=Math.floor(Date.now()/60000);

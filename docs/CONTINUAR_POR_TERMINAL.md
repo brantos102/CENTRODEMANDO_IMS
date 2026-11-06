@@ -46,6 +46,6 @@ Se conserva Supabase en el código heredado para no cambiar todavía la operaci�
 
 ## Qué sigue pendiente
 
-El backend candidato ya tiene autenticación/sesiones, lectura por cliente y conteo HTTP, con arranque deshabilitado por defecto. Todavía faltan frontend WMS, administración/migración de usuarios, los demás escritores, carga de entidades operativas y conciliación del delta antes del corte. Los inventarios en curso y validación deben conservarse completos. Solo Entregado es elegible para KPI. La definición de indicadores y los históricos requieren aceptación antes de sustituir el aplicativo. Consulte enterprise/AUTENTICACION_API.md.
+El backend candidato ya tiene autenticación/sesiones, lectura por cliente, conteo HTTP y pantallas base de acceso/consulta/captura, con arranque deshabilitado por defecto. Consulte INTERFAZ_CANDIDATA_20261106.md para capturas y pruebas. Todavía faltan completar el WMS, administración/migración de usuarios, los demás escritores, carga de entidades operativas y conciliación del delta antes del corte. Los inventarios en curso y validación deben conservarse completos. Solo Entregado es elegible para KPI. Los indicadores e históricos requieren aceptación antes de sustituir el aplicativo.
 
 Las configuraciones del servidor se prepararán aparte, con carpeta/base/usuarios propios y sin modificar IV_ITSANET, RRHH o Data Sync. La propuesta de puertos 127.0.0.1:3003 y HTTPS :8445 requiere revalidación al desplegar; clonar esta rama no los activa.

@@ -176,5 +176,23 @@
     "puertos_publicados_laboratorio": false,
     "laboratorio_y_credenciales_temporales_retirados": true,
     "npm_audit_vulnerabilidades_conocidas": 0
+  },
+  "interfaz_20261106": {
+    "estado": "PANTALLAS_BASE_CANDIDATAS",
+    "pruebas_unitarias": 29,
+    "pruebas_mysql": 27,
+    "pruebas_navegador": 9,
+    "fallos": 0,
+    "node_api_pruebas": "22.23.3",
+    "node_navegador_pruebas": "24.19.0",
+    "chromium": "154.0.8037.57",
+    "mysql": "8.0.46",
+    "datos_sinteticos": true,
+    "usuarios_reales_migrados": false,
+    "datos_operativos_reales_migrados": false,
+    "despliegue_empresarial": false,
+    "wtw": "PENDIENTE",
+    "npm_audit_vulnerabilidades_conocidas": 0,
+    "laboratorio_y_credenciales_temporales_retirados": true
   }
 }

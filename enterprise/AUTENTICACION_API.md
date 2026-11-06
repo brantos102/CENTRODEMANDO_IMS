@@ -1,6 +1,6 @@
 # Sesiones y API candidata — 4 de noviembre de 2026
 
-Backend candidato implementado y probado con usuarios sintéticos. No sustituye la aplicación actual, no configura Apache ni inicia servicios permanentes. WTW sigue pendiente.
+Backend candidato implementado y probado con usuarios sintéticos. Desde el 6 de noviembre dispone de pantallas base conectadas, documentadas en ../docs/INTERFAZ_CANDIDATA_20261106.md, con 29 pruebas unitarias, 27 de integración y nueve de navegador. Los recuentos de la validación inicial de sesiones se conservan más abajo. No sustituye la aplicación actual, no configura Apache ni inicia servicios permanentes. WTW sigue pendiente.
 
 ## Rutas implementadas
 
@@ -61,4 +61,4 @@ Pruebas unitarias sin base ni puertos: `npm test` desde enterprise. Las de integ
 node --env-file=/ruta/privada/pruebas.env --test tests/mysql/*.integration.mjs
 ```
 
-Faltan interfaz nativa, administración/migración de identidades/permisos, carga de staging a entidades operativas, creación de inventarios, series, hallazgos, ajustes, captura masiva, documentos, EAN e indicadores/publicación conciliados. Los pendientes se conservan completos; solo Entregado es elegible para KPI. Las salidas Power BI siguen en 30/15. No es aún un portal listo para operación real.
+Las pantallas base de consulta/captura ya están implementadas. Faltan administración/migración de identidades/permisos, carga de staging a entidades operativas, creación de inventarios, series, hallazgos, ajustes, captura masiva, documentos, EAN e indicadores/publicación conciliados. Los pendientes se conservan completos; solo Entregado es elegible para KPI. Las salidas Power BI siguen en 30/15. No es aún un portal listo para operación real.

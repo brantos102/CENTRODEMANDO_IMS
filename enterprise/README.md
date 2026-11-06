@@ -2,7 +2,7 @@
 
 Estado: **extracción, staging y núcleo candidato de conteo transaccional**, no aplicación empresarial terminada. La operación actual sigue en Apps Script. Este directorio no está permitido por `.claspignore` y no se publica mediante clasp.
 
-Actualización del 4 de noviembre de 2026: se implementó y probó el núcleo de conteo contra MySQL **8.0.46 real**, en un contenedor local desechable del entorno de trabajo. No se conectó al servidor empresarial. Su contrato está en [CONTEO_TRANSACCIONAL.md](CONTEO_TRANSACCIONAL.md). Ahora dispone de un adaptador HTTP candidato con login, sesiones y lectura por cliente, documentado en [AUTENTICACION_API.md](AUTENTICACION_API.md); su arranque está deshabilitado por defecto. Aún requiere interfaz, identidades/datos operativos migrados y aceptación del flujo completo.
+Actualización del 6 de noviembre de 2026: núcleo de conteo, sesiones/API y pantallas base de acceso, selección y captura implementados en la candidata. Se probaron contra MySQL **8.0.46 real** local; no se conectó al servidor empresarial. Contratos en [CONTEO_TRANSACCIONAL.md](CONTEO_TRANSACCIONAL.md), [AUTENTICACION_API.md](AUTENTICACION_API.md) y [pantallas y evidencia](../docs/INTERFAZ_CANDIDATA_20261106.md). Arranque deshabilitado por defecto. Faltan identidades/datos reales migrados y el resto de flujos operativos antes de sustituir la aplicación.
 
 Fuente autorizada: el Google Sheets vigente de Centro de Mando, con INVENTARIOS como base del inventario. Supabase está desactualizado y no se usa como origen ni necesita actualizarse.
 
@@ -69,8 +69,8 @@ No se entrega todavía un servicio systemd ni un vhost para activar. La API cand
 - Corte real «CONTEOS CICLICOS ITSANET (2).xlsx»: 19 hojas y 277.731 filas de copia bruta, incluidas cabeceras y registros auxiliares; INVENTARIOS 100.835 y REGISTRO 64.486 filas de datos. Extracción y validación de hashes aprobadas, sin base modificada.
 - Núcleo de conteo: 6 pruebas de dominio y 12 de integración aprobadas contra MySQL 8.0.46 real; consulta el alcance en CONTEO_TRANSACCIONAL.md.
 - Driver instalado y DDL 001/002 comprobados en el contenedor local. Importación completa y reintento del corte real verificados sin aplicación activada.
-- API/sesiones: 24 pruebas unitarias y 26 de integración aprobadas con Node 22.23.3 y MySQL 8.0.46, usando cuentas sintéticas. Consulte AUTENTICACION_API.md.
-- Pendiente: frontend WMS, gestión/migración de usuarios, escritura masiva/series/ajustes, carga desde staging a entidades operativas, indicadores acordados, EAN, aceptación en servidor por roles/sede y corte final. WTW queda aplazado. No publicar estos resultados como aplicación migrada o producción ya validada.
+- Interfaz/API: 29 pruebas unitarias, 27 de integración MySQL y 9 de navegador aprobadas, con datos sintéticos. Consulte docs/INTERFAZ_CANDIDATA_20261106.md para alcance y runtimes.
+- Pendiente: completar flujos WMS, gestión/migración de usuarios, escritura masiva/series/ajustes, carga desde staging a entidades operativas, indicadores acordados, EAN, aceptación en servidor por roles/sede y corte final. WTW queda aplazado. No publicar estos resultados como aplicación migrada o producción ya validada.
 
 Pruebas reproducibles:
 

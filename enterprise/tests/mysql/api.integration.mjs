@@ -13,7 +13,7 @@ const ORIGIN='https://apps.flexnetuio.com:8445',PASSWORD='Clave_sintetica_2026!'
 let pool,hash;
 before(async()=>{
   pool=await crearPoolConteos(process.env);hash=await crearHashPassword(PASSWORD);
-  for(const name of ['002_conteo_operativo.sql','003_autenticacion.sql']){
+  for(const name of ['002_conteo_operativo.sql','003_autenticacion.sql','004_detalle_linea.sql']){
     const ddl=await readFile(new URL('../../sql/'+name,import.meta.url),'utf8');
     for(const sql of ddl.replace(/^--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean))await pool.query(sql);
   }
@@ -146,4 +146,13 @@ test('un fallo interno no devuelve mensajes SQL ni configuración al navegador',
   t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r));});
   const r=await fetch('http://127.0.0.1:'+server.address().port+'/api/sesion',{headers:{Origin:ORIGIN,Cookie:COOKIE+'='+'a'.repeat(43)}});
   assert.equal(r.status,503);assert.equal((await r.text()).includes('SQL_SECRETO'),false);
+});
+test('recursos de interfaz usan CSP propia y no exponen archivos del proyecto',async t=>{
+  const f=await fixture(t),root=await fetch(f.url+'/');
+  assert.equal(root.status,200);assert.ok(root.headers.get('content-security-policy').includes("script-src 'self'"));
+  assert.ok((await root.text()).includes('form-login'));
+  const js=await fetch(f.url+'/assets/app.mjs');assert.equal(js.status,200);assert.ok(js.headers.get('content-type').includes('javascript'));await js.text();
+  for(const path of ['/enterprise/.env','/assets/../../enterprise/.env']){
+    const r=await fetch(f.url+path);assert.equal(r.status,404);await r.text();
+  }
 });
