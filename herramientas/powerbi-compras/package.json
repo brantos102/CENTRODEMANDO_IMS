@@ -1,0 +1,9 @@
+{
+  "name": "compras-powerbi-conexiones-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {"test": "node --test tests/*.test.mjs"},
+  "dependencies": {"fflate": "0.8.3"}
+}

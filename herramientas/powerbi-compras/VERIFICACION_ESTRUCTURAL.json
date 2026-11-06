@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "paginas": [
+    "Consolidado",
+    "Guayaquil",
+    "Quito",
+    "Ahorros",
+    "Condiciones"
+  ],
+  "visuales": 33,
+  "medidas": 50,
+  "referencias_visuales_verificadas": 47,
+  "conexiones_web": 2,
+  "consultas_origen_finales_conservadas": true,
+  "snapshot_incrustado": false,
+  "fechas_mensuales": "mmm-AA se interpreta como mes de 20AA, día 1; fechas completas conservan su día",
+  "validacion": "Estructura y referencias verificadas; apertura y actualización pendientes en Power BI Desktop",
+  "consultas_m_validadas": 9,
+  "parser": "@microsoft/powerquery-parser 5.0.0",
+  "pruebas_generador": 7,
+  "refresco_google_sheets_realizado": false,
+  "plantillas_privadas_incluidas_en_git": false
+}
