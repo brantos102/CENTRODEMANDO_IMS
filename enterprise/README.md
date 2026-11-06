@@ -6,6 +6,8 @@ Actualización del 6 de noviembre de 2026: núcleo de conteo, sesiones/API y pan
 
 Fuente autorizada: el Google Sheets vigente de Centro de Mando, con INVENTARIOS como base del inventario. Supabase está desactualizado y no se usa como origen ni necesita actualizarse.
 
+También está disponible el [diagnóstico y traslado del histórico](TRASLADO_HISTORICO.md): prepara únicamente archivos Entregado íntegros, conserva el catálogo completo y las incidencias, y permite ensayar su carga a entidades internas sin crear cuentas ni permisos. La API sigue deshabilitada. En PowerShell del PC, desde `enterprise`, ejecutar `& '.\tools\diagnosticar-corte.ps1'` para analizar una descarga reciente sin conectarse a ninguna base de datos.
+
 ## Qué conserva esta etapa
 
 - El XLSX original completo, su SHA-256 y estilos; valores originales de todas las hojas, incluidos resultados guardados y texto de fórmulas, sin ejecutarlas.
@@ -70,7 +72,8 @@ No se entrega todavía un servicio systemd ni un vhost para activar. La API cand
 - Núcleo de conteo: 6 pruebas de dominio y 12 de integración aprobadas contra MySQL 8.0.46 real; consulta el alcance en CONTEO_TRANSACCIONAL.md.
 - Driver instalado y DDL 001/002 comprobados en el contenedor local. Importación completa y reintento del corte real verificados sin aplicación activada.
 - Interfaz/API: 29 pruebas unitarias, 27 de integración MySQL y 9 de navegador aprobadas, con datos sintéticos. Consulte docs/INTERFAZ_CANDIDATA_20261106.md para alcance y runtimes.
-- Pendiente: completar flujos WMS, gestión/migración de usuarios, escritura masiva/series/ajustes, carga desde staging a entidades operativas, indicadores acordados, EAN, aceptación en servidor por roles/sede y corte final. WTW queda aplazado. No publicar estos resultados como aplicación migrada o producción ya validada.
+- Histórico candidato: diagnóstico y traslado transaccional del subconjunto íntegro implementados; evidencia del ensayo en docs/VALIDACION_TRASLADO_20261106.json. No habilita usuarios ni publica KPI.
+- Pendiente: completar flujos WMS, gestión/migración de usuarios, escritura masiva/series/ajustes, resolución de incidencias, extracción de planillas hijas pendientes, conciliación del delta, indicadores acordados, EAN, aceptación en servidor por roles/sede y corte final. WTW queda aplazado. No publicar estos resultados como aplicación migrada o producción ya validada.
 
 Pruebas reproducibles:
 

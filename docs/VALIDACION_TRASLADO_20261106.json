@@ -1,0 +1,84 @@
+{
+  "fecha": "2026-11-06",
+  "entorno": "Docker local efímero, sin conexión corporativa",
+  "mysql": "MySQL 8.0.46",
+  "node": "v22.23.3",
+  "pruebas": {
+    "unitarias": 37,
+    "integracion_mysql": 33,
+    "fallos": 0
+  },
+  "snapshot_id": "8f565334499e252fecbe5ea1a9e4607e40f60c004e094b5e7015a25166d2d16c",
+  "plan_id": "58561684059529beb6964a380e860d4172e7f2742512a56754204dfd597a7b7a",
+  "staging": {
+    "snapshot_id": "8f565334499e252fecbe5ea1a9e4607e40f60c004e094b5e7015a25166d2d16c",
+    "yaImportado": false,
+    "filas": 277731
+  },
+  "diagnostico": {
+    "inventarios_panel": 363,
+    "inventarios_preparados": 336,
+    "inventarios_revision": 27,
+    "filas_originales": 100835,
+    "filas_preparadas": 91010,
+    "filas_conservadas_para_revision": 9825,
+    "motivos": {
+      "FUENTE_HIJA_PENDIENTE": 15,
+      "SIN_CODIGO_OPERATIVO": 16,
+      "SIN_LINEAS_EN_CONSOLIDADO": 16,
+      "CLIENTE_NO_CATALOGADO": 3,
+      "IDS_OPERATIVOS_MEZCLADOS": 1,
+      "CAMPO_FUERA_LONGITUD": 1,
+      "CLIENTE_VACIO": 4,
+      "CONTEO_NEGATIVO": 1,
+      "CONTEO_NO_NUMERICO_O_FUERA_PRECISION": 1,
+      "SEDE_AUSENTE_O_DESCONOCIDA": 1
+    }
+  },
+  "traslado": {
+    "yaTrasladado": false,
+    "inventarios": 336,
+    "filas": 91010
+  },
+  "reintento": {
+    "yaTrasladado": true,
+    "inventarios": 336,
+    "filas": 91010
+  },
+  "verificacion_final": {
+    "yaTrasladado": true,
+    "inventarios": 336,
+    "filas": 91010,
+    "duracion_ms": 12907
+  },
+  "casos_misma_identidad_operativa_distintos_archivos": [
+    {
+      "codigo_operativo": "250724_IBM",
+      "filas": "409"
+    },
+    {
+      "codigo_operativo": "250724_IBM",
+      "filas": "409"
+    },
+    {
+      "codigo_operativo": "260907_VENTURA",
+      "filas": "53"
+    },
+    {
+      "codigo_operativo": "260907_VENTURA",
+      "filas": "64"
+    }
+  ],
+  "permisos_creados_para_el_corte": 0,
+  "cuentas_reales_creadas": false,
+  "usuarios_activados": false,
+  "kpi_aprobado": false,
+  "servidor_empresarial_modificado": false,
+  "apps_script_modificado": false,
+  "supabase_usado_como_fuente": false,
+  "corte_actual_noviembre_pendiente": true,
+  "planillas_hijas_pendientes_de_extraer": true,
+  "wtw": "APLAZADO",
+  "laboratorio_retirado": true,
+  "credenciales_temporales_eliminadas": true
+}

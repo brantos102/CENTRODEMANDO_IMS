@@ -85,6 +85,7 @@ async function verifyDatabase(connection,manifest){
   requireValue(count===sheet.filas_almacenadas&&hash.digest('hex')===sheet.sha256,'La copia MySQL difiere de la extracción: '+sheet.nombre);
  }
 }
+export async function verifyStoredSnapshot(connection,manifest){return verifyDatabase(connection,manifest);}
 export async function importSnapshot(snapshot,connection,onProgress=()=>{}){
  const {dir,manifest}=snapshot;let locked=false,begun=false;
  const [target]=await connection.query('SELECT DATABASE() AS nombre');
