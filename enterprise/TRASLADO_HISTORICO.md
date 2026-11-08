@@ -34,7 +34,7 @@ El contrato exige INVENTARIOS con sus 30 encabezados y REGISTRO con sus 15, incl
 - Cada archivo físico de Drive conserva su identidad aunque otro tenga el mismo código operativo. Una línea se identifica por corte + origen + fila del consolidado, nunca solo por SKU o número de línea.
 - Solo el estado **Entregado**, tras quitar espacios y comparar mayúsculas, permite preparar el histórico. No acepta «No entregado» ni «Entregado pendiente de validación».
 - Todos los renglones de PANEL DE CONTROL quedan en el catálogo privado, incluidos los pendientes. Los que aún no aparecen en INVENTARIOS requieren sus planillas hijas: no se crean como inventarios vacíos ni se pierden por no estar entregados.
-- Se valida el archivo completo. En la política original, cliente vacío o no catalogado deja el archivo para revisión; no se adivina el cliente desde el panel. La política explícita de cliente obligatorio del panel se describe debajo. Códigos operativos mezclados dentro del origen, sede desconocida, conteos negativos/ambiguos o campos fuera del tamaño admitido siguen bloqueando ambas políticas. No se convierte un conteo inválido a cero.
+- Se valida el archivo completo. En la política original, cliente vacío o no catalogado deja el archivo para revisión; no se adivina el cliente desde el panel. La política explícita de cliente obligatorio del panel se describe debajo. Códigos mezclados sin una separación autorizada, sede desconocida, conteos negativos/ambiguos o campos fuera del tamaño admitido siguen bloqueando la preparación. No se convierte un conteo inválido a cero.
 - Cero y ausencia de conteo son distintos; decimales exactos de hasta 21 enteros y 9 decimales, sin redondeo. Un texto como `1,000` requiere revisar la fuente. Las filas que contienen solo notas permanecen en staging sin crear existencias.
 - Los campos originales que todavía no tienen entidad operativa siguen disponibles íntegros mediante la referencia a staging. REGISTRO no se convierte en auditorías nuevas: se conserva sin reinterpretar sus columnas históricas ambiguas.
 
@@ -74,6 +74,26 @@ Se suma toda la columna V del origen mediante enteros escalados (sin coma flotan
 El auxiliar `validar-reglas-migracion.ps1 -DirectorioCorte $imsCorte -ClientePanel -ConteosMiles 'CODIGO=TOTAL_ENTERO'` genera una auditoría completa, otro plan y otra revisión en una carpeta nueva. Coloca `resumen_para_compartir.json`, `auditoria_formatos_para_compartir.json` y `revision_para_compartir.json` en su raíz. No conecta a una base ni modifica el corte. El auxiliar PowerShell requiere validación en el PC Windows; no se ejecutó allí desde este entorno.
 
 Validación de estas políticas: 62 pruebas unitarias aprobadas en Node 22 y 11 pruebas de traslado aprobadas contra MySQL 8.0.46 temporal con datos sintéticos. Incluyen preservación de clientes/textos originales, fuentes físicas distintas, reintentos, total esperado incorrecto, regla aplicada a otro origen, catálogo o cliente alterados con hashes recalculados y cantidades ambiguas fuera del origen autorizado. No se conectó al servidor empresarial.
+
+### Un archivo reutilizado para varios conteos históricos
+
+Un archivo físico puede contener líneas con códigos de inventario diferentes por una reutilización operacional confirmada. La política `historico-entregado-conteos-v4` admite separarlos explícitamente sin renombrar códigos ni reasignar el origen Drive:
+
+```powershell
+& '.\tools\validar-reglas-migracion.ps1' -DirectorioCorte $imsCorte -ClientePanel -SepararConteos 'CODIGO_A:LINEAS_A,CODIGO_B:LINEAS_B'
+```
+
+Puede combinarse con `-ConteosMiles`. El equivalente Node es `--separar-conteos 'CODIGO_A:LINEAS_A,CODIGO_B:LINEAS_B'`. La solicitud debe describir todos los códigos y todas las filas del archivo. Se exige un único origen físico con esas cantidades exactas y una única fila del panel. Códigos omitidos, terceros códigos, cantidades distintas o varios orígenes candidatos detienen la generación. Las mezclas restantes mantienen su bloqueo.
+
+Cada grupo recibe un ID determinista por origen físico + código, en un espacio de identidad distinto del inventario físico anterior. Las filas conservan sus ID por corte/origen/fila, SKU, cantidades, notas y multiplicidad; solo cambia su vinculación al conteo lógico confirmado. No se reúnen filas de diferentes archivos ni se usa el SKU o número de línea como identidad. Los otros archivos mantienen sus identidades anteriores. Si un grupo contiene datos inválidos, el archivo completo sigue pendiente.
+
+El catálogo conserva una sola entrada por fila del panel y añade `conteos` al archivo separado. `inventarios_preparados` cuenta archivos físicos; `conteos_preparados` cuenta los inventarios lógicos que se trasladarían. La suma de líneas sigue conciliando con el corte. La revisión presenta la separación aprobada y mantiene visibles las mezclas no resueltas. Una separación no aprueba KPI, estados pendientes ni permisos.
+
+La nomenclatura confirmada es `DDMMAA_CLIENTE` (día/mes/año y cliente). Los códigos se conservan literalmente. No se deducen fechas ni siglos del código para reemplazar las fechas originales de las columnas o del archivo.
+
+La tabla aditiva `006_conteos_comparten_origen.sql` registra los aportes v4 en `ims_mig_conteo_aporte`, con unicidad de origen + código. No altera la unicidad ni los registros del libro anterior `ims_mig_aporte`. El traslado y su verificación seleccionan el libro correspondiente a la versión del plan, reconstruyen cada proyección desde staging y concilian cada conteo por separado. El mismo bloqueo por base protege todas las versiones; cualquier origen existente en cualquiera de los dos libros requiere conciliación de delta y no se sobrescribe.
+
+Validación: 67 pruebas unitarias y 17 pruebas de traslado en MySQL 8.0.46. Se incluyen separación, conservación de ceros, SKU repetidos, estado pendiente, rechazo de cantidades/grupos incorrectos, intercambio de una línea entre conteos, reintentos, reversión completa ante fallo, protección de cargas anteriores en ambos sentidos y registro de aportes alterado. Los ensayos MySQL usan exclusivamente datos sintéticos. El auxiliar PowerShell debe ejecutarse en el PC Windows; no se ejecutó en ese sistema desde este entorno.
 
 ## Revisar las incidencias sin volver a descargar o consolidar
 

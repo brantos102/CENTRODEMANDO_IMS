@@ -4,8 +4,12 @@ import {fileURLToPath} from 'node:url';
 import {records,validateSnapshot,verifyStoredSnapshot,databaseConfig} from './importar-snapshot.mjs';
 import {validarPlan,politicaPlan} from './planificar-operacion.mjs';
 import {comprobarCantidades,opcionesCantidad} from './reglas-cantidades.mjs';
+import {REGLAS_CONTEOS,comprobarSeparaciones,conteosPreparados,proyeccionConteo} from './separar-conteos.mjs';
 import {canon,sha,exigir,celdas,texto,proyectarFila,uuidEstable} from '../src/migracion/modelo.mjs';
 import {estadoPermiteConsolidar} from '../src/dominio/inventario.mjs';
+
+// Nombres internos constantes: nunca se interpolan nombres del plan o de HTTP.
+const tablaAportes=m=>m.reglas===REGLAS_CONTEOS?'ims_mig_conteo_aporte':'ims_mig_aporte';
 
 async function insertar(c,table,columns,rows){
   if(!rows.length)return;
@@ -16,10 +20,12 @@ async function insertar(c,table,columns,rows){
   await flush();
 }
 async function verificarNativo(c,m,catalogo){
-  const [aportes]=await c.execute('SELECT inventario_id,origen_drive,filas FROM ims_mig_aporte WHERE plan_id=?',[m.plan_id]);
-  const prepared=catalogo.filter(r=>r.preparado);exigir(aportes.length===prepared.length,'Aportes nativos diferentes del plan.');
-  for(const r of prepared){const a=aportes.find(x=>x.origen_drive===r.origen_drive);exigir(a&&a.inventario_id===r.inventario_id&&Number(a.filas)===r.filas,'Origen nativo incompatible.');}
-  const [cantidades]=await c.execute(`SELECT a.inventario_id,COUNT(l.id) AS filas FROM ims_mig_aporte a
+  const tabla=tablaAportes(m),politica=politicaPlan(m);
+  const [aportes]=await c.execute(`SELECT inventario_id,origen_drive,filas,snapshot_id${m.reglas===REGLAS_CONTEOS?',codigo_operativo':''} FROM ${tabla} WHERE plan_id=?`,[m.plan_id]);
+  const prepared=conteosPreparados(catalogo,politica.separaciones);exigir(aportes.length===prepared.length,'Aportes nativos diferentes del plan.');
+  for(const r of prepared){const a=aportes.find(x=>x.inventario_id===r.inventario_id);exigir(a&&a.origen_drive===r.origen_drive&&a.snapshot_id===m.snapshot_id&&Number(a.filas)===r.filas&&
+    (m.reglas!==REGLAS_CONTEOS||a.codigo_operativo===r.codigo),'Origen nativo incompatible.');}
+  const [cantidades]=await c.execute(`SELECT a.inventario_id,COUNT(l.id) AS filas FROM ${tabla} a
     LEFT JOIN ims_op_linea l ON l.inventario_id=a.inventario_id WHERE a.plan_id=? GROUP BY a.inventario_id`,[m.plan_id]);
   for(const r of prepared)exigir(Number(cantidades.find(x=>x.inventario_id===r.inventario_id)?.filas)===r.filas,
     'Hay líneas nativas ajenas o ausentes en un inventario; no se sobrescribe.');
@@ -27,7 +33,7 @@ async function verificarNativo(c,m,catalogo){
   for(;;){
     const [rows]=await c.execute(`SELECT m.fila_consolidado,m.contenido_sha256,r.contenido,l.*,cl.nombre AS cliente,
       d.posicion,d.descripcion,d.serie,d.lote,d.unidad FROM ims_mig_linea m
-      JOIN ims_op_linea l ON l.id=m.linea_id JOIN ims_mig_aporte a ON a.inventario_id=l.inventario_id AND a.plan_id=?
+      JOIN ims_op_linea l ON l.id=m.linea_id JOIN ${tabla} a ON a.inventario_id=l.inventario_id AND a.plan_id=?
       JOIN ims_op_cliente cl ON cl.id=l.cliente_id JOIN ims_op_detalle_linea d ON d.linea_id=l.id
       JOIN ims_snapshot_fila r ON r.snapshot_id=m.snapshot_id AND r.hoja=m.hoja AND r.numero_fila=m.fila_consolidado
       WHERE m.snapshot_id=? AND m.hoja='INVENTARIOS' AND m.fila_consolidado>? ORDER BY m.fila_consolidado LIMIT 250`,[m.plan_id,m.snapshot_id,previous]);
@@ -45,8 +51,8 @@ async function verificarNativo(c,m,catalogo){
   exigir(count===m.resumen.filas_preparadas&&hash.digest('hex')===m.archivos['lineas_preparadas.jsonl'],'El contenido nativo no coincide con el plan.');
   const [cat]=await c.execute('SELECT contenido FROM ims_mig_catalogo WHERE plan_id=? ORDER BY fila_panel',[m.plan_id]);
   exigir(cat.length===catalogo.length&&sha(cat.map(r=>r.contenido+'\n').join(''))===m.archivos['catalogo.jsonl'],'Catálogo de revisión incompatible.');
-  const [invs]=await c.execute('SELECT i.*,a.origen_drive FROM ims_mig_aporte a JOIN ims_op_inventario i ON i.id=a.inventario_id WHERE a.plan_id=?',[m.plan_id]);
-  for(const r of prepared){const i=invs.find(x=>x.origen_drive===r.origen_drive);exigir(i&&i.estado==='ENTREGADO'&&i.codigo_operativo===r.codigo&&i.sede===r.sede,'El inventario nativo cambió; no se reemplaza.');}
+  const [invs]=await c.execute(`SELECT i.*,a.origen_drive FROM ${tabla} a JOIN ims_op_inventario i ON i.id=a.inventario_id WHERE a.plan_id=?`,[m.plan_id]);
+  for(const r of prepared){const i=invs.find(x=>x.id===r.inventario_id);exigir(i&&i.origen_drive===r.origen_drive&&i.estado==='ENTREGADO'&&i.codigo_operativo===r.codigo&&i.sede===r.sede,'El inventario nativo cambió; no se reemplaza.');}
 }
 export async function trasladarOperacion({planDir,snapshotDir,connection:c}){
   const plan=await validarPlan(planDir),snapshot=await validateSnapshot(snapshotDir),m=plan.manifest;
@@ -59,6 +65,7 @@ export async function trasladarOperacion({planDir,snapshotDir,connection:c}){
   await verifyStoredSnapshot(c,snapshot.manifest);
   const catalogo=[];for await(const {row} of records(path.join(plan.dir,'catalogo.jsonl')))catalogo.push(row);
   await comprobarCantidades(snapshot,catalogo,politica.cantidades);
+  await comprobarSeparaciones(snapshot,catalogo,politica.separaciones);
   const panel=snapshot.manifest.hojas.find(s=>s.nombre==='PANEL DE CONTROL'),originales=new Map(),clientes=new Set(),cuentasOrigen=new Map();
   for await(const {row} of records(path.join(snapshot.dir,panel.archivo))){
     if(row.fila===1)continue;const d=celdas(row);originales.set(row.fila,{origen:(texto(d.get(3))||'').trim(),sede:(texto(d.get(6))||'').trim().toUpperCase(),estado:texto(d.get(7)),cliente:(texto(d.get(1))||'').trim()});
@@ -66,37 +73,43 @@ export async function trasladarOperacion({planDir,snapshotDir,connection:c}){
     const origen=(texto(d.get(3))||'').trim();cuentasOrigen.set(origen,(cuentasOrigen.get(origen)||0)+1);
   }
   exigir(catalogo.length===originales.size&&catalogo.length===m.resumen.inventarios_panel,'Catálogo incompleto.');
-  const preparados=new Map(),vistas=new Set();
+  const fuentesPreparadas=new Map(),vistas=new Set();
   const invSheet=snapshot.manifest.hojas.find(s=>s.nombre==='INVENTARIOS');
   for(const r of catalogo){
     const o=originales.get(r.fila_panel);exigir(o&&!vistas.has(r.fila_panel)&&o.origen===r.origen_drive&&o.sede===r.sede&&o.estado===r.estado_original&&o.cliente===r.cliente_panel,'Catálogo no corresponde al panel.');vistas.add(r.fila_panel);
     if(!r.preparado)continue;
     exigir(estadoPermiteConsolidar(o.estado)&&['UIO','GYE'].includes(o.sede)&&cuentasOrigen.get(o.origen)===1&&
       (!politica.clientePanel||Boolean(o.cliente))&&r.motivos.length===0&&r.filas>0&&r.filas===invSheet.filas_por_origen[o.origen]&&
-      r.inventario_id===uuidEstable('inventario',o.origen)&&!preparados.has(o.origen),'Inventario no preparado o duplicado.');
-    preparados.set(o.origen,r);
+      r.inventario_id===uuidEstable('inventario',o.origen)&&!fuentesPreparadas.has(o.origen),'Inventario no preparado o duplicado.');
+    fuentesPreparadas.set(o.origen,r);
   }
-  exigir(preparados.size===m.resumen.inventarios_preparados,'Conteo de inventarios preparado incompatible.');
+  exigir(fuentesPreparadas.size===m.resumen.inventarios_preparados,'Conteo de inventarios preparado incompatible.');
+  const lista=conteosPreparados(catalogo,politica.separaciones),preparados=new Map(lista.map(r=>[r.inventario_id,r])),tabla=tablaAportes(m);
+  exigir(preparados.size===lista.length&&preparados.size===(m.reglas===REGLAS_CONTEOS?m.resumen.conteos_preparados:m.resumen.inventarios_preparados),'Conteo lógico preparado incompatible.');
   const lock='ims-operacion:'+sha(db.nombre).slice(0,40);let locked=false,tx=false;
   try{
     const [[l]]=await c.execute('SELECT GET_LOCK(?,0) AS ok',[lock]);exigir(Number(l.ok)===1,'Otro traslado está activo.');locked=true;
-    for(const name of ['002_conteo_operativo.sql','004_detalle_linea.sql','005_migracion_operativa.sql']){
+    for(const name of ['002_conteo_operativo.sql','004_detalle_linea.sql','005_migracion_operativa.sql','006_conteos_comparten_origen.sql']){
       const ddl=await readFile(new URL('../sql/'+name,import.meta.url),'utf8');for(const sql of ddl.replace(/^--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean))await c.query(sql);
     }
     await c.beginTransaction();tx=true;
     const [[previo]]=await c.execute('SELECT snapshot_id FROM ims_mig_plan WHERE plan_id=? FOR UPDATE',[m.plan_id]);
-    if(previo){await verificarNativo(c,m,catalogo);await c.commit();tx=false;return {yaTrasladado:true,inventarios:preparados.size,filas:m.resumen.filas_preparadas};}
+    if(previo){await verificarNativo(c,m,catalogo);await c.commit();tx=false;return {yaTrasladado:true,inventarios:fuentesPreparadas.size,conteos:preparados.size,filas:m.resumen.filas_preparadas};}
     // Cero reemplazos de otro corte y cero escrituras sobre un inventario existente.
-    for(const r of preparados.values()){
+    for(const r of fuentesPreparadas.values()){
       const [[a]]=await c.execute('SELECT inventario_id FROM ims_mig_aporte WHERE origen_drive=? FOR UPDATE',[r.origen_drive]);
-      exigir(!a,'Un origen ya pertenece a otro plan/corte; requiere conciliación de delta.');
+      const [[b]]=await c.execute('SELECT inventario_id FROM ims_mig_conteo_aporte WHERE origen_drive=? LIMIT 1 FOR UPDATE',[r.origen_drive]);
+      exigir(!a&&!b,'Un origen ya pertenece a otro plan/corte; requiere conciliación de delta.');
+    }
+    for(const r of preparados.values()){
       const [[i]]=await c.execute('SELECT id FROM ims_op_inventario WHERE id=? FOR UPDATE',[r.inventario_id]);exigir(!i,'Ya existe el inventario nativo; no se sobrescribe.');
     }
     await c.execute('INSERT INTO ims_mig_plan (plan_id,snapshot_id,manifiesto,creado_en) VALUES (?,?,?,UTC_TIMESTAMP(6))',[m.plan_id,m.snapshot_id,canon(m)]);
     await insertar(c,'ims_mig_catalogo',['plan_id','snapshot_id','hoja','fila_panel','contenido'],catalogo.map(r=>[m.plan_id,m.snapshot_id,'PANEL DE CONTROL',r.fila_panel,canon(r)]));
     for(const r of preparados.values()){
       await c.execute("INSERT INTO ims_op_inventario (id,sede,codigo_operativo,estado) VALUES (?,?,?,'ENTREGADO')",[r.inventario_id,r.sede,r.codigo]);
-      await c.execute('INSERT INTO ims_mig_aporte (inventario_id,origen_drive,plan_id,snapshot_id,filas) VALUES (?,?,?,?,?)',[r.inventario_id,r.origen_drive,m.plan_id,m.snapshot_id,r.filas]);
+      if(m.reglas===REGLAS_CONTEOS)await c.execute('INSERT INTO ims_mig_conteo_aporte (inventario_id,origen_drive,plan_id,snapshot_id,filas,codigo_operativo) VALUES (?,?,?,?,?,?)',[r.inventario_id,r.origen_drive,m.plan_id,m.snapshot_id,r.filas,r.codigo]);
+      else await c.execute('INSERT INTO ims_mig_aporte (inventario_id,origen_drive,plan_id,snapshot_id,filas) VALUES (?,?,?,?,?)',[r.inventario_id,r.origen_drive,m.plan_id,m.snapshot_id,r.filas]);
     }
     const knownClients=new Set(),relations=new Set(),counts=new Map();let batch=[],bytes=0,previous=1,total=0;
     const flush=async()=>{
@@ -105,11 +118,12 @@ export async function trasladarOperacion({planDir,snapshotDir,connection:c}){
       const raw=new Map(raws.map(r=>[r.numero_fila,JSON.parse(r.contenido)]));
       for(const r of batch){
         exigir(raw.has(r.fila_consolidado),'Falta el original de una línea.');
-        const inv=preparados.get(r.origen_drive);
+        const inv=preparados.get(r.inventario_id);
         const opciones=politica.clientePanel?{clientePanel:inv?.cliente_panel}:{};
         opciones.cantidades=opcionesCantidad(politica.cantidades,r.origen_drive);
         const p=proyectarFila(raw.get(r.fila_consolidado),m.snapshot_id,clientes,opciones);
-        exigir(inv&&p.issues.length===0&&p.codigo===inv.codigo&&canon(p.proyeccion)===canon(r),'La proyección no coincide con su original.');
+        p.proyeccion=proyeccionConteo(p.proyeccion,p.codigo,politica.separaciones);
+        exigir(inv&&inv.origen_drive===r.origen_drive&&p.issues.length===0&&p.codigo===inv.codigo&&canon(p.proyeccion)===canon(r),'La proyección no coincide con su original.');
         if(!knownClients.has(r.cliente_id)){
           const [[prev]]=await c.execute('SELECT nombre FROM ims_op_cliente WHERE id=? FOR UPDATE',[r.cliente_id]);
           if(prev)exigir(prev.nombre===r.cliente,'Identidad de cliente incompatible.');else await c.execute('INSERT INTO ims_op_cliente (id,nombre) VALUES (?,?)',[r.cliente_id,r.cliente]);
@@ -117,7 +131,7 @@ export async function trasladarOperacion({planDir,snapshotDir,connection:c}){
         }
         const rel=r.inventario_id+':'+r.cliente_id;
         if(!relations.has(rel)){await c.execute('INSERT INTO ims_op_inventario_cliente (inventario_id,cliente_id) VALUES (?,?)',[r.inventario_id,r.cliente_id]);relations.add(rel);}
-        counts.set(r.origen_drive,(counts.get(r.origen_drive)||0)+1);
+        counts.set(r.inventario_id,(counts.get(r.inventario_id)||0)+1);
       }
       await insertar(c,'ims_op_linea',['id','inventario_id','cliente_id','sku','origen_drive','fila_origen','version','conteo_1','conteo_2','conteo_final','observacion','nueva_posicion'],
         batch.map(r=>[r.linea_id,r.inventario_id,r.cliente_id,r.sku,r.origen_drive,null,0,r.conteo_1,r.conteo_2,r.conteo_final,r.observacion,r.nueva_posicion]));
@@ -131,9 +145,9 @@ export async function trasladarOperacion({planDir,snapshotDir,connection:c}){
       batch.push(row);bytes+=Buffer.byteLength(raw);total++;
     }
     await flush();exigir(total===m.resumen.filas_preparadas,'Faltan líneas preparadas.');
-    for(const r of preparados.values())exigir(counts.get(r.origen_drive)===r.filas,'Un inventario quedó incompleto.');
+    for(const r of preparados.values())exigir(counts.get(r.inventario_id)===r.filas,'Un inventario quedó incompleto.');
     await verificarNativo(c,m,catalogo);
-    await c.commit();tx=false;return {yaTrasladado:false,inventarios:preparados.size,filas:total};
+    await c.commit();tx=false;return {yaTrasladado:false,inventarios:fuentesPreparadas.size,conteos:preparados.size,filas:total};
   }catch(e){if(tx)await c.rollback();throw e;}
   finally{if(locked)await c.execute('SELECT RELEASE_LOCK(?)',[lock]);}
 }

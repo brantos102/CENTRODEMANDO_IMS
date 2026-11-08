@@ -10,6 +10,8 @@ También está disponible el [diagnóstico y traslado del histórico](TRASLADO_H
 
 Las políticas explícitas de cliente obligatorio del panel y de cantidades con separador de miles confirmado generan planes nuevos con versión y controles propios. Incluyen una auditoría de formatos de todas las filas R/V/W/X. No cambian los valores del corte ni reinterpretan planes anteriores; consultar [las reglas y controles](TRASLADO_HISTORICO.md).
 
+La política v4 también permite separar conteos históricos confirmados que comparten un archivo físico. Mantiene la procedencia común, conserva cada código y distingue en el resumen archivos físicos de conteos lógicos. Su registro de aportes es aditivo y protege los orígenes ya importados mediante políticas anteriores. No cambia el código publicado en Apps Script ni las columnas de Power BI.
+
 ## Qué conserva esta etapa
 
 - El XLSX original completo, su SHA-256 y estilos; valores originales de todas las hojas, incluidos resultados guardados y texto de fórmulas, sin ejecutarlas.

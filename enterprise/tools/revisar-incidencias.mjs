@@ -80,8 +80,13 @@ export async function revisarIncidencias(corteDir,planDir){
         celdas:detalles.filter(x=>x.motivo===issue).map(({motivo,...d})=>d)});
     }
   }
-  const mezcla={archivos:0,equivalentes_al_normalizar_formato:0,codigos_distintos_aun_normalizados:0,ejemplos:[]};
-  for(const s of fuentes.values())if(s.codigos.size>1){
+  const mezcla={archivos:0,equivalentes_al_normalizar_formato:0,codigos_distintos_aun_normalizados:0,ejemplos:[]},separacionesAutorizadas=[];
+  for(const [origen,s] of fuentes)if(s.codigos.size>1){
+    const autorizada=politica.separaciones.find(r=>r.origen_drive===origen);
+    if(autorizada){
+      exigir(autorizada.grupos.length===s.codigos.size&&autorizada.grupos.every(g=>s.codigos.get(g.codigo_operativo)?.filas===g.filas),'La separación no coincide con las filas del corte.');
+      separacionesAutorizadas.push({filas_panel:s.panel,filas_inventarios:s.filas,conteos:autorizada.grupos.map(g=>({codigo:etiquetaId(g.codigo_operativo),filas:g.filas}))});continue;
+    }
     mezcla.archivos++;
     const equivalentes=new Set([...s.codigos.keys()].map(normalizarId)).size===1;
     if(equivalentes)mezcla.equivalentes_al_normalizar_formato++;else mezcla.codigos_distintos_aun_normalizados++;
@@ -102,6 +107,7 @@ export async function revisarIncidencias(corteDir,planDir){
   }
   return {ok:true,reglas:m.reglas,snapshot_id:m.snapshot_id,plan_id:m.plan_id,filas_inventarios:inv.filas_datos_contrato,
     inventarios_preparados:m.resumen.inventarios_preparados,inventarios_revision:m.resumen.inventarios_revision,
+    ...(politica.separaciones.length?{conteos_preparados:m.resumen.conteos_preparados,separaciones_autorizadas:separacionesAutorizadas}:{}),
     mezcla_codigos:mezcla,incidencias_de_filas:detalle,
     revision_sin_lineas:catalogo.filter(r=>!r.preparado&&!r.filas).map(r=>({fila_panel:r.fila_panel,motivos:r.motivos})),
     limitacion_muestras:{archivos_mezclados:MUESTRAS,codigos_por_ejemplo:CODIGOS,tramos_por_ejemplo:TRAMOS,ejemplos_por_motivo:MUESTRAS},

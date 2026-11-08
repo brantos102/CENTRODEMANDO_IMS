@@ -15,7 +15,7 @@ before(async()=>{pool=await crearPoolConteos(process.env);});after(async()=>{if(
 async function preparar(options,politica){const f=await crearCorte(options);const c=await pool.getConnection();try{await importSnapshot(await validateSnapshot(f.cut),c);await planificarOperacion(f.cut,f.plan,politica);}catch(e){await f.close();throw e;}finally{c.release();}return f;}
 async function aplicar(f,connection){const c=connection||await pool.getConnection();try{return await trasladarOperacion({planDir:f.plan,snapshotDir:f.cut,connection:c});}finally{if(!connection)c.release();}}
 async function cantidad(f,table='ims_op_linea'){
-  assert.ok(['ims_op_linea','ims_mig_aporte'].includes(table));const [[r]]=await pool.execute(`SELECT COUNT(*) AS n FROM ${table} WHERE origen_drive IN (${f.origenes.map(()=>'?').join(',')})`,f.origenes);return Number(r.n);
+  assert.ok(['ims_op_linea','ims_mig_aporte','ims_mig_conteo_aporte'].includes(table));const [[r]]=await pool.execute(`SELECT COUNT(*) AS n FROM ${table} WHERE origen_drive IN (${f.origenes.map(()=>'?').join(',')})`,f.origenes);return Number(r.n);
 }
 test('traslado real y reintento conservan fuentes y cantidades sin permisos ni activación',async()=>{
   const f=await preparar();try{
@@ -127,4 +127,66 @@ test('un control total o un origen alterados se rechazan aunque se recalcule el 
       await assert.rejects(aplicar(f),campo==='total'?/total de CONTEO/:/no corresponde al origen/);assert.equal(await cantidad(f),0);
     }finally{await f.close();}
   }
+});
+
+const gruposCompartidos=[{codigo_operativo:'280818_CORRCAL',filas:1},{codigo_operativo:'250818_CORRCAL',filas:1}];
+async function prepararSeparado(origenes){
+  return preparar({origenes,mutarInv:rows=>{
+    rows[0].celdas.find(c=>c.columna===3).valor=gruposCompartidos[0].codigo_operativo;
+    rows[1].celdas.find(c=>c.columna===3).valor=gruposCompartidos[1].codigo_operativo;
+    rows[3].celdas.find(c=>c.columna===3).valor='260608_CIBERC';const c=rows[3].celdas.find(c=>c.columna===22);c.valor='2,000';c.tipo='s';
+  }},{clientePanel:true,separarConteos:[gruposCompartidos],conteosMiles:[{codigo_operativo:'260608_CIBERC',total_conteo_1:'2000'}]});
+}
+test('dos conteos de un archivo físico se trasladan y reintentan sin duplicar líneas ni perder el cero',async()=>{
+  const f=await prepararSeparado();try{
+    const r=await aplicar(f);assert.equal(r.inventarios,4);assert.equal(r.conteos,5);assert.equal(r.filas,5);
+    assert.equal((await aplicar(f)).yaTrasladado,true);assert.equal(await cantidad(f),5);assert.equal(await cantidad(f,'ims_mig_conteo_aporte'),5);
+    const [rows]=await pool.execute(`SELECT i.id,i.codigo_operativo,l.conteo_1,l.origen_drive FROM ims_op_inventario i
+      JOIN ims_op_linea l ON l.inventario_id=i.id WHERE l.origen_drive=? ORDER BY i.codigo_operativo`,[f.origenes[0]]);
+    assert.equal(new Set(rows.map(r=>r.id)).size,2);assert.deepEqual(rows.map(r=>r.codigo_operativo),['250818_CORRCAL','280818_CORRCAL']);
+    assert.deepEqual(rows.map(r=>r.conteo_1),['2.125000000','0.000000000']);
+    const [[q]]=await pool.execute('SELECT conteo_1 FROM ims_op_linea WHERE origen_drive=?',[f.origenes[2]]);assert.equal(q.conteo_1,'2000.000000000');
+    const [[grants]]=await pool.execute('SELECT COUNT(*) AS n FROM ims_op_permiso p JOIN ims_mig_conteo_aporte a ON a.inventario_id=p.inventario_id WHERE a.snapshot_id=?',[f.manifest.snapshot_id]);assert.equal(Number(grants.n),0);
+  }finally{await f.close();}
+});
+test('una línea atribuida al otro conteo del mismo archivo se rechaza antes de confirmar',async()=>{
+  const f=await prepararSeparado();try{
+    const rows=(await readFile(path.join(f.plan,'lineas_preparadas.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+    rows[0].inventario_id=rows[1].inventario_id;await actualizarHashPlan(f,'lineas_preparadas.jsonl',rows);
+    await assert.rejects(aplicar(f),/proyección/);assert.equal(await cantidad(f),0);assert.equal(await cantidad(f,'ims_mig_conteo_aporte'),0);
+  }finally{await f.close();}
+});
+test('una separación cambia el modelo del plan pero no sobrescribe un origen de una carga anterior',async()=>{
+  const f=await prepararSeparado();let legacy;
+  try{
+    await aplicar(f);legacy=await preparar({origenes:f.origenes});
+    await assert.rejects(aplicar(legacy),/otro plan\/corte/);assert.equal(await cantidad(f),5);
+  }finally{await f.close();if(legacy)await legacy.close();}
+});
+test('fallo durante el traslado de un conteo compartido revierte todos los conteos de la carga',async()=>{
+  const f=await prepararSeparado(),real=await pool.getConnection();try{
+    const proxy=new Proxy(real,{get(target,key){
+      if(key==='execute')return (sql,params)=>target.execute(sql,sql.startsWith('INSERT INTO ims_op_detalle_linea')?[randomUUID(),...params.slice(1)]:params);
+      const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+    }});
+    await assert.rejects(aplicar(f,proxy));assert.equal(await cantidad(f),0);assert.equal(await cantidad(f,'ims_mig_conteo_aporte'),0);
+    assert.equal((await aplicar(f)).conteos,5);
+  }finally{real.release();await f.close();}
+});
+test('un origen importado con la política anterior tampoco se reemplaza mediante una separación nueva',async()=>{
+  const legacy=await preparar();let separado;
+  try{
+    await aplicar(legacy);separado=await prepararSeparado(legacy.origenes);
+    await assert.rejects(aplicar(separado),/otro plan\/corte/);assert.equal(await cantidad(legacy),5);assert.equal(await cantidad(legacy,'ims_mig_aporte'),4);
+    assert.equal(await cantidad(separado,'ims_mig_conteo_aporte'),0);
+  }finally{await legacy.close();if(separado)await separado.close();}
+});
+test('un código del registro de aportes alterado bloquea el reintento sin reparar ni sobrescribir datos',async()=>{
+  const f=await prepararSeparado();try{
+    await aplicar(f);
+    const [[r]]=await pool.execute('SELECT inventario_id FROM ims_mig_conteo_aporte WHERE origen_drive=? ORDER BY codigo_operativo LIMIT 1',[f.origenes[0]]);
+    await pool.execute('UPDATE ims_mig_conteo_aporte SET codigo_operativo=? WHERE inventario_id=?',['CODIGO_ALTERADO',r.inventario_id]);
+    await assert.rejects(aplicar(f),/Origen nativo incompatible/);assert.equal(await cantidad(f),5);
+    const [[i]]=await pool.execute('SELECT codigo_operativo FROM ims_op_inventario WHERE id=?',[r.inventario_id]);assert.equal(i.codigo_operativo,'250818_CORRCAL');
+  }finally{await f.close();}
 });

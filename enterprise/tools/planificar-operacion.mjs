@@ -5,6 +5,7 @@ import {validateSnapshot,records,hashFile} from './importar-snapshot.mjs';
 import {INV,REG,verificarCabecera,celdas,texto,uuidEstable,proyectarFila,canon,sha,exigir} from '../src/migracion/modelo.mjs';
 import {estadoPermiteConsolidar} from '../src/dominio/inventario.mjs';
 import {REGLAS_CANTIDADES,resolverCantidades,validarResueltas,opcionesCantidad} from './reglas-cantidades.mjs';
+import {REGLAS_CONTEOS,resolverSeparaciones,validarSeparaciones,proyeccionConteo,conteosPreparados} from './separar-conteos.mjs';
 
 async function existe(p){try{await lstat(p);return true;}catch(e){if(e.code==='ENOENT')return false;throw e;}}
 export async function destinoPrivado(destino){
@@ -27,16 +28,19 @@ const PANEL=['CLIENTE','LINK','ID','FECHA / HORA INICIO','FECHA / HORA FINAL','S
 export const REGLAS_ORIGINAL='historico-entregado-v1';
 export const REGLAS_CLIENTE_PANEL='historico-entregado-cliente-panel-v2';
 export function politicaPlan(m){
-  if(m.reglas===REGLAS_ORIGINAL)return {clientePanel:false,cantidades:[]};
-  if(m.reglas===REGLAS_CLIENTE_PANEL)return {clientePanel:true,cantidades:[]};
-  exigir(m.reglas===REGLAS_CANTIDADES&&m.opciones&&Object.keys(m.opciones).length===2&&typeof m.opciones.clientePanel==='boolean','Política de plan incompatible.');
-  return {clientePanel:m.opciones.clientePanel,cantidades:validarResueltas(m.opciones.cantidades)};
+  if(m.reglas===REGLAS_ORIGINAL)return {clientePanel:false,cantidades:[],separaciones:[]};
+  if(m.reglas===REGLAS_CLIENTE_PANEL)return {clientePanel:true,cantidades:[],separaciones:[]};
+  const separado=m.reglas===REGLAS_CONTEOS;
+  exigir((m.reglas===REGLAS_CANTIDADES||separado)&&m.opciones&&Object.keys(m.opciones).length===(separado?3:2)&&typeof m.opciones.clientePanel==='boolean','Política de plan incompatible.');
+  const cantidades=m.opciones.cantidades;
+  exigir(Array.isArray(cantidades)&&(separado||cantidades.length>0),'Reglas de cantidades incompatibles.');
+  return {clientePanel:m.opciones.clientePanel,cantidades:cantidades.length?validarResueltas(cantidades):[],separaciones:separado?validarSeparaciones(m.opciones.separaciones):[]};
 }
 export function identidadPlan(m){
   const id={version:m.version,reglas:m.reglas,snapshot_id:m.snapshot_id,archivos:m.archivos,resumen:m.resumen};
-  if(m.reglas===REGLAS_CANTIDADES)id.opciones=m.opciones;else exigir(!Object.hasOwn(m,'opciones'),'Opciones incompatibles con la versión del plan.');return id;
+  if([REGLAS_CANTIDADES,REGLAS_CONTEOS].includes(m.reglas))id.opciones=m.opciones;else exigir(!Object.hasOwn(m,'opciones'),'Opciones incompatibles con la versión del plan.');return id;
 }
-export async function planificarOperacion(input,output,{clientePanel=false,conteosMiles=[]}={}){
+export async function planificarOperacion(input,output,{clientePanel=false,conteosMiles=[],separarConteos=[]}={}){
   exigir(typeof clientePanel==='boolean','La política de cliente debe ser explícita.');
   const snapshot=await validateSnapshot(input),m=snapshot.manifest;
   verificarCabecera(m.hojas.find(s=>s.nombre==='INVENTARIOS').encabezados,INV);
@@ -59,6 +63,8 @@ export async function planificarOperacion(input,output,{clientePanel=false,conte
   exigir(catalogo.length>0,'El panel no contiene inventarios.');
   for(const list of fuentes.values())if(list.length>1)for(const r of list)r.motivos.push('ID_DRIVE_REPETIDO_PANEL');
   const cantidades=await resolverCantidades(snapshot,catalogo,conteosMiles);
+  const separaciones=await resolverSeparaciones(snapshot,catalogo,separarConteos);
+  for(const r of catalogo){const s=separaciones.reglas.find(s=>s.origen_drive===r.origen_drive);if(s)r.conteos=s.grupos;}
   const destino=await destinoPrivado(output),temp=await mkdtemp(path.join(path.dirname(destino),'.ims-plan-'));
   let tmp,inc,ready,cat;
   try{
@@ -75,10 +81,11 @@ export async function planificarOperacion(input,output,{clientePanel=false,conte
       const opciones=clientePanel?{clientePanel:univoco?list[0].cliente_panel:''}:{};
       opciones.cantidades=opcionesCantidad(cantidades.reglas,row.origen_drive);
       const p=proyectarFila(row,m.snapshot_id,clientes,opciones);
+      p.proyeccion=proyeccionConteo(p.proyeccion,p.codigo,separaciones.reglas);
       if(clientePanel&&univoco&&(texto(celdas(row).get(5))||'').trim()!==list[0].cliente_panel)clientesAplicados++;
       for(const r of list){
         r.filas++;
-        if(r.codigo&&p.codigo&&r.codigo!==p.codigo)r.motivos.push('IDS_OPERATIVOS_MEZCLADOS');
+        if(r.codigo&&p.codigo&&r.codigo!==p.codigo&&!r.conteos)r.motivos.push('IDS_OPERATIVOS_MEZCLADOS');
         if(!r.codigo&&p.codigo)r.codigo=p.codigo;
         r.motivos.push(...p.issues);
       }
@@ -90,6 +97,7 @@ export async function planificarOperacion(input,output,{clientePanel=false,conte
       filas_originales:leidas,filas_preparadas:0,filas_conservadas_para_revision:0,motivos:{}};
     if(clientePanel)resumen.filas_cliente_panel_aplicado=clientesAplicados;
     if(cantidades.reglas.length)resumen.controles_cantidades=cantidades.controles;
+    if(separaciones.reglas.length)resumen.separaciones_conteos=separaciones.resumen;
     cat=await writer(temp,'catalogo.jsonl');
     for(const r of catalogo){
       if(!r.filas)r.motivos.push('SIN_LINEAS_EN_CONSOLIDADO');
@@ -100,12 +108,14 @@ export async function planificarOperacion(input,output,{clientePanel=false,conte
       await cat.write(r);
     }
     await cat.close();cat=null;ready=await writer(temp,'lineas_preparadas.jsonl');
+    if(separaciones.reglas.length)resumen.conteos_preparados=conteosPreparados(catalogo,separaciones.reglas).length;
     for await(const {row} of records(path.join(temp,'temporal.jsonl'))){if(preparados.has(row.origen_drive)){await ready.write(row);resumen.filas_preparadas++;}else resumen.filas_conservadas_para_revision++;}
     await ready.close();ready=null;await inc.close();inc=null;await rm(path.join(temp,'temporal.jsonl'));
     exigir(resumen.filas_originales===resumen.filas_preparadas+resumen.filas_conservadas_para_revision,'Conciliación de filas incompatible.');
     const archivos={};for(const name of ['catalogo.jsonl','incidencias.jsonl','lineas_preparadas.jsonl'])archivos[name]=await hashFile(path.join(temp,name));
-    const identidad={version:1,reglas:cantidades.reglas.length?REGLAS_CANTIDADES:clientePanel?REGLAS_CLIENTE_PANEL:REGLAS_ORIGINAL,snapshot_id:m.snapshot_id,archivos,resumen,
-      ...(cantidades.reglas.length?{opciones:{clientePanel,cantidades:cantidades.reglas}}:{})};
+    const identidad={version:1,reglas:separaciones.reglas.length?REGLAS_CONTEOS:cantidades.reglas.length?REGLAS_CANTIDADES:clientePanel?REGLAS_CLIENTE_PANEL:REGLAS_ORIGINAL,snapshot_id:m.snapshot_id,archivos,resumen,
+      ...(cantidades.reglas.length||separaciones.reglas.length?{opciones:{clientePanel,cantidades:cantidades.reglas,
+        ...(separaciones.reglas.length?{separaciones:separaciones.reglas}:{})}}:{})};
     const manifest={...identidad,plan_id:sha(canon(identidad)),creado_utc:new Date().toISOString(),privado:true,activa_usuarios:false,consolida_kpi:false};
     await (await open(path.join(temp,'manifest.json'),'wx',0o600)).close();
     const f=await open(path.join(temp,'manifest.json'),'w');try{await f.writeFile(JSON.stringify(manifest,null,2)+'\n');}finally{await f.close();}
@@ -116,7 +126,7 @@ export async function validarPlan(dir){
   dir=await realpath(dir);const mf=path.join(dir,'manifest.json');exigir((await lstat(mf)).isFile()&&!(await lstat(mf)).isSymbolicLink(),'Manifiesto inválido.');
   exigir((await lstat(mf)).size<4*1024*1024,'Manifiesto excesivo.');
   const m=JSON.parse(await readFile(mf,'utf8'));
-  exigir(m.version===1&&[REGLAS_ORIGINAL,REGLAS_CLIENTE_PANEL,REGLAS_CANTIDADES].includes(m.reglas)&&/^[a-f0-9]{64}$/.test(m.snapshot_id),'Plan incompatible.');
+  exigir(m.version===1&&[REGLAS_ORIGINAL,REGLAS_CLIENTE_PANEL,REGLAS_CANTIDADES,REGLAS_CONTEOS].includes(m.reglas)&&/^[a-f0-9]{64}$/.test(m.snapshot_id),'Plan incompatible.');
   politicaPlan(m);const identidad=identidadPlan(m);
   exigir(sha(canon(identidad))===m.plan_id,'La identidad del plan no coincide.');
   const names=['catalogo.jsonl','incidencias.jsonl','lineas_preparadas.jsonl'];
@@ -125,13 +135,17 @@ export async function validarPlan(dir){
   return {dir,manifest:m};
 }
 async function main(){
-  const [input,output,...rest]=process.argv.slice(2),opciones={clientePanel:false,conteosMiles:[]};
+  const [input,output,...rest]=process.argv.slice(2),opciones={clientePanel:false,conteosMiles:[],separarConteos:[]};
   exigir(input&&output,'Faltan corte y destino.');
   for(let i=0;i<rest.length;i++){
     if(rest[i]==='--cliente-panel'&&!opciones.clientePanel){opciones.clientePanel=true;continue;}
     if(rest[i]==='--miles-conteo'){
       const m=/^([^=]+)=(\d+)$/.exec(rest[++i]||'');exigir(m,'Uso: --miles-conteo CODIGO=TOTAL_ENTERO');
       opciones.conteosMiles.push({codigo_operativo:m[1],total_conteo_1:m[2]});continue;
+    }
+    if(rest[i]==='--separar-conteos'){
+      const arg=rest[++i];exigir(typeof arg==='string','Faltan códigos y cantidades de la separación.');
+      opciones.separarConteos.push(arg.split(',').map(s=>{const m=/^([^:=]+):(\d+)$/.exec(s);exigir(m,'Uso: --separar-conteos CODIGO:LINEAS,CODIGO:LINEAS');return {codigo_operativo:m[1],filas:Number(m[2])};}));continue;
     }
     throw Error('Opción de planificación desconocida.');
   }

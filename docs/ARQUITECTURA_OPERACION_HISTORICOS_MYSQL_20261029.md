@@ -50,6 +50,8 @@ Identidades a respetar:
 - Reintento: identificador de petición para la operación y snapshot+hoja+fila para importar un corte inmutable. Las posiciones de una hoja editable no identifican por sí solas una operación futura.
 - Valores: conservar originales y errores de tipo en staging; los campos operativos se convierten con validación y precisión definida desde la fuente y el WMS, sin convertir texto inválido a cero.
 
+Actualización de identidad histórica: una reutilización operacional confirmada puede dejar varios códigos válidos dentro de un archivo físico. La política explícita v4 del [traslado histórico](../enterprise/TRASLADO_HISTORICO.md) separa esos conteos por origen + código, conservando todas las líneas y su procedencia común. Requiere códigos y cantidades completos aprobados; no convierte automáticamente cualquier mezcla en varios inventarios. La nomenclatura confirmada es `DDMMAA_CLIENTE`; se conserva literalmente y las fechas originales no se sustituyen por fechas inferidas del código.
+
 ## 2. Solo Entregado forma parte del consolidado
 
 La persistencia del inventario es independiente de su elegibilidad para KPI. Se importan y conservan todos los estados.

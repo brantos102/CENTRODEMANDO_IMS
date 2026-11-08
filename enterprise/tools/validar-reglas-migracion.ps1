@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$DirectorioCorte,
     [switch]$ClientePanel,
-    [string[]]$ConteosMiles = @()
+    [string[]]$ConteosMiles = @(),
+    [string[]]$SepararConteos = @()
 )
 
 # Auditoria completa y otro plan local. No llama a Google, clasp o MySQL.
@@ -23,6 +24,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Auditoria detenida; el corte sigue intacto.' }
 $imsArgumentos = @($DirectorioCorte, $imsPlan)
 if ($ClientePanel) { $imsArgumentos += '--cliente-panel' }
 foreach ($imsControl in $ConteosMiles) { $imsArgumentos += @('--miles-conteo', $imsControl) }
+foreach ($imsSeparacion in $SepararConteos) { $imsArgumentos += @('--separar-conteos', $imsSeparacion) }
 $imsRespuesta = & node (Join-Path $PSScriptRoot 'planificar-operacion.mjs') @imsArgumentos
 if ($LASTEXITCODE -ne 0) {
     throw 'Plan detenido. Comprueba el control total y la integridad; no se cambiaron datos.'
