@@ -94,6 +94,27 @@ El procedimiento genera `fuente_corregida.xlsx`, otro corte y otro plan bajo una
 
 Validación: 12 pruebas Python aprobadas (las cinco del exportador y siete de copia), con conservación de texto enriquecido, protección del original, receta alterada, valores de huellas falsificados, origen inesperado, expansión no aprobada y rechazo de extensiones XML no soportadas. Además se inyectó un fallo de 415 notas en una copia del corte anterior de 19 hojas/100.835 filas de INVENTARIOS y se restauró: todos los valores/partes ajenos a comentarios quedaron idénticos y todas las notas finales coincidieron con la referencia. Fue un ensayo local con fallo simulado, no una aplicación al archivo actual del usuario. El auxiliar PowerShell no se ejecutó en Windows en este entorno.
 
+### Verificación independiente por firmas del consolidador
+
+Para filas nuevas que no existían en un corte anterior, `verificar-firmas-procedencia.mjs` puede contrastar una propuesta contra `__CONSOL_IDENTIDADES`. Esta hoja registra la firma del contenido de origen antes de escribirlo al consolidado; no se compara solo el nombre del archivo o la cantidad de filas.
+
+```powershell
+$imsCorte = Join-Path $imsCopia 'corte_corregido'
+$imsVerificacion = Join-Path $imsCopia ('FIRMAS_' + (Get-Date -Format 'yyyyMMdd_HHmmss_fff'))
+$imsRespuesta = & node '.\tools\verificar-firmas-procedencia.mjs' $imsCorte $imsVerificacion $imsSnapshotEsperado $imsCambiosEsperados
+if ($LASTEXITCODE -ne 0) { throw 'Firmas no verificadas; no corregir.' }
+$imsPrueba = ($imsRespuesta -join [Environment]::NewLine) | ConvertFrom-Json
+& '.\tools\corregir-procedencia-copia.ps1' -Diagnostico $imsCopia -DirectorioCorte $imsCorte -ArchivoHuellas $imsPrueba.archivo_huellas -Receta $imsPrueba.archivo_receta -ShaReceta $imsPrueba.sha_receta
+```
+
+Se exige snapshot y cantidad previstos. Se examinan fuentes con más de un código operativo, y solo se proponen destinos con nombre operativo único. Una fuente con código único no se reasigna por diferir del nombre de archivo. Los códigos compartidos por archivos físicos independientes permanecen ambiguos y no se fusionan.
+
+Antes de emitir receta se reconstruye el contenido **completo** de todos los archivos que dan o reciben filas, agrupado por ID y cliente. Se convierte la representación XLSX de números y booleanos a la representación `String` del consolidador, se retiran solo vacíos finales, se serializa JSON, se ordena y se calcula SHA-256 igual que `_consolFirmaFilas`. Todos los grupos, cantidades y firmas deben coincidir con el registro, de una única corrida. Una firma ausente/distinta, grupo sobrante o cantidad inesperada detiene el proceso sin receta ni copia. No se relajan diferencias para hacer coincidir una firma.
+
+La carpeta nueva contiene una receta privada, huellas y `verificacion_para_compartir.json`. El auxiliar de copia admite `-DirectorioCorte` para partir de una copia ya corregida y vuelve a preservar todas sus partes ajenas a notas. El nuevo resumen de corrección identifica este tipo de evidencia y los archivos verificados. No cambia los criterios de calidad, los valores o estados de los inventarios. Verificar procedencia no aprueba importes, clientes ni KPI.
+
+Validación adicional: seis pruebas Node para compatibilidad con un vector del consolidador real, firmas completas, rechazo de firma alterada/corridas mixtas/corte incorrecto, protección de códigos con varias fuentes y nombres distintos en fuentes sin mezcla. Total unitario Node: 53. La normalización también se contrastó con el corte histórico completo: 354 de 355 grupos coincidieron; el grupo que no coincidió no se habilitó mediante aproximaciones. Las firmas de cada nuevo archivo concreto se verifican localmente, sin declararlas aprobadas de antemano.
+
 ## Traslado a una base exclusiva de ensayo
 
 No ejecutar en el servidor compartido hasta preparar y validar su base y usuario exclusivos. La herramienta no crea bases ni usuarios, no concede permisos y no cambia parámetros globales de MySQL. Con el corte previamente importado y verificado en staging:

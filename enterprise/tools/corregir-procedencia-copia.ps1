@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory=$true)][string]$Diagnostico,
     [Parameter(Mandatory=$true)][string]$ArchivoHuellas,
     [Parameter(Mandatory=$true)][string]$Receta,
-    [Parameter(Mandatory=$true)][string]$ShaReceta
+    [Parameter(Mandatory=$true)][string]$ShaReceta,
+    [string]$DirectorioCorte
 )
 
 # Solo crea una copia local verificada, su corte derivado y otro plan.
@@ -18,7 +19,8 @@ if (!$imsPython) { throw 'Se necesita Python 3, como en el diagnostico anterior.
 
 $imsDestino = Join-Path $Diagnostico ('COPIA_PROCEDENCIA_' + (Get-Date -Format 'yyyyMMdd_HHmmss_fff'))
 if (Test-Path -LiteralPath $imsDestino) { throw 'La carpeta de salida ya existe.' }
-$imsOriginal = Join-Path $Diagnostico 'corte\fuente.xlsx'
+if (!$DirectorioCorte) { $DirectorioCorte = Join-Path $Diagnostico 'corte' }
+$imsOriginal = Join-Path $DirectorioCorte 'fuente.xlsx'
 $imsCopia = Join-Path $imsDestino 'fuente_corregida.xlsx'
 
 $imsRespuesta = & $imsPython.Source @imsPythonArgs (Join-Path $PSScriptRoot 'corregir_procedencia_copia.py') --original $imsOriginal --huellas $ArchivoHuellas --receta $Receta --sha-receta $ShaReceta --salida $imsCopia

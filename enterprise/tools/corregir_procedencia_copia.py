@@ -157,7 +157,8 @@ def correct(source,huellas,recipe,recipe_sha,dest):
             if created:dest.unlink(missing_ok=True)
             raise
     return {'ok':True,'snapshot_original':r['snapshot_id'],'snapshot_copia':e.digest(dest),'huellas_sha256':r['huellas_sha256'],
-        'receta_sha256':recipe_sha,'referencia_snapshot_id':r['referencia_snapshot_id'],'notas_corregidas':len(todo),
+        'receta_sha256':recipe_sha,'referencia_snapshot_id':r['referencia_snapshot_id'],'tipo_evidencia':r.get('tipo_evidencia','corte_anterior'),
+        'archivos_verificados':r.get('archivos_verificados',[]),'firmas_evidencia_sha256':r.get('firmas_evidencia_sha256'),'notas_corregidas':len(todo),
         'filas_inventarios':count,'partes_ajenas_a_notas_identicas':True,'archivo_copia':str(dest),'original_modificado':False,'google_modificado':False,'mysql_modificado':False}
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
