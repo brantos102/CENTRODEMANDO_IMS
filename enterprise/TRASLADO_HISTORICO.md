@@ -59,6 +59,23 @@ Las muestras están limitadas a cinco archivos, tres códigos y tres tramos por 
 
 Esta revisión solo lee la copia y escribe un informe nuevo. No conecta a MySQL ni Google y no cambia el esquema Power BI, las fuentes, los planes ni los criterios de elegibilidad. Se añadieron cinco pruebas de revisión, incluidas diferencias de formato, fuentes independientes, ocultamiento de valores sensibles y conservación del corte/plan; el conjunto unitario pasa de 37 a 42.
 
+### Contrastar un posible desfase de procedencia entre cortes
+
+Si varios grupos consecutivos conservan su cantidad de filas pero contienen al inicio un bloque del código anterior, primero comprobar la alineación de datos/notas. No reemplazar todos los ID ni aplicar un desplazamiento fijo sin verificar el contenido: puede haber correcciones reales, fuentes repetidas o datos nuevos.
+
+```powershell
+$imsHuellas = Join-Path $imsDiagnostico ('HUELLAS_' + (Get-Date -Format 'yyyyMMdd_HHmmss_fff'))
+node '.\tools\generar-huellas-inventarios.mjs' (Join-Path $imsDiagnostico 'corte') $imsHuellas
+if ($LASTEXITCODE -ne 0) { throw 'Generacion de huellas detenida.' }
+Compress-Archive -LiteralPath (Join-Path $imsHuellas 'huellas_inventarios.jsonl.gz') -DestinationPath (Join-Path $imsHuellas 'EVIDENCIA_PROCEDENCIA.zip') -CompressionLevel NoCompression
+```
+
+Este ZIP se puede adjuntar para una comparación: contiene exclusivamente posiciones de filas y hashes SHA-256, incluido el identificador de procedencia representado por hash. No contiene las celdas originales, sus notas, SKU, cantidades, series, nombres de clientes o filas de USUARIOS. No es una copia de respaldo ni permite reconstruir los datos. Tratarlo como evidencia interna; no publicarlo en GitHub.
+
+La huella de cada fila representa los 30 valores de INVENTARIOS en su orden, con ausencias/null como texto vacío. Ignora estilo, fórmula, tipo de celda y nota para comparar valores entre exportaciones; conserva el texto y los ceros iniciales. El archivo incorpora cabecera, número de filas y control SHA-256 del contenido anterior al cierre, además del CRC del GZip. Se valida el corte antes de generarlo y se rechaza sobrescribir otra salida.
+
+La igualdad de una huella es evidencia de valores iguales, no autorización para reasignar su origen. Una coincidencia con varios archivos físicos queda ambigua y debe conservarse. La comparación y cualquier plan de reparación requieren verificar también filas nuevas/modificadas, extremos de cada grupo y multiplicidad. Este generador no repara notas, no modifica Sheets/MySQL y no elimina las alertas. Sus cuatro pruebas adicionales elevan el total unitario a 46.
+
 ## Traslado a una base exclusiva de ensayo
 
 No ejecutar en el servidor compartido hasta preparar y validar su base y usuario exclusivos. La herramienta no crea bases ni usuarios, no concede permisos y no cambia parámetros globales de MySQL. Con el corte previamente importado y verificado en staging:
