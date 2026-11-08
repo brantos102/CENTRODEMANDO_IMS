@@ -58,6 +58,8 @@ El importador valida todos los archivos antes de conectarse. Usa parámetros SQL
 
 ## Destino de infraestructura propuesto
 
+La [preparación aislada del ensayo](deploy/ENSAYO_SERVIDOR.md) permite crear la carpeta privada, la base `centromando_ims_ensayo` y una cuenta de migración limitada. Rechaza recursos existentes y no inicia servicios ni abre puertos. No ejecutarla con la cuenta root del sistema; requiere la copia de código y la ruta exclusiva previstas.
+
 - Linux, Node 22.23.3 y MySQL 8.0.46 existentes.
 - Carpeta propia propuesta: `/home/enicolalde/bryan/centro_mando_ims`.
 - Futura aplicación: `127.0.0.1:3003`, que aún debe comprobarse al iniciar.
