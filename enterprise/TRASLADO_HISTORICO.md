@@ -76,6 +76,22 @@ La huella de cada fila representa los 30 valores de INVENTARIOS en su orden, con
 
 La igualdad de una huella es evidencia de valores iguales, no autorización para reasignar su origen. Una coincidencia con varios archivos físicos queda ambigua y debe conservarse. La comparación y cualquier plan de reparación requieren verificar también filas nuevas/modificadas, extremos de cada grupo y multiplicidad. Este generador no repara notas, no modifica Sheets/MySQL y no elimina las alertas. Sus cuatro pruebas adicionales elevan el total unitario a 46.
 
+### Copia local con notas de procedencia verificadas
+
+Solo después de contrastar las huellas entre cortes, una receta privada revisada puede corregir marcadores en **una nueva copia XLSX**. La receta y sus huellas no se publican en Git; el operador recibe el JSON y su SHA-256 canónico para vincular la actuación a la revisión concreta.
+
+```powershell
+& '.\tools\corregir-procedencia-copia.ps1' -Diagnostico $imsDiagnostico -ArchivoHuellas $imsArchivoHuellas -Receta $imsRecetaPrivada -ShaReceta $imsShaReceta
+```
+
+La herramienta requiere coincidencia exacta del XLSX original, archivo de huellas, receta y expansión de filas aprobadas. La versión 2 de receta delimita el tramo contrastado y la posición de las notas de referencia; solo cambia las filas cuya procedencia difiere, con una huella de expansión que vincula fila, valores, origen anterior y origen nuevo. No es una orden de desplazar todas las notas ni sirve para otro corte. Rechaza fuentes ambiguas, contenido distinto, cantidades de correcciones inesperadas y salidas existentes.
+
+Antes de escribir comprueba los 30 valores de cada fila seleccionada directamente en el XLSX, los ID de archivo del panel y sus notas actuales. Cambia exclusivamente el texto del identificador `IMS_ORIGEN_DRIVE`; conserva las notas humanas, incluso si el marcador está dividido entre fragmentos de texto enriquecido. Comprueba que todas las partes internas del libro ajenas al XML de comentarios permanezcan idénticas, incluyendo hojas, fórmulas, encabezados, estilos, gráficos y enlaces. Los comentarios restantes también se contrastan. No edita valores, filas, columnas ni REGISTRO.
+
+El procedimiento genera `fuente_corregida.xlsx`, otro corte y otro plan bajo una carpeta privada nueva, más `resumen_correccion.json` y `resumen_para_compartir.json`. Solo estos dos resúmenes se pueden adjuntar para continuar la revisión. La copia XLSX y sus cortes siguen incluyendo las hojas administrativas privadas. El original se conserva y no se modifica Google Sheets, MySQL, Supabase ni la conexión de Power BI. Un cambio de notas no constituye aprobación de KPI ni resolución de otras incidencias.
+
+Validación: 12 pruebas Python aprobadas (las cinco del exportador y siete de copia), con conservación de texto enriquecido, protección del original, receta alterada, valores de huellas falsificados, origen inesperado, expansión no aprobada y rechazo de extensiones XML no soportadas. Además se inyectó un fallo de 415 notas en una copia del corte anterior de 19 hojas/100.835 filas de INVENTARIOS y se restauró: todos los valores/partes ajenos a comentarios quedaron idénticos y todas las notas finales coincidieron con la referencia. Fue un ensayo local con fallo simulado, no una aplicación al archivo actual del usuario. El auxiliar PowerShell no se ejecutó en Windows en este entorno.
+
 ## Traslado a una base exclusiva de ensayo
 
 No ejecutar en el servidor compartido hasta preparar y validar su base y usuario exclusivos. La herramienta no crea bases ni usuarios, no concede permisos y no cambia parámetros globales de MySQL. Con el corte previamente importado y verificado en staging:
