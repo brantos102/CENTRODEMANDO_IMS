@@ -34,3 +34,5 @@ La configuración deja `IMS_API_HABILITADA=0` e `IMS_MIGRACION_OPERATIVA=0`. Los
 - Siete pruebas Python para protección de rutas/servidor, repositorios padre, recursos existentes, permisos y contraseñas, fallos parciales y conservación de otro proyecto; 19 pruebas Python en total.
 - Ensayo real en MySQL 8.0.46 local temporal: autenticación de la nueva cuenta, DDL 001–006 con permisos restringidos (20 tablas), límite de dos conexiones, denegación de lectura en otra base y denegación de DROP/ALTER. La base ajena sintética conservó su registro y la carpeta padre sus permisos.
 - El ensayo no contactó el servidor empresarial. El comando en Linux debe producir su propio informe antes de transferir datos. No compartir `migracion.env` ni el corte privado.
+
+Después de una preparación correcta, continuar con la [transferencia privada](TRASLADO_PRIVADO.md). No repetir la inicialización: la base y la carpeta ya existentes se conservan.
