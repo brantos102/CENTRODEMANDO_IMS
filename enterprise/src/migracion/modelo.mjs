@@ -21,13 +21,17 @@ export function verificarCabecera(actual,esperada){
 }
 export function celdas(row){return new Map(row.celdas.map(c=>[c.columna,c]));}
 export function texto(c){return c?.valor===null||c?.valor===undefined?null:String(c.valor);}
-export function decimalCelda(c){
+export function decimalCelda(c,{milesComa=false,soloEnteros=false}={}){
   if(!c||c.valor===null||String(c.valor).trim()===''){
     if(c?.formula&&c.valor===null)throw Error('CONTEO_SIN_RESULTADO');
     return null;
   }
   if(!['n','s','inlineStr'].includes(c.tipo))throw Error('CONTEO_NO_NUMERICO');
   let value=String(c.valor).trim();
+  if(milesComa&&c.tipo!=='n'&&value.includes(',')){
+    if(!/^\d{1,3}(?:,\d{3})+$/.test(value))throw Error('CONTEO_AGRUPACION_MILES_INVALIDA');
+    value=value.replaceAll(',','');
+  }
   if(c.tipo==='n'&&/[eE]/.test(value)){
     const m=/^(\d+)(?:\.(\d+))?[eE]([+-]?\d{1,3})$/.exec(value);
     if(!m)throw Error('CONTEO_NO_NUMERICO');
@@ -36,18 +40,22 @@ export function decimalCelda(c){
     value=p<=0?'0.'+'0'.repeat(-p)+digits:p>=digits.length?digits+'0'.repeat(p-digits.length):digits.slice(0,p)+'.'+digits.slice(p);
   }
   if(value.startsWith('-'))throw Error('CONTEO_NEGATIVO');
-  try{return cantidadExacta(value);}catch{throw Error('CONTEO_NO_NUMERICO_O_FUERA_PRECISION');}
+  let cantidad;
+  try{cantidad=cantidadExacta(value);}catch{throw Error('CONTEO_NO_NUMERICO_O_FUERA_PRECISION');}
+  if(soloEnteros&&!cantidad.endsWith('.000000000'))throw Error('CONTEO_FRACCION_NO_AUTORIZADA');
+  return cantidad;
 }
 function campo(c,max,bytes=false){
   const v=texto(c);if(v!==null&&(bytes?Buffer.byteLength(v):[...v].length)>max)throw Error('CAMPO_FUERA_LONGITUD');return v;
 }
-export function proyectarFila(row,snapshot,clientes){
+export function proyectarFila(row,snapshot,clientes,opciones={}){
   const d=celdas(row),issues=[];
-  const cliente=(texto(d.get(5))||'').trim(),sku=(texto(d.get(7))||'').trim(),codigo=(texto(d.get(3))||'').trim();
-  if(!cliente)issues.push('CLIENTE_VACIO');else if(!clientes.has(cliente))issues.push('CLIENTE_NO_CATALOGADO');
+  const desdePanel=Object.hasOwn(opciones,'clientePanel');
+  const cliente=(desdePanel?String(opciones.clientePanel??''):(texto(d.get(5))||'')).trim(),sku=(texto(d.get(7))||'').trim(),codigo=(texto(d.get(3))||'').trim();
+  if(!cliente)issues.push(desdePanel?'CLIENTE_PANEL_VACIO':'CLIENTE_VACIO');else if(!clientes.has(cliente))issues.push('CLIENTE_NO_CATALOGADO');
   if(!sku)issues.push('SKU_VACIO');if(!codigo)issues.push('ID_OPERATIVO_VACIO');
   const cantidad=[];
-  for(const col of [22,23,24]){try{cantidad.push(decimalCelda(d.get(col)));}catch(e){issues.push(e.message);cantidad.push(null);}}
+  for(const col of [22,23,24]){try{cantidad.push(decimalCelda(d.get(col),opciones.cantidades));}catch(e){issues.push(e.message);cantidad.push(null);}}
   let details;
   try{
     exigir([...cliente].length<=255&&[...sku].length<=255&&[...codigo].length<=255,'CAMPO_FUERA_LONGITUD');

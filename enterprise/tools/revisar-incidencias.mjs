@@ -2,7 +2,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {writeFile,mkdir} from 'node:fs/promises';
 import {validateSnapshot,records} from './importar-snapshot.mjs';
-import {validarPlan,destinoPrivado} from './planificar-operacion.mjs';
+import {validarPlan,destinoPrivado,politicaPlan} from './planificar-operacion.mjs';
+import {opcionesCantidad} from './reglas-cantidades.mjs';
 import {celdas,texto,decimalCelda,proyectarFila,sha,exigir} from '../src/migracion/modelo.mjs';
 
 const normalizarId=s=>s.normalize('NFKC').replace(/\s+/g,' ').trim().toUpperCase();
@@ -12,10 +13,10 @@ const etiquetaId=s=>/^\d{6}_[\p{L}\p{N}_. -]{1,80}$/u.test(s)?s:{id_no_estandar:
 const hayDatos=r=>r.fila>1&&r.celdas.some(c=>c.valor!==null&&c.valor!==''||c.formula);
 const MUESTRAS=5,CODIGOS=3,TRAMOS=3;
 
-function detallesFila(row,issues){
+function detallesFila(row,issues,opciones){
   const d=celdas(row),out=[];
   for(const [col,letra] of [[22,'V'],[23,'W'],[24,'X']]){
-    try{decimalCelda(d.get(col));}catch(e){
+    try{decimalCelda(d.get(col),opciones);}catch(e){
       const v=texto(d.get(col))||'';
       out.push({motivo:e.message,columna:letra,longitud:v.length,contiene_coma:v.includes(','),contiene_punto:v.includes('.')});
     }
@@ -41,10 +42,12 @@ export async function revisarIncidencias(corteDir,planDir){
   const catalogo=[];
   for await(const {row} of records(path.join(plan.dir,'catalogo.jsonl')))catalogo.push(row);
   const clientes=new Set(catalogo.map(r=>r.cliente_panel).filter(Boolean));
+  const politica=politicaPlan(m),clientePanel=politica.clientePanel;
   const fuentes=new Map();
   for(const r of catalogo){
-    if(!fuentes.has(r.origen_drive))fuentes.set(r.origen_drive,{panel:[],codigos:new Map(),tramos:[],totalTramos:0,ultimo:null,filas:0});
+    if(!fuentes.has(r.origen_drive))fuentes.set(r.origen_drive,{panel:[],clientesPanel:[],codigos:new Map(),tramos:[],totalTramos:0,ultimo:null,filas:0});
     fuentes.get(r.origen_drive).panel.push(r.fila_panel);
+    fuentes.get(r.origen_drive).clientesPanel.push(r.cliente_panel);
   }
   const motivos=Object.create(null);
   function motivo(nombre,origen,muestra){
@@ -58,7 +61,9 @@ export async function revisarIncidencias(corteDir,planDir){
   for await(const {row} of records(path.join(corte.dir,inv.archivo))){
     if(!hayDatos(row))continue;
     const s=fuentes.get(row.origen_drive);exigir(s,'Fila sin fuente catalogada.');s.filas++;
-    const p=proyectarFila(row,m.snapshot_id,clientes);
+    const opciones=clientePanel?{clientePanel:s.panel.length===1?s.clientesPanel[0]:''}:{};
+    opciones.cantidades=opcionesCantidad(politica.cantidades,row.origen_drive);
+    const p=proyectarFila(row,m.snapshot_id,clientes,opciones);
     if(p.codigo){
       let c=s.codigos.get(p.codigo);
       if(!c){c={codigo:p.codigo,filas:0,primera_fila:row.fila,ultima_fila:row.fila};s.codigos.set(p.codigo,c);}
@@ -68,7 +73,7 @@ export async function revisarIncidencias(corteDir,planDir){
       s.ultimo={codigo:p.codigo,desde:row.fila,hasta:row.fila};s.totalTramos++;
       if(s.tramos.length<TRAMOS)s.tramos.push(s.ultimo);
     }else s.ultimo.hasta=row.fila;
-    const detalles=detallesFila(row,p.issues);
+    const detalles=detallesFila(row,p.issues,opciones.cantidades);
     for(const issue of p.issues){
       motivo(issue,row.origen_drive,{filas_panel:s.panel,fila_inventarios:row.fila,
         ...(p.codigo?{codigo:etiquetaId(p.codigo)}:{}),
@@ -95,7 +100,7 @@ export async function revisarIncidencias(corteDir,planDir){
     }
     detalle[nombre]={archivos:b.archivos.size,filas:b.filas,ejemplos};
   }
-  return {ok:true,snapshot_id:m.snapshot_id,plan_id:m.plan_id,filas_inventarios:inv.filas_datos_contrato,
+  return {ok:true,reglas:m.reglas,snapshot_id:m.snapshot_id,plan_id:m.plan_id,filas_inventarios:inv.filas_datos_contrato,
     inventarios_preparados:m.resumen.inventarios_preparados,inventarios_revision:m.resumen.inventarios_revision,
     mezcla_codigos:mezcla,incidencias_de_filas:detalle,
     revision_sin_lineas:catalogo.filter(r=>!r.preparado&&!r.filas).map(r=>({fila_panel:r.fila_panel,motivos:r.motivos})),

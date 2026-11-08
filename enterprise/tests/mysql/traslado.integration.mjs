@@ -6,13 +6,13 @@ import path from 'node:path';
 import {crearPoolConteos} from '../../src/mysql/conteos.mjs';
 import {crearCorte} from '../fixtures/corte.mjs';
 import {validateSnapshot,importSnapshot} from '../../tools/importar-snapshot.mjs';
-import {planificarOperacion} from '../../tools/planificar-operacion.mjs';
+import {planificarOperacion,identidadPlan} from '../../tools/planificar-operacion.mjs';
 import {trasladarOperacion} from '../../tools/trasladar-operacion.mjs';
-import {canon,sha} from '../../src/migracion/modelo.mjs';
+import {canon,sha,uuidEstable} from '../../src/migracion/modelo.mjs';
 if(process.env.IMS_MYSQL_PRUEBAS!=='1'||!/^centromando_ims_pruebas(?:_[a-z0-9]+)?$/.test(process.env.MYSQL_DATABASE||''))throw Error('Solo una base exclusiva de pruebas.');
 let pool;
 before(async()=>{pool=await crearPoolConteos(process.env);});after(async()=>{if(pool)await pool.end();});
-async function preparar(options){const f=await crearCorte(options);const c=await pool.getConnection();try{await importSnapshot(await validateSnapshot(f.cut),c);await planificarOperacion(f.cut,f.plan);}catch(e){await f.close();throw e;}finally{c.release();}return f;}
+async function preparar(options,politica){const f=await crearCorte(options);const c=await pool.getConnection();try{await importSnapshot(await validateSnapshot(f.cut),c);await planificarOperacion(f.cut,f.plan,politica);}catch(e){await f.close();throw e;}finally{c.release();}return f;}
 async function aplicar(f,connection){const c=connection||await pool.getConnection();try{return await trasladarOperacion({planDir:f.plan,snapshotDir:f.cut,connection:c});}finally{if(!connection)c.release();}}
 async function cantidad(f,table='ims_op_linea'){
   assert.ok(['ims_op_linea','ims_mig_aporte'].includes(table));const [[r]]=await pool.execute(`SELECT COUNT(*) AS n FROM ${table} WHERE origen_drive IN (${f.origenes.map(()=>'?').join(',')})`,f.origenes);return Number(r.n);
@@ -68,4 +68,63 @@ test('una línea añadida fuera del traslado impide declarar válido el reintent
       [randomUUID(),r.inventario_id,r.cliente_id,'LINEA_AJENA',f.origenes[0],'']);
     await assert.rejects(aplicar(f),/ajenas o ausentes/);assert.equal(await cantidad(f),6);
   }finally{await f.close();}
+});
+
+async function actualizarHashPlan(f,nombre,rows){
+  const body=rows.map(r=>canon(r)+'\n').join('');await writeFile(path.join(f.plan,nombre),body);
+  const file=path.join(f.plan,'manifest.json'),m=JSON.parse(await readFile(file,'utf8'));m.archivos[nombre]=sha(body);
+  m.plan_id=sha(canon(identidadPlan(m)));await writeFile(file,JSON.stringify(m));
+}
+test('cliente obligatorio del panel se traslada y reintenta conservando el cliente original en staging',async()=>{
+  const f=await preparar({mutarInv:rows=>{rows[0].celdas.find(c=>c.columna===5).valor='ALIAS_SINTETICO';rows[1].celdas=rows[1].celdas.filter(c=>c.columna!==5);}},{clientePanel:true});
+  try{
+    assert.equal((await aplicar(f)).filas,5);assert.equal((await aplicar(f)).yaTrasladado,true);assert.equal(await cantidad(f),5);
+    const [rows]=await pool.execute(`SELECT cl.nombre,r.contenido FROM ims_op_linea l
+      JOIN ims_op_cliente cl ON cl.id=l.cliente_id JOIN ims_mig_linea m ON m.linea_id=l.id
+      JOIN ims_snapshot_fila r ON r.snapshot_id=m.snapshot_id AND r.hoja=m.hoja AND r.numero_fila=m.fila_consolidado
+      WHERE l.origen_drive=? ORDER BY m.fila_consolidado`,[f.origenes[0]]);
+    assert.ok(rows.every(r=>r.nombre==='IBM'));assert.equal(rows.length,2);
+    assert.equal(JSON.parse(rows[0].contenido).celdas.find(c=>c.columna===5).valor,'ALIAS_SINTETICO');
+    assert.equal(JSON.parse(rows[1].contenido).celdas.some(c=>c.columna===5),false);
+    const [[grants]]=await pool.execute('SELECT COUNT(*) AS n FROM ims_op_permiso p JOIN ims_mig_aporte a ON a.inventario_id=p.inventario_id WHERE a.snapshot_id=?',[f.manifest.snapshot_id]);assert.equal(Number(grants.n),0);
+  }finally{await f.close();}
+});
+test('cliente del catálogo alterado y con hash recalculado no reemplaza la autoridad del panel',async()=>{
+  const f=await preparar(undefined,{clientePanel:true});try{
+    const rows=(await readFile(path.join(f.plan,'catalogo.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);rows[0].cliente_panel='VENTURA';
+    await actualizarHashPlan(f,'catalogo.jsonl',rows);
+    await assert.rejects(aplicar(f),/Catálogo no corresponde/);assert.equal(await cantidad(f),0);
+  }finally{await f.close();}
+});
+test('proyección con otro cliente y hash rehecho se rechaza aunque ese cliente exista en el panel',async()=>{
+  const f=await preparar(undefined,{clientePanel:true});try{
+    const rows=(await readFile(path.join(f.plan,'lineas_preparadas.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+    rows[0].cliente='VENTURA';rows[0].cliente_id=uuidEstable('cliente','VENTURA');await actualizarHashPlan(f,'lineas_preparadas.jsonl',rows);
+    await assert.rejects(aplicar(f),/proyección/);assert.equal(await cantidad(f),0);assert.equal(await cantidad(f,'ims_mig_aporte'),0);
+  }finally{await f.close();}
+});
+test('regla de miles conserva texto original, cantidades exactas y reintento en MySQL',async()=>{
+  const f=await preparar({mutarInv:rows=>{
+    rows[3].celdas.find(c=>c.columna===3).valor='260608_CIBERC';
+    const c=rows[3].celdas.find(c=>c.columna===22);c.valor='2,000';c.tipo='s';
+  }},{clientePanel:true,conteosMiles:[{codigo_operativo:'260608_CIBERC',total_conteo_1:'2000'}]});
+  try{
+    assert.equal((await aplicar(f)).filas,5);assert.equal((await aplicar(f)).yaTrasladado,true);
+    const [[r]]=await pool.execute(`SELECT l.conteo_1,r.contenido FROM ims_op_linea l JOIN ims_mig_linea m ON m.linea_id=l.id
+      JOIN ims_snapshot_fila r ON r.snapshot_id=m.snapshot_id AND r.hoja=m.hoja AND r.numero_fila=m.fila_consolidado
+      WHERE l.origen_drive=?`,[f.origenes[2]]);
+    assert.equal(r.conteo_1,'2000.000000000');assert.equal(JSON.parse(r.contenido).celdas.find(c=>c.columna===22).valor,'2,000');
+  }finally{await f.close();}
+});
+test('un control total o un origen alterados se rechazan aunque se recalcule el hash del plan',async()=>{
+  for(const campo of ['total','origen']){
+    const f=await preparar({mutarInv:rows=>{rows[3].celdas.find(c=>c.columna===3).valor='260608_CIBERC';const c=rows[3].celdas.find(c=>c.columna===22);c.valor='2,000';c.tipo='s';}},
+      {conteosMiles:[{codigo_operativo:'260608_CIBERC',total_conteo_1:'2000'}]});
+    try{
+      const file=path.join(f.plan,'manifest.json'),m=JSON.parse(await readFile(file,'utf8'));
+      if(campo==='total')m.opciones.cantidades[0].total_conteo_1='975.000000000';else m.opciones.cantidades[0].origen_drive=f.origenes[3];
+      m.plan_id=sha(canon(identidadPlan(m)));await writeFile(file,JSON.stringify(m));
+      await assert.rejects(aplicar(f),campo==='total'?/total de CONTEO/:/no corresponde al origen/);assert.equal(await cantidad(f),0);
+    }finally{await f.close();}
+  }
 });

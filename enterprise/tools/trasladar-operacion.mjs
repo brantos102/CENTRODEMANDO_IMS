@@ -2,7 +2,8 @@ import path from 'node:path';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {records,validateSnapshot,verifyStoredSnapshot,databaseConfig} from './importar-snapshot.mjs';
-import {validarPlan} from './planificar-operacion.mjs';
+import {validarPlan,politicaPlan} from './planificar-operacion.mjs';
+import {comprobarCantidades,opcionesCantidad} from './reglas-cantidades.mjs';
 import {canon,sha,exigir,celdas,texto,proyectarFila,uuidEstable} from '../src/migracion/modelo.mjs';
 import {estadoPermiteConsolidar} from '../src/dominio/inventario.mjs';
 
@@ -49,6 +50,7 @@ async function verificarNativo(c,m,catalogo){
 }
 export async function trasladarOperacion({planDir,snapshotDir,connection:c}){
   const plan=await validarPlan(planDir),snapshot=await validateSnapshot(snapshotDir),m=plan.manifest;
+  const politica=politicaPlan(m);
   exigir(m.snapshot_id===snapshot.manifest.snapshot_id,'Plan y corte diferentes.');
   const [[db]]=await c.query('SELECT DATABASE() AS nombre,CURRENT_USER() AS usuario');
   exigir(/^centromando_ims(?:_[a-z0-9_]+)?$/.test(db.nombre||'')&&!/^root@/i.test(db.usuario||''),'Base o usuario no permitido.');
@@ -56,18 +58,21 @@ export async function trasladarOperacion({planDir,snapshotDir,connection:c}){
   exigir(estado[0]?.estado==='VERIFICADO','Primero se requiere staging íntegro y verificado.');
   await verifyStoredSnapshot(c,snapshot.manifest);
   const catalogo=[];for await(const {row} of records(path.join(plan.dir,'catalogo.jsonl')))catalogo.push(row);
-  const panel=snapshot.manifest.hojas.find(s=>s.nombre==='PANEL DE CONTROL'),originales=new Map(),clientes=new Set();
+  await comprobarCantidades(snapshot,catalogo,politica.cantidades);
+  const panel=snapshot.manifest.hojas.find(s=>s.nombre==='PANEL DE CONTROL'),originales=new Map(),clientes=new Set(),cuentasOrigen=new Map();
   for await(const {row} of records(path.join(snapshot.dir,panel.archivo))){
-    if(row.fila===1)continue;const d=celdas(row);originales.set(row.fila,{origen:(texto(d.get(3))||'').trim(),sede:(texto(d.get(6))||'').trim().toUpperCase(),estado:texto(d.get(7))});
+    if(row.fila===1)continue;const d=celdas(row);originales.set(row.fila,{origen:(texto(d.get(3))||'').trim(),sede:(texto(d.get(6))||'').trim().toUpperCase(),estado:texto(d.get(7)),cliente:(texto(d.get(1))||'').trim()});
     const cliente=(texto(d.get(1))||'').trim();if(cliente)clientes.add(cliente);
+    const origen=(texto(d.get(3))||'').trim();cuentasOrigen.set(origen,(cuentasOrigen.get(origen)||0)+1);
   }
   exigir(catalogo.length===originales.size&&catalogo.length===m.resumen.inventarios_panel,'Catálogo incompleto.');
   const preparados=new Map(),vistas=new Set();
   const invSheet=snapshot.manifest.hojas.find(s=>s.nombre==='INVENTARIOS');
   for(const r of catalogo){
-    const o=originales.get(r.fila_panel);exigir(o&&!vistas.has(r.fila_panel)&&o.origen===r.origen_drive&&o.sede===r.sede&&o.estado===r.estado_original,'Catálogo no corresponde al panel.');vistas.add(r.fila_panel);
+    const o=originales.get(r.fila_panel);exigir(o&&!vistas.has(r.fila_panel)&&o.origen===r.origen_drive&&o.sede===r.sede&&o.estado===r.estado_original&&o.cliente===r.cliente_panel,'Catálogo no corresponde al panel.');vistas.add(r.fila_panel);
     if(!r.preparado)continue;
-    exigir(estadoPermiteConsolidar(o.estado)&&['UIO','GYE'].includes(o.sede)&&r.motivos.length===0&&r.filas>0&&r.filas===invSheet.filas_por_origen[o.origen]&&
+    exigir(estadoPermiteConsolidar(o.estado)&&['UIO','GYE'].includes(o.sede)&&cuentasOrigen.get(o.origen)===1&&
+      (!politica.clientePanel||Boolean(o.cliente))&&r.motivos.length===0&&r.filas>0&&r.filas===invSheet.filas_por_origen[o.origen]&&
       r.inventario_id===uuidEstable('inventario',o.origen)&&!preparados.has(o.origen),'Inventario no preparado o duplicado.');
     preparados.set(o.origen,r);
   }
@@ -100,7 +105,10 @@ export async function trasladarOperacion({planDir,snapshotDir,connection:c}){
       const raw=new Map(raws.map(r=>[r.numero_fila,JSON.parse(r.contenido)]));
       for(const r of batch){
         exigir(raw.has(r.fila_consolidado),'Falta el original de una línea.');
-        const p=proyectarFila(raw.get(r.fila_consolidado),m.snapshot_id,clientes),inv=preparados.get(r.origen_drive);
+        const inv=preparados.get(r.origen_drive);
+        const opciones=politica.clientePanel?{clientePanel:inv?.cliente_panel}:{};
+        opciones.cantidades=opcionesCantidad(politica.cantidades,r.origen_drive);
+        const p=proyectarFila(raw.get(r.fila_consolidado),m.snapshot_id,clientes,opciones);
         exigir(inv&&p.issues.length===0&&p.codigo===inv.codigo&&canon(p.proyeccion)===canon(r),'La proyección no coincide con su original.');
         if(!knownClients.has(r.cliente_id)){
           const [[prev]]=await c.execute('SELECT nombre FROM ims_op_cliente WHERE id=? FOR UPDATE',[r.cliente_id]);

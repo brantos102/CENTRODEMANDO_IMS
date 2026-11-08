@@ -8,6 +8,8 @@ Fuente autorizada: el Google Sheets vigente de Centro de Mando, con INVENTARIOS 
 
 También está disponible el [diagnóstico y traslado del histórico](TRASLADO_HISTORICO.md): prepara únicamente archivos Entregado íntegros, conserva el catálogo completo y las incidencias, y permite ensayar su carga a entidades internas sin crear cuentas ni permisos. La API sigue deshabilitada. En PowerShell del PC, desde `enterprise`, ejecutar `& '.\tools\diagnosticar-corte.ps1'` para analizar una descarga reciente sin conectarse a ninguna base de datos.
 
+Las políticas explícitas de cliente obligatorio del panel y de cantidades con separador de miles confirmado generan planes nuevos con versión y controles propios. Incluyen una auditoría de formatos de todas las filas R/V/W/X. No cambian los valores del corte ni reinterpretan planes anteriores; consultar [las reglas y controles](TRASLADO_HISTORICO.md).
+
 ## Qué conserva esta etapa
 
 - El XLSX original completo, su SHA-256 y estilos; valores originales de todas las hojas, incluidos resultados guardados y texto de fórmulas, sin ejecutarlas.

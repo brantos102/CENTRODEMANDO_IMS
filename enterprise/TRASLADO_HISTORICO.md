@@ -34,11 +34,46 @@ El contrato exige INVENTARIOS con sus 30 encabezados y REGISTRO con sus 15, incl
 - Cada archivo físico de Drive conserva su identidad aunque otro tenga el mismo código operativo. Una línea se identifica por corte + origen + fila del consolidado, nunca solo por SKU o número de línea.
 - Solo el estado **Entregado**, tras quitar espacios y comparar mayúsculas, permite preparar el histórico. No acepta «No entregado» ni «Entregado pendiente de validación».
 - Todos los renglones de PANEL DE CONTROL quedan en el catálogo privado, incluidos los pendientes. Los que aún no aparecen en INVENTARIOS requieren sus planillas hijas: no se crean como inventarios vacíos ni se pierden por no estar entregados.
-- Se valida el archivo completo. Cliente vacío o no catalogado, códigos operativos mezclados dentro del origen, sede desconocida, conteos negativos/ambiguos o campos fuera del tamaño admitido lo dejan para revisión. No se adivina el cliente desde el panel ni se convierte un conteo inválido a cero.
+- Se valida el archivo completo. En la política original, cliente vacío o no catalogado deja el archivo para revisión; no se adivina el cliente desde el panel. La política explícita de cliente obligatorio del panel se describe debajo. Códigos operativos mezclados dentro del origen, sede desconocida, conteos negativos/ambiguos o campos fuera del tamaño admitido siguen bloqueando ambas políticas. No se convierte un conteo inválido a cero.
 - Cero y ausencia de conteo son distintos; decimales exactos de hasta 21 enteros y 9 decimales, sin redondeo. Un texto como `1,000` requiere revisar la fuente. Las filas que contienen solo notas permanecen en staging sin crear existencias.
 - Los campos originales que todavía no tienen entidad operativa siguen disponibles íntegros mediante la referencia a staging. REGISTRO no se convierte en auditorías nuevas: se conserva sin reinterpretar sus columnas históricas ambiguas.
 
 `catalogo.jsonl` identifica cada archivo y sus motivos de revisión. `incidencias.jsonl` identifica las filas que requieren revisión; `lineas_preparadas.jsonl` contiene solo archivos completos preparados. Los hashes y la identidad determinista del plan permiten detectar alteraciones. Estos tres archivos son privados.
+
+### Cliente obligatorio del panel: política explícita
+
+Por decisión del responsable del proyecto, el cliente operativo puede tomarse obligatoriamente de la columna CLIENTE del PANEL DE CONTROL, vinculando cada línea al **ID físico del archivo Drive**. Se activa solo al generar otro plan:
+
+```powershell
+node '.\tools\planificar-operacion.mjs' $imsCorte $imsPlanNuevo --cliente-panel
+if ($LASTEXITCODE -ne 0) { throw 'Plan detenido.' }
+```
+
+La política queda identificada como `historico-entregado-cliente-panel-v2` e incorporada al hash del plan. El modo sin argumento continúa produciendo la política original `historico-entregado-v1`. Los planes anteriores conservan su significado; no se reinterpretan ni se sobrescriben.
+
+En este modo el nombre del panel sustituye al cliente de la línea en la proyección operativa, incluso si el cliente de la línea está vacío o coincide con otro cliente conocido. El cliente original permanece íntegro en el XLSX, JSONL y staging, referenciado por el hash de contenido de la línea. El resumen cuenta `filas_cliente_panel_aplicado` para las líneas del corte cuyo cliente efectivo difiere del original, incluidas las retenidas por otros motivos; no es un conteo de filas escritas a MySQL.
+
+Panel sin cliente o con ID físico repetido queda bloqueado; no se usa como sustituto el nombre de otra línea, el código o el SKU. La política no renombra archivos ni códigos, no interpreta comas, no convierte negativos, no amplía campos y no aprueba estados diferentes de Entregado. Tampoco modifica Sheets, el XLSX, las columnas Power BI, las cuentas o los permisos.
+
+La revisión de incidencias y el traslado leen la política del plan. El traslado vuelve a cotejar el cliente del catálogo con la fila original del panel y reconstruye la proyección desde staging antes de escribir. Un catálogo o una línea con otro cliente se rechaza aunque se recalculen sus hashes. No se reemplaza un inventario ya importado desde otro plan; requiere conciliación explícita.
+
+### Formatos de cantidades y controles confirmados
+
+`auditar-formatos-conteo.mjs /corte /salida_nueva` revisa todas las filas, orígenes y las columnas R/V/W/X. Distingue números tipados en XLSX de textos, fracciones válidas, agrupaciones de tres dígitos con coma o punto y cantidades inválidas. Un texto como `2,954` se señala como candidato; la forma no demuestra si representa miles o decimales. Las fracciones numéricas válidas no se presentan como errores. El informe compartible contiene posiciones, formatos y conteos, sin valores de celdas, SKU, series, notas o información de USUARIOS.
+
+Una interpretación de miles requiere aprobación por inventario y un total entero esperado de CONTEO No. 1. Se declara explícitamente al generar otro plan:
+
+```powershell
+node '.\tools\planificar-operacion.mjs' $imsCorte $imsPlanNuevo --cliente-panel --miles-conteo 'CODIGO=TOTAL_ENTERO'
+```
+
+La política `historico-entregado-reglas-v3` conserva en el hash sus opciones y el ID físico resuelto. Exige que el código seleccione un único origen, con un solo código y una sola fila del panel. Solo en ese origen interpreta textos con grupos estrictos de tres dígitos separados por coma como miles. Rechaza grupos defectuosos, negativos, fracciones no autorizadas y precisión excesiva; no cambia el significado de números tipados ni aplica la regla a otros archivos.
+
+Se suma toda la columna V del origen mediante enteros escalados (sin coma flotante ni redondeo) y se exige el total aprobado antes de crear el plan. Los conteos V/W/X de ese origen se proyectan como enteros; vacíos y cero conservan su diferencia. El resumen incluye filas, textos con coma y total esperado/calculado. El traslado repite la resolución de origen y el control sobre el corte validado. Un origen o control total alterado no puede publicarse recalculando únicamente los hashes del plan.
+
+El auxiliar `validar-reglas-migracion.ps1 -DirectorioCorte $imsCorte -ClientePanel -ConteosMiles 'CODIGO=TOTAL_ENTERO'` genera una auditoría completa, otro plan y otra revisión en una carpeta nueva. Coloca `resumen_para_compartir.json`, `auditoria_formatos_para_compartir.json` y `revision_para_compartir.json` en su raíz. No conecta a una base ni modifica el corte. El auxiliar PowerShell requiere validación en el PC Windows; no se ejecutó allí desde este entorno.
+
+Validación de estas políticas: 62 pruebas unitarias aprobadas en Node 22 y 11 pruebas de traslado aprobadas contra MySQL 8.0.46 temporal con datos sintéticos. Incluyen preservación de clientes/textos originales, fuentes físicas distintas, reintentos, total esperado incorrecto, regla aplicada a otro origen, catálogo o cliente alterados con hashes recalculados y cantidades ambiguas fuera del origen autorizado. No se conectó al servidor empresarial.
 
 ## Revisar las incidencias sin volver a descargar o consolidar
 
