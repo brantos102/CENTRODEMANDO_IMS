@@ -57,6 +57,8 @@ Para `IDS_OPERATIVOS_MEZCLADOS`, compara la columna ID **dentro de cada origen f
 
 Las muestras están limitadas a cinco archivos, tres códigos y tres tramos por ejemplo; los contadores se calculan sobre todas las filas. Un mismo archivo puede tener varios motivos. El informe no demuestra por sí solo si hay error en la fuente, un renombrado parcial o una procedencia mal asociada; se contrasta con las planillas originales. Las filas del corte pueden diferir de las posiciones en el Google Sheets vigente si la operación continuó después de descargarlo.
 
+Los ejemplos de incidencias por motivo priorizan una fila de cada archivo antes de añadir más filas del mismo. Así un archivo grande no oculta las muestras de otros orígenes, manteniendo el límite de cinco y los mismos campos acotados. La prueba de este caso eleva el conjunto unitario Node a 47; no cambia la elegibilidad ni el plan existente.
+
 Esta revisión solo lee la copia y escribe un informe nuevo. No conecta a MySQL ni Google y no cambia el esquema Power BI, las fuentes, los planes ni los criterios de elegibilidad. Se añadieron cinco pruebas de revisión, incluidas diferencias de formato, fuentes independientes, ocultamiento de valores sensibles y conservación del corte/plan; el conjunto unitario pasa de 37 a 42.
 
 ### Contrastar un posible desfase de procedencia entre cortes

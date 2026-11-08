@@ -63,3 +63,14 @@ test('corte alterado se rechaza antes de crear el informe',async()=>{
     await assert.rejects(stat(salida),{code:'ENOENT'});
   }finally{await f.close();}
 });
+test('un archivo con muchas incidencias no oculta las muestras de los otros archivos',async()=>{
+  const f=await fixture({mutarInv:rows=>{
+    rows.splice(2,0,...Array.from({length:4},()=>structuredClone(rows[0])));
+    rows.forEach((r,i)=>{r.fila=i+2;r.notas={['C'+r.fila]:'IMS_ORIGEN_DRIVE='+r.origen_drive};r.celdas.find(c=>c.columna===5).valor='';});
+  }});
+  try{
+    const b=(await revisarIncidencias(f.cut,f.plan)).incidencias_de_filas.CLIENTE_VACIO;
+    assert.equal(b.archivos,4);assert.equal(b.filas,9);assert.equal(b.ejemplos.length,5);
+    assert.equal(new Set(b.ejemplos.flatMap(x=>x.filas_panel)).size,4);
+  }finally{await f.close();}
+});

@@ -48,9 +48,11 @@ export async function revisarIncidencias(corteDir,planDir){
   }
   const motivos=Object.create(null);
   function motivo(nombre,origen,muestra){
-    const b=motivos[nombre]??={archivos:new Set(),filas:0,ejemplos:[]};
+    const b=motivos[nombre]??={archivos:new Set(),filas:0,porArchivo:new Map()};
     b.archivos.add(origen);b.filas++;
-    if(b.ejemplos.length<MUESTRAS)b.ejemplos.push(muestra);
+    if(!b.porArchivo.has(origen))b.porArchivo.set(origen,[]);
+    const ejemplos=b.porArchivo.get(origen);
+    if(ejemplos.length<MUESTRAS)ejemplos.push(muestra);
   }
   const inv=corte.manifest.hojas.find(h=>h.nombre==='INVENTARIOS');
   for await(const {row} of records(path.join(corte.dir,inv.archivo))){
@@ -85,7 +87,14 @@ export async function revisarIncidencias(corteDir,planDir){
   }
   exigir(catalogo.length===m.resumen.inventarios_panel,'El catálogo y su resumen no coinciden.');
   const detalle={};
-  for(const [nombre,b] of Object.entries(motivos))detalle[nombre]={archivos:b.archivos.size,filas:b.filas,ejemplos:b.ejemplos};
+  for(const [nombre,b] of Object.entries(motivos)){
+    const grupos=[...b.porArchivo.values()],ejemplos=[];
+    // Primero una fila por archivo; después las adicionales hasta el límite.
+    for(let i=0;i<MUESTRAS&&ejemplos.length<MUESTRAS;i++){
+      for(const g of grupos){if(g[i])ejemplos.push(g[i]);if(ejemplos.length===MUESTRAS)break;}
+    }
+    detalle[nombre]={archivos:b.archivos.size,filas:b.filas,ejemplos};
+  }
   return {ok:true,snapshot_id:m.snapshot_id,plan_id:m.plan_id,filas_inventarios:inv.filas_datos_contrato,
     inventarios_preparados:m.resumen.inventarios_preparados,inventarios_revision:m.resumen.inventarios_revision,
     mezcla_codigos:mezcla,incidencias_de_filas:detalle,
