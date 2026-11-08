@@ -40,6 +40,25 @@ El contrato exige INVENTARIOS con sus 30 encabezados y REGISTRO con sus 15, incl
 
 `catalogo.jsonl` identifica cada archivo y sus motivos de revisión. `incidencias.jsonl` identifica las filas que requieren revisión; `lineas_preparadas.jsonl` contiene solo archivos completos preparados. Los hashes y la identidad determinista del plan permiten detectar alteraciones. Estos tres archivos son privados.
 
+## Revisar las incidencias sin volver a descargar o consolidar
+
+Desde `enterprise`, sobre el corte y plan ya generados:
+
+```powershell
+$imsDiagnostico = 'C:\ruta\privada\DIAGNOSTICO_...'
+$imsRevision = Join-Path $imsDiagnostico ('REVISION_' + (Get-Date -Format 'yyyyMMdd_HHmmss_fff'))
+node '.\tools\revisar-incidencias.mjs' (Join-Path $imsDiagnostico 'corte') (Join-Path $imsDiagnostico 'plan') $imsRevision
+if ($LASTEXITCODE -ne 0) { throw 'Revision detenida.' }
+```
+
+Genera **revision_para_compartir.json** en una carpeta nueva. Este informe acotado se puede adjuntar para revisar la migración: incluye conteos, filas del panel/INVENTARIOS del corte, ejemplos de códigos operativos, columnas afectadas y longitudes. No contiene cantidades, descripciones de productos, series, notas, contraseñas ni filas de USUARIOS. Textos ID ajenos al formato habitual se identifican con hash y longitud. No adjuntar el corte o el plan completo como sustituto del informe.
+
+Para `IDS_OPERATIVOS_MEZCLADOS`, compara la columna ID **dentro de cada origen físico de Drive**. Distingue códigos diferentes de variaciones que coinciden al normalizar mayúsculas, Unicode y espacios. Esa equivalencia es solo una pista para revisión: no autoriza fusionar, renombrar o descartar datos. IBM/VENTURA con un mismo código en archivos físicos distintos se conservan como fuentes independientes y no se marcan por ese solo motivo.
+
+Las muestras están limitadas a cinco archivos, tres códigos y tres tramos por ejemplo; los contadores se calculan sobre todas las filas. Un mismo archivo puede tener varios motivos. El informe no demuestra por sí solo si hay error en la fuente, un renombrado parcial o una procedencia mal asociada; se contrasta con las planillas originales. Las filas del corte pueden diferir de las posiciones en el Google Sheets vigente si la operación continuó después de descargarlo.
+
+Esta revisión solo lee la copia y escribe un informe nuevo. No conecta a MySQL ni Google y no cambia el esquema Power BI, las fuentes, los planes ni los criterios de elegibilidad. Se añadieron cinco pruebas de revisión, incluidas diferencias de formato, fuentes independientes, ocultamiento de valores sensibles y conservación del corte/plan; el conjunto unitario pasa de 37 a 42.
+
 ## Traslado a una base exclusiva de ensayo
 
 No ejecutar en el servidor compartido hasta preparar y validar su base y usuario exclusivos. La herramienta no crea bases ni usuarios, no concede permisos y no cambia parámetros globales de MySQL. Con el corte previamente importado y verificado en staging:
