@@ -1,0 +1,26 @@
+{
+  "entorno": "Docker local temporal, sin conexión corporativa",
+  "mysql": "8.0.46",
+  "node": "22.23.3",
+  "limites_mysql_ensayo": {"cpu": 2, "memoria_gib": 2},
+  "alcance": "Corte histórico previo, distinto del corte actual enviado por el usuario",
+  "hojas": 19,
+  "filas_staging": 277731,
+  "archivos_preparados": 344,
+  "conteos_logicos": 345,
+  "filas_trasladadas": 96683,
+  "comparacion_ms": {
+    "sin_ajuste": {"staging": 21675, "traslado": 189323, "reintento": 15776},
+    "con_ajuste": {"staging": 21833, "traslado": 26581, "reintento": 12606}
+  },
+  "resultado": {
+    "hash_completo_coincide_con_plan": true,
+    "reintento_sin_duplicados": true,
+    "control_cantidades_y_separacion_verificados": true,
+    "usuarios_creados": 0,
+    "permisos_creados": 0,
+    "servidor_empresarial_contactado": false
+  },
+  "regresion": {"unitarias_node": 69, "integracion_mysql_traslado": 17, "fallos": 0},
+  "limite_interpretacion": "Mediciones de estos ensayos locales; no garantizan los tiempos del servidor empresarial."
+}

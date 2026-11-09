@@ -172,6 +172,10 @@ Validación adicional: seis pruebas Node para compatibilidad con un vector del c
 
 ## Traslado a una base exclusiva de ensayo
 
+La verificación paginada de datos nativos fija el índice de snapshot/hoja/fila y el orden de las uniones. Así evita planes costosos en tablas recién pobladas antes del primer COMMIT, conservando los mismos filtros, filas y hash completo. En el [ensayo local a escala](../docs/VALIDACION_TRASLADO_V4_ESCALA.json), 96.683 líneas pasaron de 189.323 a 26.581 ms para la primera carga; el reintento siguió conciliando sin duplicados. Son mediciones de un corte histórico previo, no del servidor empresarial ni del corte actual del usuario. Regresión: 69 pruebas unitarias y 17 de traslado MySQL aprobadas.
+
+El CLI informa por stderr el avance de escritura/verificación dentro de la transacción, sin valores de filas. Solo el JSON final por stdout confirma el resultado; los avisos de progreso no son un COMMIT ni una aprobación KPI. La habilitación `IMS_MIGRACION_OPERATIVA=1` se puede limitar al proceso del traslado, manteniendo el archivo privado con valor 0 y la API deshabilitada.
+
 No ejecutar en el servidor compartido hasta preparar y validar su base y usuario exclusivos. La herramienta no crea bases ni usuarios, no concede permisos y no cambia parámetros globales de MySQL. Con el corte previamente importado y verificado en staging:
 
 ```bash

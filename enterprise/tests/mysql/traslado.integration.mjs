@@ -13,13 +13,16 @@ if(process.env.IMS_MYSQL_PRUEBAS!=='1'||!/^centromando_ims_pruebas(?:_[a-z0-9]+)
 let pool;
 before(async()=>{pool=await crearPoolConteos(process.env);});after(async()=>{if(pool)await pool.end();});
 async function preparar(options,politica){const f=await crearCorte(options);const c=await pool.getConnection();try{await importSnapshot(await validateSnapshot(f.cut),c);await planificarOperacion(f.cut,f.plan,politica);}catch(e){await f.close();throw e;}finally{c.release();}return f;}
-async function aplicar(f,connection){const c=connection||await pool.getConnection();try{return await trasladarOperacion({planDir:f.plan,snapshotDir:f.cut,connection:c});}finally{if(!connection)c.release();}}
+async function aplicar(f,connection,onProgress){const c=connection||await pool.getConnection();try{return await trasladarOperacion({planDir:f.plan,snapshotDir:f.cut,connection:c,onProgress});}finally{if(!connection)c.release();}}
 async function cantidad(f,table='ims_op_linea'){
   assert.ok(['ims_op_linea','ims_mig_aporte','ims_mig_conteo_aporte'].includes(table));const [[r]]=await pool.execute(`SELECT COUNT(*) AS n FROM ${table} WHERE origen_drive IN (${f.origenes.map(()=>'?').join(',')})`,f.origenes);return Number(r.n);
 }
 test('traslado real y reintento conservan fuentes y cantidades sin permisos ni activación',async()=>{
   const f=await preparar();try{
-    const a=await aplicar(f),b=await aplicar(f);assert.equal(a.filas,5);assert.equal(a.inventarios,4);assert.equal(b.yaTrasladado,true);assert.equal(await cantidad(f),5);
+    const progreso=[];
+    const a=await aplicar(f,undefined,p=>progreso.push(p)),b=await aplicar(f);assert.equal(a.filas,5);assert.equal(a.inventarios,4);assert.equal(b.yaTrasladado,true);assert.equal(await cantidad(f),5);
+    assert.ok(progreso.some(p=>p.fase==='escritura_en_transaccion'&&p.filas===5));
+    assert.ok(progreso.some(p=>p.fase==='verificacion_en_transaccion'&&p.filas===5));
     const [rows]=await pool.execute(`SELECT l.conteo_1,l.conteo_2,l.sku,l.fila_origen,i.estado FROM ims_op_linea l JOIN ims_op_inventario i ON i.id=l.inventario_id WHERE l.origen_drive IN (${f.origenes.map(()=>'?').join(',')})`,f.origenes);
     assert.ok(rows.every(r=>r.estado==='ENTREGADO'&&r.conteo_2===null&&r.fila_origen===null&&r.sku==='000123'));
     assert.ok(rows.some(r=>r.conteo_1==='0.000000000'));
