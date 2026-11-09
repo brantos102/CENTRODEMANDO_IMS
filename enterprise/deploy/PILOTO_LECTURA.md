@@ -55,7 +55,35 @@ concesiones incompletas requiere revisión; no aumenta privilegios al reanudar.
 
 ## Publicación posterior
 
-Antes de instalar la unidad o vhost, revisar en el servidor resumen, borradores,
+### Arranque del backend local
+
+Tras confirmar el resumen de preparación, ejecutar en `apps` como `enicolalde`:
+
+```bash
+bash enterprise/deploy/arrancar_piloto.sh
+```
+
+Compara la unidad y el entorno con los borradores preparados, verifica puertos y
+referencias nuevamente, rechaza unidades/complementos preexistentes y valida la
+unidad con `systemd-analyze verify`. Crea exclusivamente su unidad en
+`/etc/systemd/system`, carga la definición con `daemon-reload` y arranca solo
+`centro-mando-ims-ensayo.service`. No habilita arranque al reiniciar.
+
+Confirma `/salud` y que la escucha sea exactamente 127.0.0.1:3003 con el MainPID
+del servicio. Esta prueba acredita arranque, conexión inicial a MySQL y respuesta
+HTTP local; no acredita login de navegador, acceso externo ni TLS. Si falla luego
+de solicitar arranque, intenta detener solo su servicio y conserva su unidad para
+revisión. No repetirlo si la unidad ya existe; revisar primero su estado/registro.
+
+No instala vhosts ni Listen, no recarga/reinicia Apache ni otro servicio y no
+modifica cuentas o datos de inventario. El resultado local debe ser correcto antes
+de publicar HTTPS. Para diagnóstico del servicio propio, usar
+`sudo journalctl -u centro-mando-ims-ensayo.service -n 30 --no-pager`; no compartir
+el archivo de entorno ni el archivo de acceso privado.
+
+### HTTPS
+
+Antes de instalar el vhost, revisar en el servidor resumen, borradores,
 puertos/configuraciones nuevamente, vigencia/nombre del certificado y sintaxis.
 El certificado y su clave **no se copian ni modifican**. `/usr/bin/node` fue
 informado por el servidor; confirmar su versión al arrancar. El aviso global
