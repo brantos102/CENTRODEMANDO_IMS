@@ -82,6 +82,35 @@ test('lector consulta sus líneas pero no guarda conteos',async t=>{
   assert.equal((await f.req(`/api/inventarios/${f.inv}/lineas`,{cookie:s.cookie})).res.status,200);
   const r=await f.req('/api/conteos',{method:'POST',body:f.solicitud,cookie:s.cookie,csrf:s.csrf});assert.equal(r.res.status,403);
 });
+test('resumen cuenta solo líneas y clientes autorizados sin duplicar inventarios multicliente',async t=>{
+  const f=await fixture(t),s=await f.login(f.correoLector);
+  assert.equal((await f.req('/api/resumen')).res.status,401);
+  const a=await f.req('/api/resumen',{cookie:s.cookie});assert.equal(a.res.status,200);
+  assert.deepEqual(a.data.totales,{conteos:'1',lineas:'1',clientes:'1',sedes:'1'});
+  assert.equal(a.data.clientes.length,1);assert.equal(a.data.clientes[0].id,f.cliente);
+  await pool.execute('INSERT INTO ims_op_permiso (actor_id,inventario_id,cliente_id,puede_contar) VALUES (?,?,?,0)',[f.lector,f.inv,f.otroCliente]);
+  const b=await f.req('/api/resumen',{cookie:s.cookie});assert.equal(b.data.totales.conteos,'1');assert.equal(b.data.totales.lineas,'2');assert.equal(b.data.totales.clientes,'2');
+  assert.equal((await f.req('/api/resumen?select=*',{cookie:s.cookie})).res.status,400);
+});
+test('búsqueda por código/cliente/sede conserva el ámbito de permisos y escapa comodines literales',async t=>{
+  const f=await fixture(t),s=await f.login();
+  for(const q of ['buscar=codigo','buscar=cliente_a','sede=UIO','cliente='+f.cliente]){
+    const r=await f.req('/api/inventarios?'+q,{cookie:s.cookie});assert.equal(r.res.status,200);assert.deepEqual(r.data.datos.map(r=>r.id),[f.inv]);
+  }
+  for(const q of ['buscar=%25','buscar=CLIENTE_B','sede=GYE','cliente='+f.otroCliente]){
+    const r=await f.req('/api/inventarios?'+q,{cookie:s.cookie});assert.equal(r.res.status,200);assert.equal(r.data.datos.length,0);
+  }
+  for(const q of ['buscar=x&buscar=y','cliente=mal','sede=OTRA','buscar='+('x'.repeat(121))])assert.equal((await f.req('/api/inventarios?'+q,{cookie:s.cookie})).res.status,400);
+});
+test('búsqueda de líneas encuentra SKU con ceros, descripción y ubicación sin exponer el otro cliente',async t=>{
+  const f=await fixture(t),s=await f.login();
+  await pool.execute('INSERT INTO ims_op_detalle_linea (linea_id,posicion,descripcion,serie,lote,unidad) VALUES (?,?,?,?,?,?)',[f.linea,'A-01','Consumible único','SERIE_012','LOTE-1','UN']);
+  for(const buscar of ['SKU_0001','único','a-01','serie_012','LOTE-1']){
+    const r=await f.req(`/api/inventarios/${f.inv}/lineas?buscar=`+encodeURIComponent(buscar),{cookie:s.cookie});assert.equal(r.res.status,200);assert.deepEqual(r.data.datos.map(r=>r.id),[f.linea]);
+  }
+  const r=await f.req(`/api/inventarios/${f.inv}/lineas?buscar=%25`,{cookie:s.cookie});assert.equal(r.data.datos.length,0);
+  assert.equal((await f.req(`/api/inventarios/${f.invAjeno}/lineas?buscar=SKU`,{cookie:s.cookie})).res.status,403);
+});
 test('origen de otra aplicación o CSRF ausente no permiten escrituras',async t=>{
   const f=await fixture(t),s=await f.login();
   assert.equal((await f.req('/api/conteos',{method:'POST',body:f.solicitud,cookie:s.cookie})).res.status,403);

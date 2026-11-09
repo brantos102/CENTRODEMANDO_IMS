@@ -1,8 +1,10 @@
-import {cantidadNormalizada,mostrarCantidad,siguienteEtapa,acuseValido,validarPagina} from './modelo.mjs';
+import {cantidadNormalizada,mostrarCantidad,siguienteEtapa,acuseValido,validarPagina,validarResumen,mostrarEntero} from './modelo.mjs';
 import {listarPendientes,guardarPendiente,confirmarPendiente} from './pendientes.mjs';
 const $=id=>document.getElementById(id);
 const state={usuario:null,csrf:null,epoch:0,inventarios:[],lineas:[],inv:null,pendientes:[],almacen:false,sync:false,formulario:false,cursorInv:null,cursorLineas:null};
 let seqInv=0,seqLineas=0,seqPendientes=0;
+let seqResumen=0;
+const sinFiltros=()=>({buscar:'',cliente:'',sede:''});
 let verificandoSesion=true;
 function el(tag,text,clase){const e=document.createElement(tag);if(text!==undefined)e.textContent=String(text);if(clase)e.className=clase;return e;}
 function aviso(text='',fallo=false){$('aviso').textContent=text;$('aviso').hidden=!text;$('aviso').classList.toggle('fallo',fallo);}
@@ -25,6 +27,7 @@ function mostrarAcceso(message=''){
   $('operacion').hidden=true;$('acceso').hidden=false;$('contrasena').value='';$('login-error').textContent=message;
   $('lista-inventarios').replaceChildren();$('lineas').replaceChildren();$('lista-pendientes').replaceChildren();
   $('modal-conteo').close();$('form-conteo').reset();aviso();
+  limpiarResumen();
 }
 function errorActual(e,c){if(!actual(c))return;if(e.status===401)mostrarAcceso('La sesión venció. Inicia sesión para continuar.');else aviso(e.message,true);}
 async function entrar(sesion){
@@ -33,7 +36,41 @@ async function entrar(sesion){
   $('acceso').hidden=true;$('operacion').hidden=false;$('detalle').hidden=true;$('seleccion-vacia').hidden=false;
   $('usuario').textContent=sesion.usuario.nombre+' · '+sesion.usuario.correo;
   state.inv=null;state.lineas=[];state.inventarios=[];state.cursorInv=null;aviso();
-  await actualizarPendientes();if(!state.usuario)return;await cargarInventarios();
+  state.filtrosInv=sinFiltros();state.busquedaLineas='';state.cargandoInv=false;
+  $('form-inventarios').reset();$('form-lineas').reset();limpiarResumen();
+  await actualizarPendientes();if(!state.usuario)return;
+  await Promise.all([cargarResumen(),cargarInventarios()]);
+}
+function limpiarResumen(){
+  state.resumen=null;
+  for(const k of ['conteos','lineas','clientes','sedes'])$('total-'+k).textContent='—';
+  $('resumen-clientes').replaceChildren();$('cliente-inventarios').replaceChildren(new Option('Todos los autorizados',''));
+  $('resumen-error').textContent='';$('hora-resumen').textContent='Resumen pendiente de consulta.';
+  $('filtro-inventarios-aplicado').textContent='Mostrando tus inventarios autorizados.';
+}
+async function cargarResumen(){
+  if(!state.usuario)return;const c=contexto(),seq=++seqResumen;$('actualizar-resumen').disabled=true;
+  try{
+    const data=await api('/api/resumen');
+    if(!actual(c)||seq!==seqResumen)return;validarResumen(data);state.resumen=data;
+    for(const k of ['conteos','lineas','clientes','sedes'])$('total-'+k).textContent=mostrarEntero(data.totales[k]);
+    const seleccionado=$('cliente-inventarios').value;
+    $('cliente-inventarios').replaceChildren(new Option('Todos los autorizados',''),...data.clientes.map(r=>new Option(r.nombre,r.id)));
+    $('cliente-inventarios').value=seleccionado;
+    $('resumen-clientes').replaceChildren(...data.clientes.map(r=>{
+      const tr=el('tr'),accion=el('td'),b=el('button','Ver inventarios','texto-boton');b.type='button';b.setAttribute('aria-label','Ver inventarios de '+r.nombre);
+      b.addEventListener('click',()=>{
+        const f={...state.filtrosInv,cliente:r.id,buscar:''};$('cliente-inventarios').value=r.id;$('buscar-inventarios').value='';
+        cargarInventarios(false,f);$('inventarios-titulo').scrollIntoView({block:'start',behavior:'smooth'});
+      });accion.append(b);tr.append(el('td',r.nombre),el('td',mostrarEntero(r.conteos),'numero'),el('td',mostrarEntero(r.lineas),'numero'),accion);return tr;
+    }));
+    $('hora-resumen').textContent='Consulta realizada: '+new Date(data.consultado_en).toLocaleString('es-EC',{timeZone:'America/Guayaquil'});
+    $('resumen-error').textContent='';
+  }catch(e){
+    if(!actual(c)||seq!==seqResumen)return;
+    if(e.status===401)mostrarAcceso('La sesión venció. Inicia sesión para continuar.');
+    else $('resumen-error').textContent=state.resumen?'No se pudo actualizar el resumen. Se conserva la consulta anterior.':'No se pudo consultar el resumen. Reintenta con Actualizar resumen.';
+  }finally{if(seq===seqResumen)$('actualizar-resumen').disabled=false;}
 }
 async function actualizarPendientes(){
   if(!state.usuario)return;const c=contexto(),seq=++seqPendientes;
@@ -49,25 +86,38 @@ function pintarPendientes(){
 }
 function pintarInventarios(){
   const list=$('lista-inventarios');list.replaceChildren();
-  if(!state.inventarios.length)list.append(el('p','No tienes inventarios asignados.','sin-datos'));
+  if(!state.inventarios.length)list.append(el('p','No hay inventarios para esta consulta.','sin-datos'));
   for(const inv of state.inventarios){
     const b=el('button',undefined,'inventario'+(state.inv?.id===inv.id?' seleccionado':''));b.type='button';
+    b.disabled=!!state.cargandoInv;
     b.append(el('strong',inv.codigo_operativo),el('span',inv.sede+' · '+inv.estado.replaceAll('_',' ')));
     b.addEventListener('click',()=>seleccionar(inv));list.append(b);
   }
   $('mas-inventarios').hidden=!state.cursorInv;
 }
-async function cargarInventarios(mas=false){
+async function cargarInventarios(mas=false,filtros=state.filtrosInv||sinFiltros()){
   if(!state.usuario)return;const c=contexto(),seq=++seqInv;$('actualizar-inv').disabled=true;$('mas-inventarios').disabled=true;
+  state.cargandoInv=true;$('filtros-inventarios').disabled=true;pintarInventarios();
   try{
-    const data=await api('/api/inventarios?limite=50'+(mas&&state.cursorInv?'&cursor='+encodeURIComponent(state.cursorInv):''));
+    const q=new URLSearchParams({limite:'50'});for(const[k,v]of Object.entries(filtros))if(v)q.set(k,v);
+    if(mas&&state.cursorInv)q.set('cursor',state.cursorInv);
+    const data=await api('/api/inventarios?'+q);
     if(!actual(c)||seq!==seqInv)return;validarPagina(data,'inventarios');
+    if(!mas&&JSON.stringify(filtros)!==JSON.stringify(state.filtrosInv)){
+      state.epoch++;state.inv=null;state.lineas=[];state.cursorLineas=null;
+      $('detalle').hidden=true;$('seleccion-vacia').hidden=false;$('lineas').replaceChildren();
+    }
+    state.filtrosInv={...filtros};
     state.inventarios=mas?[...state.inventarios,...data.datos]:data.datos;state.cursorInv=data.siguiente;pintarInventarios();
+    const cliente=state.resumen?.clientes.find(r=>r.id===filtros.cliente)?.nombre;
+    const etiquetas=[filtros.buscar&&'Búsqueda: '+filtros.buscar,cliente&&'Cliente: '+cliente,filtros.sede&&'Sede: '+filtros.sede].filter(Boolean);
+    $('filtro-inventarios-aplicado').textContent=etiquetas.length?etiquetas.join(' · '):'Mostrando tus inventarios autorizados.';
   }catch(e){errorActual(e,c);}
-  finally{if(seq===seqInv){$('actualizar-inv').disabled=false;$('mas-inventarios').disabled=false;}}
+  finally{if(seq===seqInv){state.cargandoInv=false;$('filtros-inventarios').disabled=false;$('actualizar-inv').disabled=false;$('mas-inventarios').disabled=false;pintarInventarios();}}
 }
 async function seleccionar(inv){
   state.epoch++;state.inv=inv;state.lineas=[];state.cursorLineas=null;
+  state.busquedaLineas='';$('form-lineas').reset();
   $('seleccion-vacia').hidden=true;$('detalle').hidden=false;
   $('codigo').textContent=inv.codigo_operativo;$('sede').textContent='SEDE '+inv.sede;
   $('estado-inventario').textContent=inv.estado.replaceAll('_',' ')+(inv.estado==='EN_PROCESO'?' · Captura por etapas':' · Consulta');
@@ -88,18 +138,20 @@ function pintarLineas(){
     }else action.append(el('small',state.soloLectura||!row.puede_contar?'Solo lectura':!state.almacen?'Captura no disponible':etapa?'Consulta':'Etapas completas o por revisar'));
     tr.append(action);tbody.append(tr);
   }
-  $('resumen-lineas').textContent=state.lineas.length+' línea(s) cargada(s).'+(state.cursorLineas?' Hay más líneas disponibles.':'');
+  $('resumen-lineas').textContent=state.lineas.length+' línea(s) cargada(s).'+(state.busquedaLineas?' Búsqueda: '+state.busquedaLineas+'.':'')+(state.cursorLineas?' Hay más líneas disponibles.':'');
   $('mas-lineas').hidden=!state.cursorLineas;
 }
-async function cargarLineas(mas=false){
+async function cargarLineas(mas=false,buscar=state.busquedaLineas||''){
   if(!state.inv||!state.usuario)return;const c=contexto(),id=state.inv.id,seq=++seqLineas;
   $('actualizar-lineas').disabled=true;$('mas-lineas').disabled=true;
+  $('filtros-lineas').disabled=true;
   try{
-    const data=await api('/api/inventarios/'+id+'/lineas?limite=50'+(mas&&state.cursorLineas?'&cursor='+encodeURIComponent(state.cursorLineas):''));
+    const q=new URLSearchParams({limite:'50'});if(buscar)q.set('buscar',buscar);if(mas&&state.cursorLineas)q.set('cursor',state.cursorLineas);
+    const data=await api('/api/inventarios/'+id+'/lineas?'+q);
     if(!actual(c)||state.inv?.id!==id||seq!==seqLineas)return;validarPagina(data,'lineas');
-    state.lineas=mas?[...state.lineas,...data.datos]:data.datos;state.cursorLineas=data.siguiente;pintarLineas();
+    state.busquedaLineas=buscar;state.lineas=mas?[...state.lineas,...data.datos]:data.datos;state.cursorLineas=data.siguiente;pintarLineas();
   }catch(e){errorActual(e,c);}
-  finally{if(seq===seqLineas){$('actualizar-lineas').disabled=false;$('mas-lineas').disabled=false;}}
+  finally{if(seq===seqLineas){$('filtros-lineas').disabled=false;$('actualizar-lineas').disabled=false;$('mas-lineas').disabled=false;}}
 }
 let seleccion;
 function abrirConteo(row){
@@ -164,6 +216,13 @@ $('actualizar-inv').addEventListener('click',()=>cargarInventarios());
 $('mas-inventarios').addEventListener('click',()=>cargarInventarios(true));
 $('actualizar-lineas').addEventListener('click',()=>cargarLineas());
 $('mas-lineas').addEventListener('click',()=>cargarLineas(true));
+$('actualizar-resumen').addEventListener('click',()=>cargarResumen());
+$('form-inventarios').addEventListener('submit',e=>{
+  e.preventDefault();cargarInventarios(false,{buscar:$('buscar-inventarios').value.trim(),cliente:$('cliente-inventarios').value,sede:$('sede-inventarios').value});
+});
+$('limpiar-inventarios').addEventListener('click',()=>{$('form-inventarios').reset();cargarInventarios(false,sinFiltros());});
+$('form-lineas').addEventListener('submit',e=>{e.preventDefault();cargarLineas(false,$('buscar-lineas').value.trim());});
+$('limpiar-lineas').addEventListener('click',()=>{$('buscar-lineas').value='';cargarLineas(false,'');});
 function red(){ $('red').textContent=navigator.onLine?'Red disponible':'Sin red'; }
 window.addEventListener('online',red);window.addEventListener('offline',red);red();
 $('entrar').disabled=true;

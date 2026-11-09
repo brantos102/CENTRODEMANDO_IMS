@@ -22,14 +22,33 @@
     <section id="operacion" hidden>
       <p id="modo-lectura" class="aviso" hidden>Piloto de solo lectura · Consulta del histórico trasladado. La operación actual continúa en el sistema vigente.</p>
       <div class="barra-usuario"><div><span class="sobrelinea">ESPACIO DE TRABAJO</span><h1>Inventarios</h1><p id="usuario"></p></div><button id="salir" type="button" class="secundario">Cerrar sesión</button></div>
+      <section id="panel-resumen" class="resumen" aria-labelledby="resumen-titulo">
+        <div class="titulo-panel"><div><span class="sobrelinea">HISTÓRICO AUTORIZADO</span><h2 id="resumen-titulo">Tu resumen de inventarios</h2><p class="nota">Cifras de los inventarios trasladados a los que tienes acceso.</p></div><button id="actualizar-resumen" class="secundario" type="button">Actualizar resumen</button></div>
+        <div class="metricas">
+          <div class="tarjeta metrica"><span>Conteos</span><strong id="total-conteos">—</strong><small>Inventarios independientes</small></div>
+          <div class="tarjeta metrica"><span>Líneas</span><strong id="total-lineas">—</strong><small>Productos y ubicaciones registrados</small></div>
+          <div class="tarjeta metrica"><span>Clientes</span><strong id="total-clientes">—</strong><small>Cuentas autorizadas</small></div>
+          <div class="tarjeta metrica"><span>Sedes</span><strong id="total-sedes">—</strong><small>Bases con inventarios visibles</small></div>
+        </div>
+        <p id="resumen-error" class="error" role="alert"></p><p id="hora-resumen" class="nota">Resumen pendiente de consulta.</p>
+        <details class="tarjeta clientes-resumen"><summary>Consultar por cliente</summary><div class="tabla-scroll"><table><thead><tr><th>Cliente</th><th>Conteos</th><th>Líneas</th><th>Consulta</th></tr></thead><tbody id="resumen-clientes"></tbody></table></div></details>
+      </section>
       <div class="distribucion">
-        <aside class="tarjeta inventarios" aria-labelledby="inventarios-titulo"><div class="titulo-panel"><h2 id="inventarios-titulo">Tus inventarios</h2><button id="actualizar-inv" class="texto-boton" type="button">Actualizar</button></div><p class="nota">Selecciona una operación para consultar sus líneas.</p><div id="lista-inventarios" class="lista-inventarios"></div><button id="mas-inventarios" class="secundario ancho" type="button" hidden>Cargar más inventarios</button></aside>
+        <aside class="tarjeta inventarios" aria-labelledby="inventarios-titulo"><div class="titulo-panel"><h2 id="inventarios-titulo">Tus inventarios</h2><button id="actualizar-inv" class="texto-boton" type="button">Actualizar</button></div>
+          <form id="form-inventarios"><fieldset id="filtros-inventarios"><legend class="sr-only">Filtros de inventarios</legend>
+            <label for="buscar-inventarios">Código o cliente</label><input id="buscar-inventarios" type="search" maxlength="120" placeholder="Ej. FLUKE o 260608" autocomplete="off">
+            <label for="cliente-inventarios">Cliente</label><select id="cliente-inventarios"><option value="">Todos los autorizados</option></select>
+            <label for="sede-inventarios">Sede</label><select id="sede-inventarios"><option value="">Todas</option><option value="UIO">Quito · UIO</option><option value="GYE">Guayaquil · GYE</option></select>
+            <div class="acciones-filtro"><button class="primario" type="submit">Buscar inventarios</button><button id="limpiar-inventarios" class="texto-boton" type="button">Limpiar</button></div>
+          </fieldset></form><p id="filtro-inventarios-aplicado" class="nota">Mostrando tus inventarios autorizados.</p>
+          <div id="lista-inventarios" class="lista-inventarios"></div><button id="mas-inventarios" class="secundario ancho" type="button" hidden>Cargar más inventarios</button></aside>
         <div class="contenido">
           <section id="pendientes-panel" class="tarjeta pendientes" hidden><div class="titulo-panel"><div><span class="sobrelinea">ENVÍOS POR CONFIRMAR</span><h2 id="pendientes-titulo">Capturas pendientes</h2></div><button id="sincronizar" class="secundario" type="button">Reintentar envíos</button></div><p class="nota">Se conservan en este navegador hasta recibir confirmación. Reintentar mantiene la misma operación.</p><ul id="lista-pendientes"></ul></section>
           <section id="seleccion-vacia" class="tarjeta vacio"><span class="icono-grande" aria-hidden="true">▦</span><h2>Selecciona un inventario</h2><p>Verás sus productos, ubicaciones y etapas de conteo.</p></section>
           <section id="detalle" class="tarjeta detalle" hidden>
             <div class="titulo-panel"><div><span id="sede" class="sobrelinea"></span><h2 id="codigo"></h2><p id="estado-inventario" class="nota"></p></div><button id="actualizar-lineas" class="secundario" type="button">Actualizar líneas</button></div>
             <p class="nota">Cada fila es una línea independiente. Un mismo producto puede aparecer en varias ubicaciones.</p>
+            <form id="form-lineas"><fieldset id="filtros-lineas" class="busqueda-lineas"><legend class="sr-only">Buscar líneas del inventario</legend><div><label for="buscar-lineas">Producto, descripción, ubicación, serie o lote</label><input id="buscar-lineas" type="search" maxlength="120" autocomplete="off" placeholder="Buscar dentro de este inventario"></div><button class="secundario" type="submit">Filtrar líneas</button><button id="limpiar-lineas" class="texto-boton" type="button">Limpiar</button></fieldset></form>
             <div class="tabla-scroll"><table><thead><tr><th>Producto / cliente</th><th>Posición / serie</th><th>Conteo 1</th><th>Conteo 2</th><th>Final</th><th>Acción</th></tr></thead><tbody id="lineas"></tbody></table></div>
             <div class="pie-tabla"><span id="resumen-lineas" class="nota"></span><button id="mas-lineas" class="secundario" type="button" hidden>Cargar más líneas</button></div>
           </section>

@@ -2,7 +2,7 @@ import {createServer} from 'node:http';
 import {ErrorAuth,tokensIguales} from '../auth/credenciales.mjs';
 import {iniciarSesion,autenticar,cerrarSesion} from '../auth/sesiones.mjs';
 import {guardarConteo} from '../mysql/conteos.mjs';
-import {listarInventarios,listarLineas} from '../mysql/consultas.mjs';
+import {listarInventarios,listarLineas,consultarResumen} from '../mysql/consultas.mjs';
 import {servirEstatico} from './estaticos.mjs';
 
 export const COOKIE='__Host-ims_cm_session';
@@ -47,19 +47,22 @@ function leerJson(req){
     req.on('aborted',()=>reject(new ErrorAuth('SOLICITUD_INCOMPLETA','Solicitud incompleta.',400)));
   });
 }
-function opciones(url){
-  if([...url.searchParams.keys()].some(k=>!['cursor','limite'].includes(k))||
-    ['cursor','limite'].some(k=>url.searchParams.getAll(k).length>1))
+function opciones(url,extras=[]){
+  const permitidos=['cursor','limite',...extras];
+  if([...url.searchParams.keys()].some(k=>!permitidos.includes(k))||
+    permitidos.some(k=>url.searchParams.getAll(k).length>1))
     throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
-  return {cursor:url.searchParams.get('cursor')||'',limite:url.searchParams.get('limite')??'50'};
+  return {cursor:url.searchParams.get('cursor')||'',limite:url.searchParams.get('limite')??'50',
+    ...Object.fromEntries(extras.map(k=>[k,url.searchParams.get(k)||'']))};
 }
 const STATUS={NO_AUTENTICADO:401,SIN_PERMISO:403,BASE_NO_PERMITIDA:503,SOLICITUD_INVALIDA:400,CANTIDAD_INVALIDA:400,
   VERSION_DESACTUALIZADA:409,ETAPA_COMPLETA:409,ETAPA_INVALIDA:409,OPERACION_REUTILIZADA:409,
   INVENTARIO_NO_EDITABLE:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503};
 
 /** No instala esquema ni crea usuarios. Todas las rutas de datos exigen sesión. */
-export function crearApi({pool,publicUrl,soloLectura=false}){
+export function crearApi({pool,publicUrl,soloLectura=false,revision}){
   const origin=origenPublico(publicUrl);
+  if(revision!==undefined&&!/^[a-f0-9]{40}$/.test(revision))throw Error('Revisión inválida.');
   let loginsEnCurso=0;
   let minuto=0,intentosMinuto=0;
   const servidor=createServer(async(req,res)=>{
@@ -68,7 +71,7 @@ export function crearApi({pool,publicUrl,soloLectura=false}){
       if(req.headers.origin&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
       if(req.method==='POST'&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
       if(await servirEstatico(req,res,url))return;
-      if(req.method==='GET'&&url.pathname==='/salud')return json(res,200,{ok:true,servicio:'centro-mando-ims-candidata'});
+      if(req.method==='GET'&&url.pathname==='/salud')return json(res,200,{ok:true,servicio:'centro-mando-ims-candidata',...(revision?{revision}:{})});
       if(req.method==='POST'&&url.pathname==='/api/sesion'){
         const ahora=Math.floor(Date.now()/60000);
         if(ahora!==minuto){minuto=ahora;intentosMinuto=0;}
@@ -96,9 +99,13 @@ export function crearApi({pool,publicUrl,soloLectura=false}){
           return json(res,200,await guardarConteo({pool,principal,solicitud:await leerJson(req)}));
         }
       }
-      if(req.method==='GET'&&url.pathname==='/api/inventarios')return json(res,200,await listarInventarios(pool,principal,opciones(url)));
+      if(req.method==='GET'&&url.pathname==='/api/resumen'){
+        if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+        return json(res,200,await consultarResumen(pool,principal));
+      }
+      if(req.method==='GET'&&url.pathname==='/api/inventarios')return json(res,200,await listarInventarios(pool,principal,opciones(url,['buscar','sede','cliente'])));
       const m=/^\/api\/inventarios\/([a-f0-9-]+)\/lineas$/.exec(url.pathname);
-      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url)));
+      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url,['buscar'])));
       return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
     }catch(e){
       if(e.status===413)res.setHeader('Connection','close');

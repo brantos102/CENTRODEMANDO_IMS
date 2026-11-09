@@ -1,16 +1,20 @@
 # Preparación de la migración de Centro de Mando a MySQL
 
-Estado: **extracción, staging y núcleo candidato de conteo transaccional**, no aplicación empresarial terminada. La operación actual sigue en Apps Script. Este directorio no está permitido por `.claspignore` y no se publica mediante clasp.
+Estado al 9 de noviembre de 2026: **piloto de consulta desplegado en el servidor empresarial**, no aplicación operativa terminada. El usuario confirmó el acceso HTTPS y login. La operación actual sigue en Apps Script. Este directorio está excluido por `.claspignore` y no se publica mediante clasp.
 
-Preparación del [piloto de solo lectura](deploy/PILOTO_LECTURA.md): lector independiente limitado al plan ya trasladado, usuario MySQL de consulta y borradores propios de Apache/systemd. Esta preparación no activa servicios ni modifica Apache; la publicación y aceptación en el servidor siguen pendientes.
+Ensayo corporativo confirmado por las salidas del usuario: MySQL 8.0.46, base exclusiva `centromando_ims_ensayo`, resguardo de 19 hojas/287.027 filas, 351 archivos físicos/352 conteos/97.822 líneas nativas y lector con 352 permisos. Los originales de INVENTARIOS (102.033 líneas) y REGISTRO (65.773) permanecen conservados, incluidas las incidencias. No se publica KPI ni se utiliza Supabase como fuente.
 
-Tras validar el backend local, el publicador HTTPS del piloto instala solo sus cuatro rutas nuevas de Apache y aplica una recarga gradual con comprobaciones de sintaxis, certificado, sesión y conservación de configuraciones anteriores. Incluye retirada de archivos propios ante fallo. No sustituye la operación actual ni publica KPI; el acceso externo y el navegador requieren aceptación en el servidor.
+La nueva [consulta de resumen y actualización por versiones](deploy/VERSIONES_PILOTO.md) agrega cifras autorizadas y filtros, separa el código que atiende al lector del repositorio de trabajo y habilita inicio automático solo del piloto tras validar. No cambiar archivos en uso con checkout/pull: preparar la revisión en un worktree privado. El cambio de versión reinicia brevemente solo el piloto; Apache y los otros aplicativos conservan sus configuraciones.
+
+Preparación inicial del [piloto de solo lectura](deploy/PILOTO_LECTURA.md): lector independiente limitado al plan trasladado y usuario MySQL de consulta. Estos pasos ya fueron ejecutados por el usuario; no repetir los inicializadores para actualizar el código.
+
+El publicador HTTPS inicial instala solo sus cuatro rutas nuevas de Apache y aplica una recarga gradual con comprobaciones de sintaxis, certificado, sesión y conservación de configuraciones anteriores. El usuario ya confirmó el acceso desde su navegador. No sustituye la operación actual ni publica KPI.
 
 Actualización del 6 de noviembre de 2026: núcleo de conteo, sesiones/API y pantallas base de acceso, selección y captura implementados en la candidata. Se probaron contra MySQL **8.0.46 real** local; no se conectó al servidor empresarial. Contratos en [CONTEO_TRANSACCIONAL.md](CONTEO_TRANSACCIONAL.md), [AUTENTICACION_API.md](AUTENTICACION_API.md) y [pantallas y evidencia](../docs/INTERFAZ_CANDIDATA_20261106.md). Arranque deshabilitado por defecto. Faltan identidades/datos reales migrados y el resto de flujos operativos antes de sustituir la aplicación.
 
 Fuente autorizada: el Google Sheets vigente de Centro de Mando, con INVENTARIOS como base del inventario. Supabase está desactualizado y no se usa como origen ni necesita actualizarse.
 
-También está disponible el [diagnóstico y traslado del histórico](TRASLADO_HISTORICO.md): prepara únicamente archivos Entregado íntegros, conserva el catálogo completo y las incidencias, y permite ensayar su carga a entidades internas sin crear cuentas ni permisos. La API sigue deshabilitada. En PowerShell del PC, desde `enterprise`, ejecutar `& '.\tools\diagnosticar-corte.ps1'` para analizar una descarga reciente sin conectarse a ninguna base de datos.
+También está disponible el [diagnóstico y traslado del histórico](TRASLADO_HISTORICO.md): prepara únicamente archivos Entregado íntegros, conserva el catálogo completo y las incidencias, y permite ensayar su carga a entidades internas sin crear cuentas ni permisos. El diagnóstico no activa la API ni modifica el piloto. En PowerShell del PC, desde `enterprise`, ejecutar `& '.\tools\diagnosticar-corte.ps1'` para analizar una descarga reciente sin conectarse a ninguna base de datos.
 
 Las políticas explícitas de cliente obligatorio del panel y de cantidades con separador de miles confirmado generan planes nuevos con versión y controles propios. Incluyen una auditoría de formatos de todas las filas R/V/W/X. No cambian los valores del corte ni reinterpretan planes anteriores; consultar [las reglas y controles](TRASLADO_HISTORICO.md).
 
@@ -46,7 +50,7 @@ Antes de ejecutarla deben existir la base y el usuario exclusivos, respaldos, ca
 
 El controlador está fijado en **mysql2 3.24.6**, con package-lock.json reproducible. La versión inicial 3.11.5 se sustituyó tras identificar los avisos GHSA-3f6p-5ww8-9rcr y GHSA-rgwj-5xj2-c3m3; npm audit no reportó vulnerabilidades conocidas en el árbol actualizado del módulo. Se actualizó esta dependencia dentro de su versión mayor 3, sin ejecutar npm audit fix --force.
 
-El 4 de noviembre se importó el corte completo de 19 hojas/277.731 filas en MySQL 8.0.46 local, con lectura y verificación de hashes antes del commit; se repitió la importación para comprobar que no añade otra copia. Las nueve pruebas anteriores con conexión simulada se mantienen. Sigue pendiente el ensayo en una base exclusiva del servidor empresarial y la conciliación del delta al corte final.
+El 4 de noviembre se importó un corte de referencia de 19 hojas/277.731 filas en MySQL 8.0.46 local, con lectura y verificación de hashes antes del commit; se repitió para comprobar que no añade otra copia. El ensayo corporativo posterior y su corte distinto están resumidos al inicio de este documento. La conciliación del delta al corte final continúa pendiente.
 
 Con esa prueba y configuración resueltas, el comando previsto es:
 
@@ -66,11 +70,11 @@ La [preparación aislada del ensayo](deploy/ENSAYO_SERVIDOR.md) permite crear la
 
 - Linux, Node 22.23.3 y MySQL 8.0.46 existentes.
 - Carpeta propia propuesta: `/home/enicolalde/bryan/centro_mando_ims`.
-- Futura aplicación: `127.0.0.1:3003`, que aún debe comprobarse al iniciar.
-- URL propuesta por evaluar: `https://apps.flexnetuio.com:8445/`. El 8445 no se ha validado ni abierto; requiere revisar listeners, configuraciones y firewall/NAT con TI. Anteponer 10, 11 o 12 al puerto 8443 produciría 108443/118443/128443, fuera del máximo 65535.
+- Piloto: `127.0.0.1:3003`, arranque confirmado por el usuario con PID/puerto propios.
+- URL del lector: `https://apps.flexnetuio.com:8445/`, acceso confirmado por el usuario. Las siguientes actualizaciones conservan estos puertos.
 - Conservar IV_ITSANET en 8443→3002, RRHH en 8444→8010 y Data Sync en 80/443→8080. No reutilizar esos vhosts ni los puertos 3000, 3001 y 8000 indicados como reservados.
 
-No se entrega todavía un servicio systemd ni un vhost para activar. La API candidata solo arranca con configuración expresa; no está habilitada en 3003. Autenticación y autorización por inventario/cliente ya están ensayadas; faltan gestión/migración de usuarios, servicios de negocio restantes, WMS, notificaciones y frontend nativo.
+El servicio systemd y vhost propios ya se entregaron y el usuario confirmó su arranque. La API exige habilitación expresa y el piloto permanece de solo lectura. Faltan gestión/migración del resto de usuarios, servicios de negocio restantes, WMS, notificaciones, indicadores y restantes pantallas antes de sustituir la operación.
 
 ## Validación local realizada
 

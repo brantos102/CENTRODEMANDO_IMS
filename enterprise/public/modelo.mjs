@@ -37,3 +37,18 @@ export function validarPagina(data,tipo){
   }
   return data;
 }
+export function validarResumen(data){
+  const entero=v=>typeof v==='string'&&/^\d{1,20}$/.test(v);
+  const uuid=v=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v);
+  const fallo=()=>{throw Error('Respuesta incompleta del resumen. Se conserva la consulta anterior.');};
+  if(!data?.totales||!['conteos','lineas','clientes','sedes'].every(k=>entero(data.totales[k]))||
+    !Array.isArray(data.clientes)||data.clientes.length>10000||typeof data.consultado_en!=='string'||!Number.isFinite(Date.parse(data.consultado_en)))fallo();
+  const ids=new Set();let lineas=0n;
+  for(const c of data.clientes){
+    if(!uuid(c.id)||ids.has(c.id)||typeof c.nombre!=='string'||!c.nombre||!entero(c.conteos)||!entero(c.lineas)||BigInt(c.conteos)>BigInt(data.totales.conteos))fallo();
+    ids.add(c.id);lineas+=BigInt(c.lineas);
+  }
+  if(BigInt(ids.size)!==BigInt(data.totales.clientes)||lineas!==BigInt(data.totales.lineas))fallo();
+  return data;
+}
+export function mostrarEntero(value){return new Intl.NumberFormat('es-EC').format(BigInt(value));}

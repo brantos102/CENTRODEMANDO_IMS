@@ -47,6 +47,7 @@ async function fixture(t,options={}){
   await context.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url());
     if(url.origin!==ORIGIN)return route.abort();
+    if(url.pathname==='/api/resumen'&&f.fault==='resumen-incompleto')return route.fulfill({status:200,contentType:'application/json',body:'{"totales":{"conteos":"999"}}'});
     const count=url.pathname==='/api/conteos'&&request.method()==='POST';
     if(url.pathname.endsWith('/lineas')&&f.fault==='pagina-incompleta')return route.fulfill({status:200,contentType:'application/json',body:'{"datos":null}'});
     if(count){f.requests.push(request.postDataJSON());if(f.fault==='antes')return route.abort('failed');}
@@ -164,4 +165,36 @@ test('piloto anuncia solo lectura y oculta captura aun con un permiso de conteo 
   assert.equal(await f.numeroAuditorias(),0);
   await f.page.reload();await f.page.locator('#operacion').waitFor({state:'visible'});
   assert.equal(await f.page.locator('#modo-lectura').isVisible(),true);
+});
+test('resumen y búsquedas encuentran producto y ubicación sin descargar todas las líneas',async t=>{
+  const f=await fixture(t,{soloLectura:true});await f.login();
+  await esperar(async()=>await f.page.locator('#total-lineas').textContent()==='2');
+  assert.equal(await f.page.locator('#total-conteos').textContent(),'1');
+  assert.equal(await f.page.locator('#total-clientes').textContent(),'1');
+  await f.page.locator('#buscar-lineas').fill('A-02');await f.page.getByRole('button',{name:'Filtrar líneas',exact:true}).click();
+  await esperar(async()=>await f.page.locator('tr[data-linea]').count()===1);
+  assert.equal(await f.page.locator(`tr[data-linea="${f.b}"]`).count(),1);
+  await f.page.locator('#limpiar-lineas').click();await esperar(async()=>await f.page.locator('tr[data-linea]').count()===2);
+  await f.page.locator('#buscar-inventarios').fill('NO_EXISTE');await f.page.getByRole('button',{name:'Buscar inventarios',exact:true}).click();
+  await esperar(async()=>await f.page.locator('#lista-inventarios button').count()===0);
+  assert.equal(await f.page.locator('#detalle').isVisible(),false);
+  assert.equal(await f.page.locator('#total-lineas').textContent(),'2');
+  await f.page.locator('#limpiar-inventarios').click();await esperar(async()=>await f.page.locator('#lista-inventarios button').count()===1);
+});
+test('resumen incompleto no reemplaza cifras ni hora de la consulta anterior',async t=>{
+  const f=await fixture(t);await f.login();await esperar(async()=>await f.page.locator('#total-lineas').textContent()==='2');
+  const hora=await f.page.locator('#hora-resumen').textContent();f.fault='resumen-incompleto';
+  await f.page.locator('#actualizar-resumen').click();
+  await esperar(async()=>(await f.page.locator('#resumen-error').textContent()).includes('Se conserva'));
+  assert.equal(await f.page.locator('#total-lineas').textContent(),'2');assert.equal(await f.page.locator('#hora-resumen').textContent(),hora);
+});
+test('cerrar sesión y entrar con otro cliente no conserva su resumen ni selector',async t=>{
+  const f=await fixture(t);await f.login();await esperar(async()=>await f.page.locator('#total-lineas').textContent()==='2');
+  await pool.execute('DELETE FROM ims_op_permiso WHERE actor_id=?',[f.lector]);
+  await pool.execute('INSERT INTO ims_op_permiso (actor_id,inventario_id,cliente_id,puede_contar) VALUES (?,?,?,0)',[f.lector,f.inv,f.otroCliente]);
+  await f.page.locator('#salir').click();await f.page.locator('#acceso').waitFor({state:'visible'});
+  await f.page.locator('#correo').fill(f.correoLector);await f.page.locator('#contrasena').fill(PASSWORD);await f.page.locator('#entrar').click();
+  await esperar(async()=>await f.page.locator('#total-lineas').textContent()==='1');
+  assert.equal(await f.page.locator(`#cliente-inventarios option[value="${f.cliente}"]`).count(),0);
+  assert.equal(await f.page.locator(`#cliente-inventarios option[value="${f.otroCliente}"]`).count(),1);
 });

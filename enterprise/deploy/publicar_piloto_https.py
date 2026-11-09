@@ -77,7 +77,7 @@ class TransporteTLS:
             conn.close()
 
 
-def comprobar_acceso(request, lector, esperados):
+def comprobar_acceso(request, lector, esperados, filas_esperadas=None):
     cookie = csrf = None
     def consulta(metodo, ruta, body=None, sesion=False):
         headers = {'Cookie': cookie, 'X-IMS-CSRF': csrf} if sesion else {}
@@ -120,9 +120,16 @@ def comprobar_acceso(request, lector, esperados):
                    'Paginación de inventarios inválida.')
             cursor = siguiente
         exigir(len(ids) == esperados and primero, 'El acceso visible no coincide con los conteos esperados.')
+        if filas_esperadas is not None:
+            status, _, resumen = consulta('GET', '/api/resumen', sesion=True)
+            exigir(status == 200 and resumen.get('totales', {}).get('conteos') == str(esperados)
+                   and resumen['totales'].get('lineas') == str(filas_esperadas), 'El resumen no coincide con el histórico trasladado.')
         status, _, data = consulta('GET', '/api/inventarios/' + primero + '/lineas?limite=1', sesion=True)
         exigir(status == 200 and isinstance(data.get('datos'), list) and len(data['datos']) == 1
                and data['datos'][0].get('puede_contar') is False, 'La primera línea no es consultable en modo de lectura.')
+        if filas_esperadas is not None:
+            status, _, r = consulta('GET', '/api/inventarios/' + primero + '/lineas?buscar=IMS_PRUEBA_' + uuid.uuid4().hex, sesion=True)
+            exigir(status == 200 and r.get('datos') == [], 'La búsqueda no filtra las líneas de la consulta.')
         status, _, data = consulta('POST', '/api/conteos', {}, sesion=True)
         exigir(status == 403 and data.get('error') == 'SOLO_LECTURA', 'La API no bloquea la captura del piloto.')
     finally:
@@ -132,7 +139,8 @@ def comprobar_acceso(request, lector, esperados):
     status, _, _ = consulta('GET', '/api/sesion', sesion=True)
     exigir(status == 401, 'La sesión de prueba continúa activa después del cierre.')
     return {'login_https': True, 'logout_verificado': True, 'solo_lectura_verificado': True,
-            'conteos_visibles': len(ids), 'primera_linea_consultada': True}
+            'conteos_visibles': len(ids), 'primera_linea_consultada': True,
+            **({'resumen_verificado': True, 'filas_visibles': filas_esperadas, 'busqueda_verificada': True} if filas_esperadas is not None else {})}
 
 
 class Sistema:

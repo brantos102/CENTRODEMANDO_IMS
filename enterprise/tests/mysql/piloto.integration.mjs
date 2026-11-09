@@ -39,13 +39,13 @@ async function fixture(t){
 }
 test('piloto crea un lector limitado al plan; repetir conserva hash, líneas, cantidades y permisos',async t=>{
   const f=await fixture(t);
-  const [[antes]]=await pool.execute('SELECT COUNT(*) AS n FROM ims_auth_usuario').catch(()=>[[{n:0}]]);
+  const [[antes]]=await pool.execute('SELECT COUNT(*) AS n FROM ims_auth_usuario WHERE actor_id=?',[f.lector.actorId]).catch(()=>[[{n:0}]]);
   const pre=await f.preparar(false);assert.equal(pre.conteos,5);assert.equal(pre.inventarios,4);assert.equal(pre.filas,5);
   const a=await f.preparar(),b=await f.preparar();assert.equal(a.yaPreparado,false);assert.equal(b.yaPreparado,true);
   assert.equal(a.permisos,5);assert.equal(a.conteos,5);assert.equal(a.solo_lectura,true);
   const [permisos]=await pool.execute('SELECT inventario_id,puede_contar FROM ims_op_permiso WHERE actor_id=?',[f.lector.actorId]);
   assert.equal(permisos.length,5);assert.ok(permisos.every(p=>Number(p.puede_contar)===0));
-  const [[n]]=await pool.execute('SELECT COUNT(*) AS n FROM ims_auth_usuario');assert.equal(Number(n.n),Number(antes.n)+1);
+  const [[n]]=await pool.execute('SELECT COUNT(*) AS n FROM ims_auth_usuario WHERE actor_id=?',[f.lector.actorId]);assert.equal(Number(n.n),Number(antes.n)+1);
   const [valores]=await pool.execute(`SELECT l.conteo_1,l.version FROM ims_op_linea l JOIN ims_mig_conteo_aporte a
     ON a.inventario_id=l.inventario_id WHERE a.plan_id=?`,[f.lector.planId]);
   assert.equal(valores.length,5);assert.ok(valores.some(l=>l.conteo_1==='0.000000000'));assert.ok(valores.every(l=>String(l.version)==='0'));
@@ -100,6 +100,7 @@ test('MySQL lector permite login/consulta/logout y rechaza escrituras operativas
   const cookie=login.headers.get('set-cookie').split(';')[0];
   const headers={Origin:ORIGIN,Cookie:cookie,'X-IMS-CSRF':s.csrf,'Content-Type':'application/json'};
   const inv=await fetch(url+'/api/inventarios',{headers});assert.equal(inv.status,200);const datos=await inv.json();assert.equal(datos.datos.length,5);
+  const resumen=await fetch(url+'/api/resumen',{headers});assert.equal(resumen.status,200);const resumenDatos=await resumen.json();assert.equal(resumenDatos.totales.conteos,'5');assert.equal(resumenDatos.totales.lineas,'5');
   const lineas=await fetch(url+'/api/inventarios/'+datos.datos[0].id+'/lineas',{headers});assert.equal(lineas.status,200);assert.ok((await lineas.json()).datos.length>0);
   const post=await fetch(url+'/api/conteos',{method:'POST',headers,body:'{}'});assert.equal(post.status,403);assert.equal((await post.json()).error,'SOLO_LECTURA');
   const logout=await fetch(url+'/api/sesion/cerrar',{method:'POST',headers});assert.equal(logout.status,200);await logout.json();
