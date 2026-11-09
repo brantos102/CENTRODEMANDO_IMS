@@ -58,7 +58,7 @@ const STATUS={NO_AUTENTICADO:401,SIN_PERMISO:403,BASE_NO_PERMITIDA:503,SOLICITUD
   INVENTARIO_NO_EDITABLE:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503};
 
 /** No instala esquema ni crea usuarios. Todas las rutas de datos exigen sesión. */
-export function crearApi({pool,publicUrl}){
+export function crearApi({pool,publicUrl,soloLectura=false}){
   const origin=origenPublico(publicUrl);
   let loginsEnCurso=0;
   let minuto=0,intentosMinuto=0;
@@ -80,18 +80,21 @@ export function crearApi({pool,publicUrl}){
           if(Object.keys(body).some(k=>!['correo','contrasena'].includes(k)))throw new ErrorAuth('SOLICITUD_INVALIDA','Campos no permitidos.',400);
           const sesion=await iniciarSesion(pool,body);
           res.setHeader('Set-Cookie',cookie(sesion.token));
-          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf});
+          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf,soloLectura});
         }finally{loginsEnCurso--;}
       }
       if(!url.pathname.startsWith('/api/'))return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
       const principal=await autenticar(pool,tokenDeCookie(req.headers.cookie));
-      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf});
+      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura});
       if(req.method==='POST'){
         if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Vuelve a consultar la sesión.',403);
         if(url.pathname==='/api/sesion/cerrar'){
           await cerrarSesion(pool,principal);res.setHeader('Set-Cookie',cookie('',true));return json(res,200,{ok:true});
         }
-        if(url.pathname==='/api/conteos')return json(res,200,await guardarConteo({pool,principal,solicitud:await leerJson(req)}));
+        if(url.pathname==='/api/conteos'){
+          if(soloLectura)throw new ErrorAuth('SOLO_LECTURA','Este piloto permite únicamente consultar inventarios.',403);
+          return json(res,200,await guardarConteo({pool,principal,solicitud:await leerJson(req)}));
+        }
       }
       if(req.method==='GET'&&url.pathname==='/api/inventarios')return json(res,200,await listarInventarios(pool,principal,opciones(url)));
       const m=/^\/api\/inventarios\/([a-f0-9-]+)\/lineas$/.exec(url.pathname);

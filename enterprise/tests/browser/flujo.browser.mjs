@@ -36,7 +36,7 @@ async function fixture(t,options={}){
     await pool.execute('INSERT INTO ims_op_detalle_linea (linea_id,posicion,descripcion,serie,lote,unidad) VALUES (?,?,?,?,?,?)',
       [id,pos,'Consumible de demostración',null,'LOTE DEMO','UN']);
   }
-  const server=crearApi({pool,publicUrl:ORIGIN});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+  const server=crearApi({pool,publicUrl:ORIGIN,soloLectura:options.soloLectura===true});await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const base='http://127.0.0.1:'+server.address().port;
   const context=await browser.newContext({viewport:{width:1440,height:1000}});f.page=await context.newPage();
   if(options.sinAlmacen)await f.page.addInitScript(()=>Object.defineProperty(window,'indexedDB',{get(){throw Error('Almacenamiento bloqueado en ensayo');}}));
@@ -155,4 +155,13 @@ test('almacenamiento bloqueado permite consulta y evita capturas sin respaldo lo
   assert.equal(await f.page.locator('#lineas button').count(),0);
   assert.equal(await f.numeroAuditorias(),0);
   assert.ok((await f.page.locator('#aviso').textContent()).includes('No se pueden conservar capturas'));
+});
+test('piloto anuncia solo lectura y oculta captura aun con un permiso de conteo previo',async t=>{
+  const f=await fixture(t,{soloLectura:true});await f.login();
+  assert.equal(await f.page.locator('#modo-lectura').isVisible(),true);
+  assert.equal(await f.page.locator('tr[data-linea]').count(),2);
+  assert.equal(await f.page.locator('#lineas button').count(),0);
+  assert.equal(await f.numeroAuditorias(),0);
+  await f.page.reload();await f.page.locator('#operacion').waitFor({state:'visible'});
+  assert.equal(await f.page.locator('#modo-lectura').isVisible(),true);
 });

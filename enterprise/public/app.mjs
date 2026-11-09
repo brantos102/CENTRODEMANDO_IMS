@@ -29,6 +29,7 @@ function mostrarAcceso(message=''){
 function errorActual(e,c){if(!actual(c))return;if(e.status===401)mostrarAcceso('La sesión venció. Inicia sesión para continuar.');else aviso(e.message,true);}
 async function entrar(sesion){
   state.epoch++;state.usuario=sesion.usuario;state.csrf=sesion.csrf;
+  state.soloLectura=sesion.soloLectura===true;$('modo-lectura').hidden=!state.soloLectura;
   $('acceso').hidden=true;$('operacion').hidden=false;$('detalle').hidden=true;$('seleccion-vacia').hidden=false;
   $('usuario').textContent=sesion.usuario.nombre+' · '+sesion.usuario.correo;
   state.inv=null;state.lineas=[];state.inventarios=[];state.cursorInv=null;aviso();
@@ -82,9 +83,9 @@ function pintarLineas(){
     tr.append(product,location,...['conteo_1','conteo_2','conteo_final'].map(k=>el('td',mostrarCantidad(row[k]),'numero')));
     const action=el('td'),etapa=siguienteEtapa(row),pending=state.pendientes.some(p=>p.lineaId===row.id);
     if(pending)action.append(el('span','Por confirmar','pendiente-etiqueta'));
-    else if(row.puede_contar&&state.inv?.estado==='EN_PROCESO'&&etapa&&state.almacen){
+    else if(!state.soloLectura&&row.puede_contar&&state.inv?.estado==='EN_PROCESO'&&etapa&&state.almacen){
       const b=el('button','Contar · '+etapa,'primario');b.type='button';b.addEventListener('click',()=>abrirConteo(row));action.append(b);
-    }else action.append(el('small',!row.puede_contar?'Solo lectura':!state.almacen?'Captura no disponible':etapa?'Consulta':'Etapas completas o por revisar'));
+    }else action.append(el('small',state.soloLectura||!row.puede_contar?'Solo lectura':!state.almacen?'Captura no disponible':etapa?'Consulta':'Etapas completas o por revisar'));
     tr.append(action);tbody.append(tr);
   }
   $('resumen-lineas').textContent=state.lineas.length+' línea(s) cargada(s).'+(state.cursorLineas?' Hay más líneas disponibles.':'');

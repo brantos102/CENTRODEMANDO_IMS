@@ -1,0 +1,22 @@
+{
+  "estado": "preparacion_y_pruebas_locales_correctas_publicacion_pendiente",
+  "runtime_sql": "MySQL 8.0.46 efimero con datos sinteticos",
+  "runtime_integracion": "Node 22.23.3",
+  "pruebas_node_unitarias": 69,
+  "pruebas_python": 34,
+  "pruebas_mysql": 48,
+  "pruebas_navegador_chromium": 10,
+  "preparacion_python_node_mysql_completa": true,
+  "reanudacion_real_con_misma_identidad": true,
+  "show_grants_mysql8_verificado": true,
+  "sql_impide_escritura_operativa_y_lectura_staging": true,
+  "sesiones_login_consulta_logout_verificadas": true,
+  "http_rechaza_conteos_en_modo_lectura": true,
+  "unidad_systemd": "directivas y sintaxis verificadas con ejecutable local sustituto; arranque y namespace pendientes en apps",
+  "apache": "borradores preparados con rutas informadas; sintaxis y TLS pendientes en apps",
+  "credenciales_publicadas": false,
+  "conexion_al_servidor_corporativo_desde_pruebas": false,
+  "servicios_corporativos_activados": false,
+  "apache_corporativo_modificado": false,
+  "publicacion_kpi": false
+}

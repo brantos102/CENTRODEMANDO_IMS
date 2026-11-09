@@ -36,6 +36,8 @@ test('origen HTTPS conserva el puerto y rechaza credenciales o rutas',()=>{
 test('inicio requiere habilitación expresa y no admite host público ni puertos reservados',()=>{
   const env={IMS_API_HABILITADA:'1',IMS_PUBLIC_URL:'https://apps.flexnetuio.com:8445'};
   assert.equal(configuracionApi(env).port,3003);
+  assert.equal(configuracionApi({...env,IMS_SOLO_LECTURA:'1'}).soloLectura,true);
+  assert.throws(()=>configuracionApi({...env,IMS_SOLO_LECTURA:'si'}));
   assert.throws(()=>configuracionApi({...env,IMS_API_HABILITADA:''}));
   assert.throws(()=>configuracionApi({...env,IMS_HOST:'0.0.0.0'}));
   for(const port of [3000,3001,3002,8000,8010,8080,8443,8444])assert.throws(()=>configuracionApi({...env,IMS_PORT:String(port)}));

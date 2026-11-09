@@ -8,7 +8,8 @@ export function configuracionApi(env){
   const port=Number(env.IMS_PORT||3003);
   if(!Number.isInteger(port)||port<1024||port>65535||[3000,3001,3002,8000,8010,8080,8443,8444].includes(port))
     throw new Error('Puerto inválido o reservado para otro aplicativo.');
-  return {host:'127.0.0.1',port,publicUrl:origenPublico(env.IMS_PUBLIC_URL)};
+  if(env.IMS_SOLO_LECTURA!==undefined&&!['0','1'].includes(env.IMS_SOLO_LECTURA))throw Error('Modo de acceso inválido.');
+  return {host:'127.0.0.1',port,publicUrl:origenPublico(env.IMS_PUBLIC_URL),soloLectura:env.IMS_SOLO_LECTURA==='1'};
 }
 async function main(){
   const config=configuracionApi(process.env),pool=await crearPoolConteos(process.env);
@@ -21,9 +22,9 @@ async function main(){
     await pool.query('SELECT clave FROM ims_auth_limite LIMIT 0');
     await pool.query('SELECT id FROM ims_op_linea LIMIT 0');
     await pool.query('SELECT linea_id FROM ims_op_detalle_linea LIMIT 0');
-    server=crearApi({pool,publicUrl:config.publicUrl});
+    server=crearApi({pool,publicUrl:config.publicUrl,soloLectura:config.soloLectura});
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,config.host,resolve);});
-    console.log(`Centro de Mando candidato disponible en ${config.host}:${config.port}; datos y usuarios operativos pendientes de migración.`);
+    console.log(`Centro de Mando candidato disponible en ${config.host}:${config.port}; modo ${config.soloLectura?'solo lectura':'operativo de ensayo'}.`);
     let cerrando=false;
     const cerrar=()=>{if(cerrando)return;cerrando=true;server.close(async()=>{await pool.end();process.exitCode=0;});};
     process.once('SIGTERM',cerrar);process.once('SIGINT',cerrar);
