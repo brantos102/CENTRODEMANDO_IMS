@@ -4,6 +4,8 @@ Estado: **extracción, staging y núcleo candidato de conteo transaccional**, no
 
 Preparación del [piloto de solo lectura](deploy/PILOTO_LECTURA.md): lector independiente limitado al plan ya trasladado, usuario MySQL de consulta y borradores propios de Apache/systemd. Esta preparación no activa servicios ni modifica Apache; la publicación y aceptación en el servidor siguen pendientes.
 
+Tras validar el backend local, el publicador HTTPS del piloto instala solo sus cuatro rutas nuevas de Apache y aplica una recarga gradual con comprobaciones de sintaxis, certificado, sesión y conservación de configuraciones anteriores. Incluye retirada de archivos propios ante fallo. No sustituye la operación actual ni publica KPI; el acceso externo y el navegador requieren aceptación en el servidor.
+
 Actualización del 6 de noviembre de 2026: núcleo de conteo, sesiones/API y pantallas base de acceso, selección y captura implementados en la candidata. Se probaron contra MySQL **8.0.46 real** local; no se conectó al servidor empresarial. Contratos en [CONTEO_TRANSACCIONAL.md](CONTEO_TRANSACCIONAL.md), [AUTENTICACION_API.md](AUTENTICACION_API.md) y [pantallas y evidencia](../docs/INTERFAZ_CANDIDATA_20261106.md). Arranque deshabilitado por defecto. Faltan identidades/datos reales migrados y el resto de flujos operativos antes de sustituir la aplicación.
 
 Fuente autorizada: el Google Sheets vigente de Centro de Mando, con INVENTARIOS como base del inventario. Supabase está desactualizado y no se usa como origen ni necesita actualizarse.

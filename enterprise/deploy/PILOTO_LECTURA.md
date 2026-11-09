@@ -83,6 +83,43 @@ el archivo de entorno ni el archivo de acceso privado.
 
 ### HTTPS
 
+Con el backend local confirmado, ejecutar desde la raíz de la revisión candidata:
+
+```bash
+sudo -v
+python3 enterprise/deploy/publicar_piloto_https.py --activar --conteos-esperados 352
+```
+
+El número debe corresponder al resumen de permisos del ensayo. Comprueba unidad,
+entorno de lectura, PID/puerto del backend, puerto 8445, módulos y certificado
+vigente para `apps.flexnetuio.com`. Crea dos archivos y dos enlaces nuevos con
+nombres propios de Apache; su ayudante privilegiado solo opera esas cuatro rutas.
+Rechaza cualquier ruta preexistente y usa creación exclusiva, sin sobrescritura.
+Guarda fuera de Git una fotografía de hashes de configuraciones existentes y los
+dos archivos propios identificados con un nonce. No copia ni cambia certificados,
+claves, archivos anteriores ni reglas de firewall.
+
+Comprueba sintaxis antes/después de añadir el piloto y ejecuta solo
+`systemctl reload apache2` (recarga gradual). Mantiene el backend en ejecución.
+Valida localmente HTTPS con nombre/SNI y certificado configurado, página de salud,
+bloqueo anónimo, login del lector, todos sus inventarios, primera línea, rechazo de
+captura y revocación de sesión. La prueba TLS confía explícitamente en el
+certificado ya configurado y verifica su huella; no usa `-k` ni desactiva hostname.
+No acredita por sí sola confianza del navegador, DNS/NAT o acceso desde fuera.
+
+Ante fallos de creación, sintaxis, recarga o acceso, retira solo archivos/enlaces
+que coincidan con el contenido propio y su nonce. Antes de recargar de vuelta
+comprueba sintaxis. Si alguno cambió o no puede confirmar la recuperación, se
+detiene para revisión sin sobrescribirlo. Conserva el backend local y todos los
+datos. No repetir la publicación si ya existen sus rutas; revisar el resultado.
+No activa arranque automático del backend al reiniciar; sigue siendo un piloto.
+
+Si el JSON indica `ok:true`, abrir `https://apps.flexnetuio.com:8445/` desde el
+equipo del usuario. El correo/contraseña están en `acceso_privado.txt`, dentro de
+la carpeta privada del piloto. Abrir ese archivo en el editor remoto para uso
+personal; no pegarlo en chat ni incluirlo en Git. La aceptación del navegador y
+el acceso externo deben comprobarse antes de dar disponibilidad por confirmada.
+
 Antes de instalar el vhost, revisar en el servidor resumen, borradores,
 puertos/configuraciones nuevamente, vigencia/nombre del certificado y sintaxis.
 El certificado y su clave **no se copian ni modifican**. `/usr/bin/node` fue
