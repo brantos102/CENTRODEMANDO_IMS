@@ -45,6 +45,19 @@ $imsResumen = $null
     try { $imsMensaje = $_ | ConvertFrom-Json } catch { throw 'Respuesta del diagnostico incompatible.' }
     if ($imsMensaje.tipo -eq 'progreso_erp') {
         Write-Host ('ERP {0}/{1} {2} {3}: {4}' -f $imsMensaje.conexion, $imsMensaje.total, $imsMensaje.sede, $imsMensaje.etiqueta_credencial, $imsMensaje.estado)
+        if ($null -ne $imsMensaje.filas) {
+            if ($imsMensaje.totales_calculados -eq $true) {
+                Write-Host ('  Filas ERP: {0}; filas previsualizadas: {1}; unidades: {2}' -f $imsMensaje.filas, $imsMensaje.filas_previsualizadas, $imsMensaje.unidades)
+            } else {
+                Write-Host ('  Filas ERP: {0}; totales pendientes de revisar el formato de los datos.' -f $imsMensaje.filas)
+            }
+        } elseif ($imsMensaje.etapa) {
+            Write-Host ('  Etapa: {0}; HTTP: {1}' -f $imsMensaje.etapa, $imsMensaje.http)
+            if ($imsMensaje.formato_autenticacion) {
+                $imsFormato = $imsMensaje.formato_autenticacion
+                Write-Host ('  Formato auth: {0}; JSON valido: {1}; raiz: {2}; campo: {3}; tipo: {4}; utilizable: {5}' -f $imsFormato.tipo_contenido, $imsFormato.json_valido, $imsFormato.tipo_raiz, $imsFormato.campo_elegido, $imsFormato.tipo_elegido, $imsFormato.token_utilizable)
+            }
+        }
     } elseif ($imsMensaje.tipo -eq 'resultado_erp' -and !$imsResumen) {
         $imsResumen = $imsMensaje.resumen
     } else {

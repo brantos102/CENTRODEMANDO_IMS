@@ -81,3 +81,17 @@ Los códigos de cliente se observan antes de aplicar cualquier equivalencia. Los
 Se descargan al PC **conexiones_erp_para_compartir.json** y una **revision_asociaciones_erp_para_compartir.json** corregida. El JSON de conexiones puede mostrar `ok:false` si alguna conexión no pudo comprobarse; el resto de los resultados se conserva y se descarga. Este diagnóstico no autoriza automáticamente los códigos observados ni migra existencias.
 
 Las equivalencias de grupos indicadas por el usuario se documentan en [ERP_MULTICLIENTE_Y_POSICIONES.md](ERP_MULTICLIENTE_Y_POSICIONES.md). Los clientes faltantes se reportan como pendientes de catálogo; no se sustituyen por un cliente histórico que se parezca.
+
+## Compatibilidad del token y contraste con el asistente de Google
+
+El siguiente informe del usuario mostró 24 respuestas HTTP 200 detenidas en AUTENTICACION y una respuesta 401 para FINI. No se había llegado a consultar stock. Esto no demuestra que las 24 credenciales sean inválidas: el estado HTTP y el formato de token son comprobaciones diferentes. La causa exacta de esos HTTP 200 todavía requiere el nuevo diagnóstico de formato.
+
+Se encontró y corrigió una diferencia comprobable frente a ambos getters de Apps Script: `json.token || json.Token || json.Result || json.result`, seguido de `String(...).trim()`. El conector usaba selección con `??` y exigía cadena. Ahora conserva la precedencia por valor verdadero y la conversión original; un campo vacío no oculta otro válido. La autenticación usa JSON.parse como los getters originales y admite BOM UTF-8. El stock mantiene el lector numérico exacto y los límites de tamaño, TLS normal y bloqueo de redirecciones.
+
+El diagnóstico incorpora la versión de Node y su capacidad para números JSON exactos. Ante un fallo de autenticación muestra únicamente clase MIME, validez JSON, tipo de raíz, presencia/tipo de los cuatro campos conocidos y campo elegido. No guarda cuerpo, token, prefijo, longitud exacta ni huella del token. Estos metadatos permiten distinguir un formato distinto o HTML de un rechazo HTTP sin solicitar información secreta al usuario.
+
+La consola y el informe también muestran filas recibidas y totales de previsualización por código ERP. Los agregados siguen la normalización de stock: una serie física equivale a una unidad; las copias exactas de esa serie se omiten y las líneas sin serie de iguales dimensiones se agrupan sumando cantidades exactas. Se publican solo totales, nunca cantidades por línea, productos o series. Cantidades ambiguas, SKU ausente u otros datos incompatibles dejan los totales como pendientes, no se convierten en cero ni hacen fallar una conexión de lectura que sí respondió correctamente.
+
+El alcance de esos totales son todos los códigos devueltos por la credencial, sin filtro de SKU ni posiciones. El informe separa los códigos para contrastarlos con la selección del wizard; no presume que una consulta posterior al ERP deba tener las mismas existencias que una captura anterior. Las consultas comienzan por BELIA de UIO y ALU de GYE, los ejemplos que el usuario confirmó operativos. No se crea un inventario durante esta comparación.
+
+Apps Script reutiliza su token del día si ya lo tiene; la comprobación del servidor solicita autenticación nueva. Por eso FINI requiere una revisión independiente si mantiene el 401. No borrar cachés ni reemplazar claves de Google para ejecutar el diagnóstico.

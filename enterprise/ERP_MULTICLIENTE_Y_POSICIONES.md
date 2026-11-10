@@ -1,4 +1,4 @@
-# Inventarios con varios códigos ERP y selección por posiciones
+# Inventarios con varias cuentas ERP y selección por SKU o posiciones
 
 Reglas confirmadas por el usuario el 10 de noviembre de 2026. El sistema Google sigue siendo la operación vigente durante la validación del servidor. Este documento no activa conexiones ni cambia inventarios o permisos.
 
@@ -18,9 +18,11 @@ La etiqueta que permite autenticarse no se toma como COD. CLIENTE. El diagnósti
 
 Un inventario es un archivo/operación independiente. Puede reunir varias cuentas ERP del mismo grupo y también cuentas de clientes independientes, respetando los permisos. Cada línea debe conservar el cliente, el código de cuenta ERP, la sede y la procedencia física. Agrupar en el tablero no debe fusionar las existencias, cambiar sus cantidades o borrar la identidad del subcliente.
 
-Se requieren dos criterios explícitos de selección:
+La elección de clientes/cuentas y el criterio de conteo son decisiones separadas. En las capturas del asistente vigente, «POR CÓDIGO (SKU)» se refiere a productos; COD. CLIENTE identifica las cuentas ERP que aportan esas existencias. No confundir ambos códigos.
 
-1. **Por códigos:** elegir uno o varios códigos de cuentas ERP autorizadas. El inventario incluye sus líneas, manteniendo la identidad de cada cuenta.
+Después de seleccionar una o varias cuentas autorizadas, se requieren dos criterios explícitos de conteo:
+
+1. **Por código de producto (SKU):** elegir uno o varios productos entre las cuentas seleccionadas, con la opción de variantes del asistente actual. Si no hay filtro de productos, la vista previa considera todos sus SKU. El inventario mantiene la identidad de cada cuenta aunque dos clientes compartan el mismo SKU.
 2. **Por posiciones:** elegir posiciones y examinar todas las cuentas presentes en ellas dentro de las conexiones y permisos autorizados. La selección no se limita artificialmente a un único cliente marcado en el formulario. La vista previa informa los clientes y códigos encontrados; un código sin asociación se resuelve antes de crear el inventario.
 
 La segunda opción conserva el control de acceso: seleccionar una posición no concede acceso a cuentas ajenas. Antes de confirmar, la vista previa debe enumerar cuentas, posiciones, líneas y totales exactos; el archivo se crea con esa composición, sin copiar existencias que quedaron fuera de la selección.

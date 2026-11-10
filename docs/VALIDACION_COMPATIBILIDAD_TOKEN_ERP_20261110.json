@@ -1,0 +1,67 @@
+{
+  "fecha_local": "2026-11-10",
+  "zona_horaria": "America/Guayaquil",
+  "tipo": "validacion_sintetica_aislada",
+  "base_codigo": "4b10fb3ea5f921b2c7452bba05389dd1dd182f8f",
+  "evidencia_compartida_por_usuario": {
+    "conexiones": 25,
+    "fallos_autenticacion_http200": 24,
+    "fallos_autenticacion_http401": 1,
+    "etiqueta_http401": "FINI",
+    "consultas_stock_verificadas": 0,
+    "conflictos_fuentes": 0,
+    "credenciales_pendientes_revision_de_formato": 0
+  },
+  "diferencias_corregidas": [
+    "Selección de token mediante || en lugar de ??, igual que los getters UIO/GYE",
+    "Conversión String y trim del token, igual que Apps Script",
+    "JSON de autenticación separado del lector numérico exacto del stock",
+    "Admisión BOM UTF-8 sin cambiar cantidades de stock"
+  ],
+  "pruebas": {
+    "node22_unitarias": {
+      "tests": 128,
+      "pass": 128,
+      "fail": 0,
+      "skip": 0
+    },
+    "python": {
+      "tests": 65,
+      "pass": 65,
+      "fail": 0
+    },
+    "oraculo_token": "Se ejecutaron en VM los dos getters originales extraídos del respaldo Git con fuentes y credenciales sintéticas. Selección, conversión y encabezado de stock coinciden.",
+    "oraculo_stock": "Previsualización original de Apps Script ejecutada en VM; filas y unidades por código coinciden para stock válido con agrupaciones y series duplicadas.",
+    "red": "Fetch simulado y contenedor Node 22 sin red; ninguna petición al ERP corporativo.",
+    "powershell": "Inspección del código y Bash -n del transporte remoto; nueva salida de formato/totales pendiente de ejecución Windows/SSH."
+  },
+  "cobertura": [
+    "Campo token vacío no oculta Token/Result/result válidos",
+    "Ceros y booleanos falsos respetan la precedencia original, conversiones escalares/arreglos coinciden con Google",
+    "Diagnóstico de JSON/HTML y campos reconocidos sin valores, prefijos, longitudes o huellas de tokens",
+    "Informe y progreso de consola no reflejan cuerpos privados",
+    "Versión Node y capacidad JSON exacto visibles en resumen",
+    "Totales exactos por código, serie física equivale a una unidad y repetición exacta de serie no suma",
+    "Datos incompatibles dejan totales pendientes sin convertirlos a cero",
+    "No se agrupan totales de distintas credenciales, que podrían responder existencias solapadas",
+    "Comienza por BELIA UIO y ALU GYE sin modificar cachés, conexiones o inventarios"
+  ],
+  "causa_real_de_los_http200_pendiente_de_confirmar": true,
+  "fuente_comparacion": "Respaldos Git suministrados; no se accedió al editor ni a propiedades privadas de Google.",
+  "archivos_sha256": {
+    "enterprise/src/conexiones/itsanet.mjs": "d3264e2194cea8b91c4d0946ede154f8b5dd8cf27967b2527fafd7f28a4844b9",
+    "enterprise/tools/diagnosticar-erp-lectura.mjs": "a644f899b765501d029ae98e298ea4464a30e2d0764437686de957f30491d75c",
+    "enterprise/tools/diagnosticar-erp-servidor.ps1": "9fed96426fe996a1e83461514588f46576dcb2991f5da0b18b60c09f6c5a53a5",
+    "enterprise/tests/itsanet.test.mjs": "2ea2684cf5a8ea4a95146b723e895c662c901316eee4722c110d8de978282f82",
+    "enterprise/tests/diagnostico-erp.test.mjs": "75ebb6e34da637ad0b951d6c2f7ce6a104621e6e85bdfd7ec0682c4cf76ddba4",
+    "ITSANET_API.gs.js": "18d7ec90611ab89cddfa3c3da00d9a2b880ce4d635eeeee773ce41c2d66b6b80",
+    "ITSANET_API_GYE.js": "2cebcd32a8cf047c3f28f34bcfaf6b378dd322376f878dcbd0f1d42eb865aec2"
+  },
+  "credenciales_reales_leidas": false,
+  "erp_real_verificado": false,
+  "base_datos_modificada": false,
+  "apache_modificado": false,
+  "servicios_reiniciados": false,
+  "puertos_abiertos": [],
+  "corte_definitivo_autorizado_por_esta_validacion": false
+}

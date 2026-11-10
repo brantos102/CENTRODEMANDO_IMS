@@ -7,7 +7,7 @@ import {createHash} from 'node:crypto';
 import {registroVerificado} from './revisar-asociaciones-erp.mjs';
 import {BASE_ERP_PRIVADA,rutaERPPrivada,leerERPPrivado,jsonERPPrivado} from '../src/migracion/archivos-erp-privados.mjs';
 import {proponerAsociacionesERP,conciliarCredencialesERP} from '../src/migracion/asociaciones-erp.mjs';
-import {inspeccionarCodigosERP} from '../src/conexiones/itsanet.mjs';
+import {inspeccionarCodigosERP,soportaJSONExacto} from '../src/conexiones/itsanet.mjs';
 const sha=v=>createHash('sha256').update(v).digest('hex');
 const exigir=v=>{if(!v)throw Error('Plan ERP privado incompatible. No se importaron datos.');};
 export async function diagnosticarLecturaERP({plan,salida,base=BASE_ERP_PRIVADA,fetchImpl=fetch,ahora=Date.now,presupuestoMs=240000,progreso=()=>{}}){
@@ -23,7 +23,8 @@ export async function diagnosticarLecturaERP({plan,salida,base=BASE_ERP_PRIVADA,
   const checked=await registroVerificado(f.directorio,{base});exigir(checked.integridad.sha256_origen===f.sha256_origen);registros.push(checked.registro);
  }
  const asociaciones=proponerAsociacionesERP({registros,clientes:original.revision.catalogo_clientes});
- const conexiones=conciliarCredencialesERP(registros);exigir(conexiones.length>0&&conexiones.length<=64);
+ const prioridad=c=>c.entrada.sede==='UIO'&&c.entrada.cliente_configurado==='BELIA'?0:c.entrada.sede==='GYE'&&c.entrada.cliente_configurado==='ALU'?1:2;
+ const conexiones=conciliarCredencialesERP(registros).sort((a,b)=>prioridad(a)-prioridad(b));exigir(conexiones.length>0&&conexiones.length<=64);
  salida=resolve(salida);exigir(salida.startsWith(base+'/'));await rutaERPPrivada(dirname(salida),{base,directorio:true});
  // Nunca sobrescribir un diagnóstico anterior, ni siquiera si no hubo conexión.
  await mkdir(salida,{mode:0o700});
@@ -36,6 +37,7 @@ export async function diagnosticarLecturaERP({plan,salida,base=BASE_ERP_PRIVADA,
   else if(ahora()-inicio>=presupuestoMs)r.estado='PENDIENTE_PRESUPUESTO';
   else{
    r.peticion_realizada=true;
+   r.consulta_iniciada_en=new Date(ahora()).toISOString();
    try{
     const observado=await inspeccionarCodigosERP({sede:e.sede,userid:e.userid,password:e.password},{fetchImpl});
     r={...r,estado:observado.filas_observadas===0?'VERIFICADA_SIN_STOCK':'VERIFICADA',...observado};
@@ -44,11 +46,13 @@ export async function diagnosticarLecturaERP({plan,salida,base=BASE_ERP_PRIVADA,
     r.motivo='AUTENTICACION_O_CONSULTA_NO_VERIFICADA';
     r.etapa_no_verificada=['AUTENTICACION','LECTURA_STOCK','FORMATO_STOCK'].includes(error?.etapaERP)?error.etapaERP:'CONEXION';
     r.http=Number.isInteger(error?.httpERP)&&error.httpERP>=100&&error.httpERP<=599?error.httpERP:null;
+    r.tipo_contenido=error?.tipoContenidoERP??'SIN_TIPO';
+    r.diagnostico_autenticacion=error?.autenticacionERP??null;
    }
   }
   resultados.push(r);
   await appendFile(join(salida,'progreso_erp_para_compartir.jsonl'),JSON.stringify(r)+'\n',{mode:0o600,flag:'a'});
-  progreso({conexion:resultados.length,total:conexiones.length,sede:r.sede,etiqueta_credencial:r.etiqueta_credencial,estado:r.estado});
+  progreso({conexion:resultados.length,total:conexiones.length,sede:r.sede,etiqueta_credencial:r.etiqueta_credencial,estado:r.estado,filas:r.filas_observadas??null,totales_calculados:r.previsualizacion?.totales_calculados??false,filas_previsualizadas:r.previsualizacion?.filas_previsualizadas??null,unidades:r.previsualizacion?.unidades_previsualizadas??null,etapa:r.etapa_no_verificada??null,http:r.http??null,formato_autenticacion:r.diagnostico_autenticacion??null});
  }
  const verificadas=resultados.filter(r=>r.estado==='VERIFICADA'||r.estado==='VERIFICADA_SIN_STOCK').length;
  const resumen={ok:verificadas===conexiones.length,diagnostico_terminado:!resultados.some(r=>r.estado==='PENDIENTE_PRESUPUESTO'),
@@ -59,6 +63,7 @@ export async function diagnosticarLecturaERP({plan,salida,base=BASE_ERP_PRIVADA,
   datos_importados:false,base_de_datos_modificada:false,fuentes_modificadas:false,credenciales_publicadas:false,
   aplicacion_reiniciada:false,apache_modificado:false,puertos_abiertos:[],
   catalogo_utilizado:'COPIA_DEL_PLAN_PRIVADO_PREVIO',consulta_catalogo_mysql_realizada:false,
+  motor:{node:process.versions.node,json_numeros_exactos:soportaJSONExacto()},
   archivo_para_compartir:join(salida,'conexiones_erp_para_compartir.json')};
  const report={formato:'ims-erp-diagnostico-lectura-v1',resumen,conexiones:resultados};
  await writeFile(resumen.archivo_para_compartir,JSON.stringify(report,null,2)+'\n',{mode:0o600,flag:'wx'});

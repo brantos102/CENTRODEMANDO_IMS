@@ -48,3 +48,10 @@ test('un conflicto real bloquea esa conexión antes de pedir token y permite ver
  const r=await diagnosticarLecturaERP({...f,fetchImpl:async url=>{calls.push(url);assert.ok(url.includes('/g_apidepot/'));return new Response(url.endsWith('gettoken')?JSON.stringify({token:TOKEN}):'[]');}});
  assert.equal(calls.length,2);assert.equal(r.bloqueadas,1);assert.equal(r.conexiones_verificadas,1);assert.equal(r.ok,false);assert.equal(r.avisos_ubicacion_resueltos,0);
 });
+test('informe conserva diagnóstico de formato y versión del motor sin afirmar que HTTP 200 confirma conexión',async t=>{
+ const f=await fixture(t),logs=[];
+ const r=await diagnosticarLecturaERP({...f,progreso:p=>logs.push(p),fetchImpl:async()=>new Response('<html>'+SECRET+'</html>',{headers:{'content-type':'text/html'}})});
+ assert.equal(r.conexiones_verificadas,0);assert.equal(r.no_verificadas,2);assert.equal(r.ok,false);assert.ok(/^\d+\./.test(r.motor.node));assert.equal(r.motor.json_numeros_exactos,true);
+ const report=JSON.parse(await readFile(r.archivo_para_compartir,'utf8'));assert.equal(report.conexiones[0].http,200);assert.equal(report.conexiones[0].diagnostico_autenticacion.json_valido,false);assert.equal(report.conexiones[0].tipo_contenido,'HTML');assert.equal(JSON.stringify(report).includes(SECRET),false);
+ assert.equal(logs[0].formato_autenticacion.tipo_contenido,'HTML');assert.equal(JSON.stringify(logs).includes(SECRET),false);
+});

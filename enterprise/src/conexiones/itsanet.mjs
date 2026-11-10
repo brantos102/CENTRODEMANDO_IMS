@@ -4,15 +4,42 @@ import {decimal,textoDecimal} from '../dominio/analisis-wms.mjs';
 import {ErrorConteo} from '../dominio/conteo.mjs';
 const BASE={UIO:'https://ec.itsanet.com/q_apidepot',GYE:'https://ec.itsanet.com/g_apidepot'};
 export function jsonExacto(body){
- return JSON.parse(body,(_k,v,context)=>{
+ return JSON.parse(body.replace(/^\uFEFF/,''),(_k,v,context)=>{
   if(typeof v!=='number')return v;
   exigir(typeof context?.source==='string','CONEXION_INVALIDA','El motor no admite números JSON exactos.');
   return context.source;
  });
 }
+export function soportaJSONExacto(){
+ try{let fuente;JSON.parse('{"n":9007199254740993}',(k,v,c)=>{if(k==='n')fuente=c?.source;return v;});return fuente==='9007199254740993';}catch{return false;}
+}
+const tipo=v=>v===null?'nulo':Array.isArray(v)?'arreglo':typeof v==='string'?'cadena':typeof v==='number'?'numero':typeof v==='boolean'?'booleano':typeof v==='object'?'objeto':'ausente';
+function leerTokenERP(body,diagnostico={}){
+ const m={tipo_contenido:diagnostico.tipo_contenido??'SIN_TIPO',json_valido:false,tipo_raiz:null,campos_reconocidos:[],campo_elegido:null,tipo_elegido:null,recorte_espacios:false,limite_excedido:false,token_utilizable:false};
+ diagnostico.autenticacion=m;
+ let auth;try{auth=JSON.parse(body.replace(/^\uFEFF/,''));m.json_valido=true;m.tipo_raiz=tipo(auth);}catch{exigir(false,'CONEXION_INVALIDA','Formato de autenticación ERP no verificado.');}
+ // Contrato del Apps Script vigente: primer campo con valor verdadero,
+ // después String y trim. No convertir los números de metadatos en tokens.
+ for(const campo of ['token','Token','Result','result']){
+  if(auth!==null&&Object.hasOwn(Object(auth),campo)){
+   const valor=auth[campo];m.campos_reconocidos.push({campo,tipo:tipo(valor),con_valor:!!valor});
+   if(!m.campo_elegido&&valor){m.campo_elegido=campo;m.tipo_elegido=tipo(valor);}
+  }
+ }
+ const elegido=m.campo_elegido?auth[m.campo_elegido]:null;
+ exigir(elegido,'CONEXION_INVALIDA','Token ERP no verificado.');
+ const raw=String(elegido),token=raw.trim();m.recorte_espacios=raw!==token;m.limite_excedido=token.length>8192;
+ m.token_utilizable=token.length>0&&!m.limite_excedido&&!/[\r\n\x00-\x1f\x7f]/.test(token);
+ exigir(m.token_utilizable,'CONEXION_INVALIDA','Token ERP no verificado.');
+ return token;
+}
 async function obtener(fetchImpl,url,headers,limite,diagnostico=null){
  const response=await fetchImpl(url,{method:'GET',headers,redirect:'error',signal:AbortSignal.timeout(20000)});
- if(diagnostico)diagnostico.http=response.status;
+ if(diagnostico){
+  diagnostico.http=response.status;
+  const mime=String(response.headers?.get('content-type')||'').split(';')[0].trim().toLowerCase();
+  diagnostico.tipo_contenido=!mime?'SIN_TIPO':mime.includes('json')?'JSON':mime==='text/html'?'HTML':mime.includes('xml')?'XML':mime==='text/plain'?'TEXTO':'OTRO';
+ }
  exigir(response.ok,'CONEXION_INVALIDA',response.status===401?'Credencial ERP rechazada.':'El ERP no respondió correctamente.');
  const chunks=[];let size=0;
  for await(const b of response.body??[]){size+=b.length;if(size>limite){await response.body.cancel().catch(()=>{});exigir(false,'CONEXION_INVALIDA','Respuesta ERP demasiado grande.');}chunks.push(b);}
@@ -47,9 +74,7 @@ export async function consultarERP({sede,clienteId,userid,password,codigosClient
  exigir(Object.hasOwn(BASE,sede)&&typeof userid==='string'&&userid&&typeof password==='string'&&password,'CONEXION_INVALIDA','Configuración ERP incompleta.');
  // Sin caché compartida: un token nunca pasa a otra credencial/sede/cliente.
  try{
-  const auth=jsonExacto(await obtener(fetchImpl,BASE[sede]+'/gettoken',{userid,password},65536));
-  const token=auth.token??auth.Token??auth.Result??auth.result;
-  exigir(typeof token==='string'&&token.length>0&&token.length<=8192,'CONEXION_INVALIDA','Respuesta de autenticación ERP inválida.');
+  const token=leerTokenERP(await obtener(fetchImpl,BASE[sede]+'/gettoken',{userid,password},65536));
   const body=await obtener(fetchImpl,BASE[sede]+'/getstock',{token},24*1024*1024);
   const data=body.trim()?jsonExacto(body):[];
   const rows=Array.isArray(data)?data:data.Result??data.result??data.data;
@@ -66,9 +91,7 @@ export async function inspeccionarCodigosERP({sede,userid,password},{fetchImpl=f
  exigir(Object.hasOwn(BASE,sede)&&typeof userid==='string'&&userid&&typeof password==='string'&&password&&!/[\r\n\x00]/.test(userid+password),'CONEXION_INVALIDA','Configuración ERP incompleta.');
  let etapa='AUTENTICACION';const diagnostico={http:null};
  try{
-  const auth=jsonExacto(await obtener(fetchImpl,BASE[sede]+'/gettoken',{userid,password},65536,diagnostico));
-  const token=auth?.token??auth?.Token??auth?.Result??auth?.result;
-  exigir(typeof token==='string'&&token.length>0&&token.length<=8192,'CONEXION_INVALIDA','Autenticación ERP no verificada.');
+  const token=leerTokenERP(await obtener(fetchImpl,BASE[sede]+'/gettoken',{userid,password},65536,diagnostico),diagnostico);
   etapa='LECTURA_STOCK';diagnostico.http=null;
   const body=await obtener(fetchImpl,BASE[sede]+'/getstock',{token},24*1024*1024,diagnostico);
   etapa='FORMATO_STOCK';
@@ -86,10 +109,32 @@ export async function inspeccionarCodigosERP({sede,userid,password},{fetchImpl=f
    codigos.set(codigo,(codigos.get(codigo)||0)+1);
    exigir(codigos.size<=1000,'CONEXION_INVALIDA','Demasiados códigos ERP para este diagnóstico.');
   }
-  return {autenticacion_verificada:true,consulta_stock_verificada:true,filas_observadas:rows.length,filas_sin_codigo:sinCodigo,codigos_observados:[...codigos].sort(([a],[b])=>a.localeCompare(b)).map(([codigo,filas])=>({codigo,filas}))};
+  return {autenticacion_verificada:true,consulta_stock_verificada:true,diagnostico_autenticacion:diagnostico.autenticacion,filas_observadas:rows.length,filas_sin_codigo:sinCodigo,codigos_observados:[...codigos].sort(([a],[b])=>a.localeCompare(b)).map(([codigo,filas])=>({codigo,filas})),previsualizacion:resumirPrevisualizacionERP(rows)};
  }catch{
   const error=new ErrorConteo('CONEXION_INVALIDA','Consulta de códigos ERP no verificada. No se guardaron existencias ni respuestas privadas.');
   error.etapaERP=etapa;error.httpERP=Number.isInteger(diagnostico.http)&&diagnostico.http>=100&&diagnostico.http<=599?diagnostico.http:null;
+  error.autenticacionERP=diagnostico.autenticacion??null;error.tipoContenidoERP=diagnostico.tipo_contenido??'SIN_TIPO';
   throw error;
  }
+}
+/** Solo agregados de las filas recibidas; no filtra por etiqueta ni publica líneas. */
+export function resumirPrevisualizacionERP(rows){
+ const porCodigo=new Map();let sinCodigo=0;
+ for(const r of rows){const codigo=String(r['COD. CLIENTE']??'').trim().toUpperCase();if(!codigo){sinCodigo++;continue;}if(!porCodigo.has(codigo))porCodigo.set(codigo,[]);porCodigo.get(codigo).push(r);}
+ let filas=0,unidades=0n,series=0,completo=sinCodigo===0;
+ const codigos=[];
+ for(const [codigo,grupo] of [...porCodigo].sort(([a],[b])=>a.localeCompare(b))){
+  const sinSku=grupo.filter(r=>!String(r['COD. PRODUCTO']??'').trim()).length;
+  const meta={codigo,filas_recibidas:grupo.length,filas_sin_sku:sinSku,totales_calculados:false,filas_previsualizadas:null,unidades_previsualizadas:null};
+  try{
+   exigir(sinSku===0,'CONEXION_INVALIDA','Stock incompleto para previsualización.');
+   // UUID neutro únicamente para validar el formato; no asigna un cliente SQL.
+   const normalizado=normalizarStockERP(grupo,{clienteId:'00000000-0000-0000-0000-000000000001',codigosCliente:[codigo]});
+   let total=0n,conSerie=0;for(const f of normalizado.filas){total+=decimal(f.depot);if(f.serie)conSerie++;}
+   Object.assign(meta,{totales_calculados:true,filas_previsualizadas:normalizado.filas.length,unidades_previsualizadas:textoDecimal(total),filas_con_serie:conSerie,series_duplicadas:normalizado.informe.seriesDuplicadas,filas_agrupadas:normalizado.informe.agrupadas,cantidades_serie_ajustadas:normalizado.informe.seriesAjustadas});
+   filas+=normalizado.filas.length;unidades+=total;series+=conSerie;
+  }catch{completo=false;meta.motivo='DATOS_REQUIEREN_REVISION_PARA_PREVISUALIZAR';}
+  codigos.push(meta);
+ }
+ return {alcance:'TODOS_LOS_CODIGOS_DEVUELTOS_SIN_FILTRO_SKU_NI_POSICION',totales_calculados:completo,filas_previsualizadas:completo?filas:null,unidades_previsualizadas:completo?textoDecimal(unidades):null,filas_con_serie:completo?series:null,filas_sin_codigo:sinCodigo,por_codigo:codigos};
 }
