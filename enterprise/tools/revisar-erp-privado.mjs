@@ -22,7 +22,8 @@ export async function revisarCopia(archivo,salida,{base=BASE}={}){
  await mkdir(salida,{mode:0o700});
  await writeFile(join(salida,'registro_erp_NO_COMPARTIR.json'),JSON.stringify(registro,null,2)+'\n',{mode:0o600,flag:'wx'});
  await writeFile(join(salida,'origen_NO_COMPARTIR.json'),raw,{mode:0o600,flag:'wx'});
- const compartir={...resumen,sha256_origen:createHash('sha256').update(raw).digest('hex'),archivo_para_compartir:join(salida,'resumen_erp_para_compartir.json')};
+ await writeFile(join(salida,'integridad_erp_NO_COMPARTIR.json'),JSON.stringify({sha256_origen:createHash('sha256').update(raw).digest('hex')})+'\n',{mode:0o600,flag:'wx'});
+ const compartir={...resumen,archivo_para_compartir:join(salida,'resumen_erp_para_compartir.json')};
  await writeFile(join(salida,'resumen_erp_para_compartir.json'),JSON.stringify(compartir,null,2)+'\n',{mode:0o600,flag:'wx'});
  return compartir;
 }

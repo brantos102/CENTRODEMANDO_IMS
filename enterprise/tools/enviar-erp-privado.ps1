@@ -32,7 +32,6 @@ $imsSha = (Get-FileHash -LiteralPath $imsFichero.FullName -Algorithm SHA256).Has
 $imsDestino = '/home/enicolalde/bryan/centro_mando_ims_datos/entrada/' + $imsNombre
 $imsResumen = [ordered]@{
     ok = (-not [bool]$Enviar)
-    sha256_origen = $imsSha
     bytes = $imsFichero.Length
     archivo_enviado = $false
     verificacion_remota = $false
@@ -114,7 +113,7 @@ env -u NODE_OPTIONS -u NODE_PATH /usr/bin/node "$imsTrabajo/enterprise/tools/rev
     $imsDatos = & $imsSsh 'enicolalde@192.168.4.94' ("printf %s $imsB64 | base64 -d | env -u BASH_ENV -u ENV bash")
     if ($LASTEXITCODE -ne 0) { throw 'Copia enviada y verificada, pero el diagnostico no se completo. Las fuentes y los servicios se conservan.' }
     try { $imsDiagnostico = ($imsDatos -join [Environment]::NewLine) | ConvertFrom-Json } catch { throw 'Respuesta de diagnostico incompatible. No compartas el archivo privado.' }
-    if ($imsDiagnostico.ok -ne $true -or $imsDiagnostico.sha256_origen -ne $imsSha -or
+    if ($imsDiagnostico.ok -ne $true -or
         $imsDiagnostico.base_de_datos_modificada -ne $false -or $imsDiagnostico.credenciales_publicadas -ne $false) {
         throw 'Diagnostico no confirmado; no se activaron conexiones.'
     }

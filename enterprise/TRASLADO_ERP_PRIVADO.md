@@ -30,7 +30,7 @@ El flujo utiliza SSH/SCP hacia enicolalde@192.168.4.94, conserva la verificació
 
 Después obtiene la revisión aprobada en un worktree privado y ejecuta la revisión de formato. El servidor guarda una copia exacta del original y un registro preparado en archivos privados. No instala dependencias ni activa otra versión del aplicativo. Si la copia o la revisión falla, conserva los originales y los servicios vigentes.
 
-Se abre una carpeta local que contiene **resumen_envio_erp_para_compartir.json**. Ese es el único archivo que debe compartirse en el chat. El JSON descargado de Drive, origen_NO_COMPARTIR.json y registro_erp_NO_COMPARTIR.json contienen credenciales y permanecen privados.
+Se abre una carpeta local que contiene **resumen_envio_erp_para_compartir.json**. Ese es el único archivo que debe compartirse en el chat. El JSON descargado de Drive, origen_NO_COMPARTIR.json, registro_erp_NO_COMPARTIR.json e integridad_erp_NO_COMPARTIR.json permanecen privados.
 
 La revisión conserva la precedencia del getter actual: propiedad válida primero; en UIO se usa la primera fila coincidente de legacy como fallback. Los espacios de una contraseña de ScriptProperties se mantienen, mientras legacy aplica el trim del getter. No sustituye una primera fila vacía por otra posterior ni mezcla sedes. Los conflictos en un respaldo legacy no bloquean una propiedad válida que tiene precedencia.
 

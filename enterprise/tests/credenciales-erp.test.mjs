@@ -63,7 +63,7 @@ import {revisarCopia} from '../tools/revisar-erp-privado.mjs';
 async function archivos(t){const base=await mkdtemp(join(tmpdir(),'ims-erp-prueba-'));await chmod(base,0o700);t.after(()=>rm(base,{recursive:true,force:true}));const archivo=join(base,'origen.json'),raw=Buffer.from(JSON.stringify(fuente()));await writeFile(archivo,raw,{mode:0o600});return {base,archivo,raw,salida:join(base,'revision')};}
 test('revisión privada conserva exactamente el original y publica únicamente un resumen sin claves', {skip:process.platform!=='linux'},async t=>{
  const f=await archivos(t),r=await revisarCopia(f.archivo,f.salida,{base:f.base});
- assert.equal(r.sha256_origen,createHash('sha256').update(f.raw).digest('hex'));assert.equal(r.base_de_datos_modificada,false);
+ const integridad=JSON.parse(await leer(join(f.salida,'integridad_erp_NO_COMPARTIR.json'),'utf8'));assert.equal(integridad.sha256_origen,createHash('sha256').update(f.raw).digest('hex'));assert.equal(Object.hasOwn(r,'sha256_origen'),false);assert.equal(r.base_de_datos_modificada,false);
  assert.deepEqual(await leer(f.archivo),f.raw);assert.deepEqual(await leer(join(f.salida,'origen_NO_COMPARTIR.json')),f.raw);
  const resumen=await leer(join(f.salida,'resumen_erp_para_compartir.json'),'utf8');assert.equal(resumen.includes(secreta),false);assert.equal(resumen.includes('CLIENTE'),false);
  assert.equal((await stat(join(f.salida,'registro_erp_NO_COMPARTIR.json'))).mode&0o777,0o600);assert.equal((await stat(f.salida)).mode&0o777,0o700);

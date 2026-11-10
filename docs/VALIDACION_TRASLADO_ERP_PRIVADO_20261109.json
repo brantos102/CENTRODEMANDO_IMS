@@ -42,12 +42,13 @@
     "Lectura rechaza enlaces/rutas/permisos incompatibles",
     "Conserva copia original exacta y no sobrescribe una revisión previa",
     "JSON inválido no se refleja en errores",
-    "Transferencia fija destino privado y revisión Git; no cambia servicios ni usa SQL"
+    "Transferencia fija destino privado y revisión Git; no cambia servicios ni usa SQL",
+    "La verificación de integridad del archivo de claves permanece privada; el resumen compartible no contiene ese hash"
   ],
   "archivos_sha256": {
     "enterprise/tools/EXPORTAR_ERP_PRIVADO.gs.txt": "9543417ef0f2925e574b5a4149428f5f2ee6773c86d4b6c7f0f70febf5cdfedb",
-    "enterprise/tools/enviar-erp-privado.ps1": "efd9b8414778530cbc7370231ede1b7f965d5de1a7438931bb6308988e82b6a8",
-    "enterprise/tools/revisar-erp-privado.mjs": "9c8e77f7bd97510299d27cdbb5afdd246e5de68a553a3ba075c2c7db9d65f734"
+    "enterprise/tools/enviar-erp-privado.ps1": "94e1998c1c06a849d76a67b192fd498343b165bc55ba343fd743900f8bea9ae6",
+    "enterprise/tools/revisar-erp-privado.mjs": "f6a5d9b50c7e00bc5853b6742c89c6094bb92c2125ffac2bce1004e59c5cebaa"
   },
   "google_real_ejecutado": false,
   "credenciales_reales_leidas": false,
