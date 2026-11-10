@@ -56,3 +56,24 @@ class OperacionDeployTests(unittest.TestCase):
   with self.assertRaises(Exception):comprobar(request,user,1,1)
 
 if __name__=='__main__':unittest.main()
+
+class AmpliacionSeriesTests(unittest.TestCase):
+ def test_trece_triggers_conservan_los_once_anteriores(self):
+  repo=Path(__file__).resolve().parents[2];calls=[]
+  op.triggers(repo,lambda sql:(calls.append(sql) or []),series=True)
+  self.assertEqual(sum('CREATE TRIGGER' in s for s in calls),13)
+  self.assertFalse(any('DROP ' in s or 'ALTER ' in s for s in calls))
+ def test_perfil_ajeno_no_provoca_ampliacion(self):
+  from unittest.mock import patch
+  calls=[]
+  with patch.object(op,'grants',side_effect=op.p.PilotoError('Perfil diferente')):
+   with self.assertRaises(op.p.PilotoError):op.ampliar_series(lambda sql:calls.append(sql))
+  self.assertEqual(calls,[])
+ def test_corte_entre_grants_solo_completa_la_tabla_faltante(self):
+  from unittest.mock import patch
+  calls=[]
+  def verificar(admin,series=True,extras=None):
+   if extras is not None and extras!={'ims_nat_serie'}:raise op.p.PilotoError('Perfil no coincide')
+  with patch.object(op,'grants',side_effect=verificar):op.ampliar_series(lambda sql:calls.append(sql))
+  self.assertEqual(len(calls),1)
+  self.assertIn('`ims_nat_hallazgo`',calls[0]);self.assertNotIn('`ims_nat_serie`',calls[0]);self.assertNotIn('UPDATE',calls[0])

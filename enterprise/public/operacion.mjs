@@ -1,5 +1,7 @@
+import {iniciarCamara} from './camara.mjs';
 import {prepararCsv,sumaStock} from './stock-csv.mjs';
 const $=id=>document.getElementById(id),state={sesion:null,contexto:null,inv:null,cursor:null,ocupado:false,epoch:0};
+let consultaSerie=null,cursorHistorial=null,historialScope='';
 function outbox(){return 'ims_operacion_pendiente_v1_'+state.sesion.usuario.actorId;}
 function aviso(s,error=false){$('op-aviso').textContent=s;$('op-aviso').className=error?'error':'nota';}
 async function api(url,body){
@@ -9,7 +11,7 @@ async function api(url,body){
  if(!response.ok)throw Object.assign(Error(data.mensaje||'No se completó la solicitud.'),{status:response.status});return data;
 }
 function pendiente(){const text=sessionStorage.getItem(outbox());if(!text)return null;const p=JSON.parse(text);return p.actor===state.sesion.usuario.actorId?p:null;}
-function controles(){const existe=!!pendiente();$('op-pendiente').hidden=!existe;for(const b of document.querySelectorAll('form button, #op-depot-guardar'))b.disabled=state.ocupado||existe;}
+function controles(){for(const id of ['op-inventario','op-series-cliente','op-historial-tipo','op-actualizar','op-camara-abrir'])$(id).disabled=state.ocupado;const existe=!!pendiente();$('op-pendiente').hidden=!existe;for(const b of document.querySelectorAll('form button, #op-depot-guardar'))b.disabled=state.ocupado||existe;}
 async function ejecutar(p){
  const result=await api('/api/operacion/'+p.tipo,p.body);
  if(result.ok!==true||result.operacionId!==p.body.operacionId||(p.body.inventarioId&&result.inventarioId!==p.body.inventarioId))throw Error('La respuesta no confirma esta operación.');
@@ -33,7 +35,7 @@ async function contexto(seleccion=$('op-inventario').value){
  $('op-sede').replaceChildren(...data.ambitos.map(r=>new Option(r.sede,r.sede)));
  $('op-sede-cuenta').replaceChildren(...data.ambitos.filter(r=>r.rol==='ADMIN').map(r=>new Option(r.sede,r.sede)));
  $('op-clientes').replaceChildren(...data.clientes.map(r=>new Option(r.nombre,r.id)));
- if(seleccion)await detalle(false);else{state.inv=null;$('op-supervision').hidden=true;}
+ if(seleccion)await detalle(false);else{state.inv=null;$('op-supervision').hidden=true;$('op-series-panel').hidden=true;}
 }
 function celda(tr,text){const td=document.createElement('td');td.textContent=text;tr.append(td);}
 async function detalle(mas=false){
@@ -42,6 +44,7 @@ async function detalle(mas=false){
  if(ep!==state.epoch||$('op-inventario').value!==id)return;
  if(!r.inventario||!Array.isArray(r.lineas))throw Error('Detalle incompleto.');
  state.inv=r.inventario;state.cursor=r.siguiente;
+ actualizarSeries();
  const n=state.inv,supervisor=n.perfiles.length&&n.perfiles.every(p=>p.rol==='SUPERVISOR');
  $('op-supervision').hidden=!supervisor;$('op-cargar').hidden=!n.borrador;$('op-activar').hidden=!n.borrador;
  $('op-depot').checked=n.mostrarDepot;
@@ -98,6 +101,76 @@ $('op-analisis').addEventListener('click',()=>tarea(async()=>{const id=state.inv
 }));
 $('op-actualizar').addEventListener('click',()=>tarea(()=>contexto()));$('op-inventario').addEventListener('change',()=>tarea(()=>detalle()));$('op-mas').addEventListener('click',()=>tarea(()=>detalle(true)));
 $('op-reintentar').addEventListener('click',()=>tarea(async()=>{const p=pendiente();if(!p)return;if(p.requiereClave){p.body.contrasena=$('op-clave-nueva').value;$('op-clave-nueva').value='';if(!p.body.contrasena)throw Error('Escribe otra vez la misma contraseña nueva para recuperar la cuenta.');}const r=await ejecutar(p);await contexto(r.inventarioId||$('op-inventario').value);}));
+let cerrarCaptura=null,camaraEpoch=0;
+function cerrarCamara(){camaraEpoch++;cerrarCaptura?.();cerrarCaptura=null;$('op-camara').hidden=true;}
+$('op-camara-abrir').addEventListener('click',async()=>{
+ if(state.ocupado)return;cerrarCamara();const ep=camaraEpoch;$('op-camara').hidden=false;
+ try{
+  const cerrar=await iniciarCamara($('op-camara-video'),{alLeer:valor=>{if(ep!==camaraEpoch)return;cerrarCamara();$('op-serie').value=valor;limpiarSerie();$('op-serie-consultar').requestSubmit();},alFallar:e=>{if(ep===camaraEpoch){cerrarCamara();aviso(e.message,true);}}});
+  if(ep!==camaraEpoch)cerrar();else cerrarCaptura=cerrar;
+ }catch(e){if(ep===camaraEpoch){cerrarCamara();aviso(e.message,true);}}
+});
+$('op-camara-cerrar').addEventListener('click',cerrarCamara);addEventListener('pagehide',cerrarCamara);document.addEventListener('visibilitychange',()=>{if(document.hidden)cerrarCamara();});
+$('op-serie-linea').addEventListener('change',()=>{$('op-serie-posicion').value=consultaSerie?.coincidencias.find(l=>l.id===$('op-serie-linea').value)?.posicion||'';});
+function limpiarSerie(){consultaSerie=null;$('op-serie-guardar').hidden=true;$('op-serie-informe').textContent='';$('op-serie-similar').checked=false;}
+function actualizarSeries(){
+ const anterior=$('op-series-cliente').value;
+ $('op-series-cliente').replaceChildren(...state.inv.perfiles.map(p=>new Option(state.contexto.clientes.find(c=>c.id===p.cliente_id)?.nombre||p.nombre||p.cliente_id,p.cliente_id)));
+ if(state.inv.perfiles.some(p=>p.cliente_id===anterior))$('op-series-cliente').value=anterior;
+ $('op-series-panel').hidden=false;limpiarSerie();actualizarClienteSerie();
+}
+function actualizarClienteSerie(){
+ cerrarCamara();
+ const perfil=state.inv?.perfiles.find(p=>p.cliente_id===$('op-series-cliente').value);
+ $('op-capturas').hidden=!perfil||!['OPERADOR','SUPERVISOR'].includes(perfil.rol)||!Number(perfil.puede_contar)||state.inv.borrador||state.inv.estado!=='EN_PROCESO';
+ cursorHistorial=null;historialScope='';$('op-historial-filas').replaceChildren();$('op-historial-mas').hidden=true;$('op-historial-estado').textContent='';limpiarSerie();
+}
+$('op-series-cliente').addEventListener('change',actualizarClienteSerie);$('op-serie').addEventListener('input',limpiarSerie);
+formulario('op-serie-consultar',async()=>{
+ limpiarSerie();const id=state.inv?.id,clienteId=$('op-series-cliente').value,serie=$('op-serie').value;
+ const r=await api('/api/operacion/serie/consultar',{inventarioId:id,clienteId,serie});
+ if(state.inv?.id!==id||$('op-series-cliente').value!==clienteId||$('op-serie').value!==serie)return;
+ if(typeof r.duplicada!=='boolean'||!Array.isArray(r.coincidencias)||!Array.isArray(r.parecidas)||typeof r.serie!=='string')throw Error('Consulta de serie incompleta.');
+ consultaSerie={...r,inventarioId:id,clienteId};
+ $('op-serie-informe').textContent=r.duplicada?'La serie ya fue registrada.':r.coincidenciasTruncadas?'Hay demasiadas coincidencias; solicita revisar el stock.':(r.coincidencias.length?'Coincide con stock. Selecciona la línea y etapa correctas.':'Serie sin coincidencia: completa el hallazgo.')+(r.parecidas.length?' Series parecidas registradas: '+r.parecidas.join(', '):'');
+ $('op-serie-guardar').hidden=r.duplicada||r.coincidenciasTruncadas;
+ $('op-serie-posicion').value=r.coincidencias.length===1?(r.coincidencias[0]?.posicion||''):'';$('op-serie-nueva').value='';$('op-serie-nueva-panel').hidden=!r.coincidencias.length;
+ $('op-serie-conocida').hidden=!r.coincidencias.length;$('op-serie-hallazgo').hidden=!!r.coincidencias.length;
+ $('op-serie-similar-panel').hidden=!r.parecidas.length;
+ $('op-serie-linea').replaceChildren(...(r.coincidencias.length>1?[new Option('Selecciona la línea y ubicación exactas','')]:[]),...r.coincidencias.map(l=>new Option(l.sku+' · '+(l.posicion||'Sin posición')+' · C1/C2/C3: '+[l.conteo_1,l.conteo_2,l.conteo_final].map(v=>v??'—').join(' / '),l.id)));
+});
+formulario('op-serie-guardar',async()=>{
+ const q=consultaSerie;if(!q||q.inventarioId!==state.inv?.id||q.clienteId!==$('op-series-cliente').value||q.serie!==$('op-serie').value.trim().toUpperCase())throw Error('Vuelve a consultar la serie.');
+ if(q.parecidas.length&&!$('op-serie-similar').checked)throw Error('Revisa las series parecidas y confirma antes de registrar.');
+ const b={inventarioId:q.inventarioId,clienteId:q.clienteId,serie:q.serie,confirmarSimilar:$('op-serie-similar').checked,posicion:$('op-serie-posicion').value};
+ if(q.coincidencias.length){
+  const l=q.coincidencias.find(l=>l.id===$('op-serie-linea').value);if(!l)throw Error('Selecciona una línea.');
+  Object.assign(b,{lineaId:l.id,versionLinea:l.version,etapa:Number($('op-serie-etapa').value)});
+  if($('op-serie-nueva').value)b.nuevaPosicion=$('op-serie-nueva').value;
+ }else b.hallazgo={sku:$('op-serie-sku').value,descripcion:$('op-serie-descripcion').value,posicion:$('op-serie-posicion').value,cantidad:'1',lote:$('op-serie-lote').value,observacion:$('op-serie-obs').value,justificacion:$('op-serie-justificacion').value};
+ await mutar('serie',b);$('op-serie').value='';await detalle();await cargarHistorial(false);$('op-serie').focus();
+});
+formulario('op-hallazgo',async()=>{
+ await mutar('hallazgo',{inventarioId:state.inv?.id,clienteId:$('op-series-cliente').value,datos:{sku:$('op-hallazgo-sku').value,cantidad:$('op-hallazgo-cantidad').value,
+ descripcion:$('op-hallazgo-desc').value,posicion:$('op-hallazgo-pos').value,lote:$('op-hallazgo-lote').value,observacion:$('op-hallazgo-obs').value,justificacion:$('op-hallazgo-just').value}});
+ $('op-historial-tipo').value='hallazgos';await cargarHistorial(false);
+});
+function fechaCaptura(value){
+ if(typeof value!=='string')return 'Fecha no disponible';
+ const iso=/^\d{4}-\d{2}-\d{2} /.test(value)?value.replace(' ','T')+'Z':value,d=new Date(iso);
+ return Number.isFinite(d.getTime())?d.toLocaleString('es-EC',{timeZone:'America/Guayaquil'}):'Fecha no disponible';
+}
+async function cargarHistorial(mas=false){
+ const id=state.inv?.id,clienteId=$('op-series-cliente').value,tipo=$('op-historial-tipo').value,scope=id+clienteId+tipo;
+ if(!id||!clienteId)return;const params=new URLSearchParams({clienteId});if(mas&&scope===historialScope&&cursorHistorial)params.set('cursor',cursorHistorial);
+ const r=await api('/api/operacion/inventarios/'+id+'/'+tipo+'?'+params);
+ if(id!==state.inv?.id||clienteId!==$('op-series-cliente').value||tipo!==$('op-historial-tipo').value)return;
+ if(!Array.isArray(r.datos)||!(r.siguiente===null||typeof r.siguiente==='string')||r.datos.some(f=>!f||typeof f.id!=='string'||f.inventario_id!==id||f.cliente_id!==clienteId||typeof f.creado_en!=='string'||typeof f.sku!=='string'))throw Error('Historial incompleto.');
+ if(!mas||scope!==historialScope)$('op-historial-filas').replaceChildren();
+ for(const f of r.datos){const tr=document.createElement('tr');celda(tr,fechaCaptura(f.creado_en));celda(tr,(f.serie||'Sin serie')+' · '+f.sku);celda(tr,(f.posicion||'—')+' · '+(f.cantidad??'1.000000000'));celda(tr,(f.observacion||f.descripcion||'')+' · '+(f.usuario||f.actor_id));$('op-historial-filas').append(tr);}
+ historialScope=scope;cursorHistorial=r.siguiente;$('op-historial-mas').hidden=!r.siguiente;$('op-historial-estado').textContent=$('op-historial-filas').rows.length+' captura(s) consultada(s).';
+}
+$('op-historial').addEventListener('click',()=>tarea(()=>cargarHistorial(false)));$('op-historial-mas').addEventListener('click',()=>tarea(()=>cargarHistorial(true)));$('op-historial-tipo').addEventListener('change',()=>{cursorHistorial=null;$('op-historial-filas').replaceChildren();$('op-historial-mas').hidden=true;});
 try{
  state.sesion=await api('/api/sesion');$('op-usuario').textContent=state.sesion.usuario.nombre+' · '+state.sesion.usuario.correo;
  if(state.sesion.operacionNativa!==true)throw Error('La operación nativa aún no está habilitada. El piloto de consulta sigue disponible.');

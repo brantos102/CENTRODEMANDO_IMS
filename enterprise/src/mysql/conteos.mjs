@@ -54,6 +54,7 @@ export async function guardarConteo({pool,principal,solicitud,soloNativos=false}
         await c.rollback();abierta=false;
         return {...resultado,repetida:true};
       }
+      if(soloNativos){const [[prevNative]]=await c.execute('SELECT operacion_id FROM ims_nat_evento WHERE actor_id=? AND operacion_id=? FOR SHARE',[p.actorId,p.operacionId]);exigir(!prevNative,'OPERACION_REUTILIZADA','El identificador ya pertenece a otra operación.');}
       exigir(inv.estado==='EN_PROCESO','INVENTARIO_NO_EDITABLE','El inventario no está abierto para conteo.');
       const {antes,despues,target}=prepararCambio(linea,p);
       const resultado={ok:true,operacionId:p.operacionId,inventarioId:p.inventarioId,lineaId:p.lineaId,

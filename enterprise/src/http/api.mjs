@@ -3,7 +3,7 @@ import {ErrorAuth,tokensIguales} from '../auth/credenciales.mjs';
 import {iniciarSesion,autenticar,cerrarSesion} from '../auth/sesiones.mjs';
 import {guardarConteo} from '../mysql/conteos.mjs';
 import {listarInventarios,listarLineas,consultarResumen} from '../mysql/consultas.mjs';
-import {ejecutarOperacion,contextoOperacion,consultarOperacion} from '../mysql/operacion-nativa.mjs';
+import {ejecutarOperacion,contextoOperacion,consultarOperacion,previsualizarSerie,historialCapturas} from '../mysql/operacion-nativa.mjs';
 import {servirEstatico} from './estaticos.mjs';
 
 export const COOKIE='__Host-ims_cm_session';
@@ -58,7 +58,7 @@ function opciones(url,extras=[]){
 }
 const STATUS={NO_AUTENTICADO:401,SIN_PERMISO:403,BASE_NO_PERMITIDA:503,SOLICITUD_INVALIDA:400,CANTIDAD_INVALIDA:400,
   VERSION_DESACTUALIZADA:409,ETAPA_COMPLETA:409,ETAPA_INVALIDA:409,OPERACION_REUTILIZADA:409,
-  INVENTARIO_NO_EDITABLE:409,CONFIRMACION_REQUERIDA:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503};
+  INVENTARIO_NO_EDITABLE:409,CONFIRMACION_REQUERIDA:409,SERIE_DUPLICADA:409,SERIE_SIMILAR:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503};
 
 /** No instala esquema ni crea usuarios. Todas las rutas de datos exigen sesión. */
 export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision}){
@@ -107,11 +107,21 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
           return json(res,200,await contextoOperacion(pool,principal));
         }
-        const op=/^\/api\/operacion\/(crear|lineas|activar|asignar|estado|depot|ajustar|usuario)$/.exec(url.pathname);
+        const op=/^\/api\/operacion\/(crear|lineas|activar|asignar|estado|depot|ajustar|usuario|serie|hallazgo)$/.exec(url.pathname);
         if(req.method==='POST'&&op){
           if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Consulta tu sesión.',403);
           if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
           return json(res,200,await ejecutarOperacion({pool,principal,tipo:op[1],solicitud:await leerJson(req)}));
+        }
+        if(req.method==='POST'&&url.pathname==='/api/operacion/serie/consultar'){
+          const body=await leerJson(req);
+          if(Object.keys(body).some(k=>!['inventarioId','clienteId','serie'].includes(k)))throw new ErrorAuth('SOLICITUD_INVALIDA','Campos no permitidos.',400);
+          return json(res,200,await previsualizarSerie(pool,principal,body.inventarioId,{clienteId:body.clienteId,serie:body.serie}));
+        }
+        const historial=/^\/api\/operacion\/inventarios\/([a-f0-9-]+)\/(series|hallazgos)$/.exec(url.pathname);
+        if(req.method==='GET'&&historial){
+          if([...url.searchParams.keys()].some(k=>!['clienteId','cursor'].includes(k))||['clienteId','cursor'].some(k=>url.searchParams.getAll(k).length>1))throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          return json(res,200,await historialCapturas(pool,principal,historial[1],{tipo:historial[2],clienteId:url.searchParams.get('clienteId'),cursor:url.searchParams.get('cursor')||''}));
         }
         const inv=/^\/api\/operacion\/inventarios\/([a-f0-9-]+)(\/analisis)?$/.exec(url.pathname);
         if(req.method==='GET'&&inv){

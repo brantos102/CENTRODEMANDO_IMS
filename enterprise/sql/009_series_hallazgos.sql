@@ -1,0 +1,45 @@
+-- Aditivo: series físicas y planilla alterna de inventarios nativos.
+-- Cada captura referencia una operación auditada; revocar permisos no borra datos.
+CREATE TABLE IF NOT EXISTS ims_nat_hallazgo (
+ id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+ inventario_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ cliente_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ actor_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ operacion_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ sku VARCHAR(255) NOT NULL,
+ descripcion TEXT NOT NULL,
+ posicion VARCHAR(255) NOT NULL,
+ serie VARCHAR(255) COLLATE utf8mb4_0900_bin NULL,
+ lote VARCHAR(255) NOT NULL,
+ cantidad DECIMAL(30,9) NOT NULL,
+ observacion TEXT NOT NULL,
+ justificacion TEXT NOT NULL,
+ creado_en TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+ UNIQUE KEY uq_ims_nat_hallazgo_operacion(actor_id,operacion_id),
+ KEY ix_ims_nat_hallazgo_inventario(inventario_id,cliente_id,id),
+ FOREIGN KEY(inventario_id) REFERENCES ims_nat_inventario(inventario_id),
+ FOREIGN KEY(inventario_id,cliente_id) REFERENCES ims_op_inventario_cliente(inventario_id,cliente_id),
+ FOREIGN KEY(actor_id,operacion_id) REFERENCES ims_nat_evento(actor_id,operacion_id),
+ CHECK(cantidad>=0 AND TRIM(sku)<>'' AND (serie IS NULL OR cantidad=1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin;
+CREATE TABLE IF NOT EXISTS ims_nat_serie (
+ id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+ inventario_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ cliente_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ actor_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ operacion_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ serie VARCHAR(255) COLLATE utf8mb4_0900_bin NOT NULL,
+ posicion VARCHAR(255) NOT NULL,
+ linea_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+ hallazgo_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+ creado_en TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+ UNIQUE KEY uq_ims_nat_serie_fisica(inventario_id,cliente_id,serie),
+ UNIQUE KEY uq_ims_nat_serie_operacion(actor_id,operacion_id),
+ KEY ix_ims_nat_serie_historial(inventario_id,cliente_id,id),
+ FOREIGN KEY(inventario_id) REFERENCES ims_nat_inventario(inventario_id),
+ FOREIGN KEY(inventario_id,cliente_id) REFERENCES ims_op_inventario_cliente(inventario_id,cliente_id),
+ FOREIGN KEY(actor_id,operacion_id) REFERENCES ims_nat_evento(actor_id,operacion_id),
+ FOREIGN KEY(linea_id,inventario_id) REFERENCES ims_op_linea(id,inventario_id),
+ FOREIGN KEY(hallazgo_id) REFERENCES ims_nat_hallazgo(id),
+ CHECK(TRIM(serie)<>'' AND ((linea_id IS NULL)<>(hallazgo_id IS NULL)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin;

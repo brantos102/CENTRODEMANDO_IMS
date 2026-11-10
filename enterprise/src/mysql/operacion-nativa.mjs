@@ -3,6 +3,7 @@ import {ErrorConteo} from '../dominio/conteo.mjs';
 import {correoCanonico,crearHashPassword,verificarPassword} from '../auth/credenciales.mjs';
 import {exigirOperacion as exigir,uuid,texto,fecha,version,campos,filaStock,ajusteExacto} from '../dominio/operacion.mjs';
 import {acumuladorWms,resultadoWms,decimal,textoDecimal} from '../dominio/analisis-wms.mjs';
+import {prepararCaptura,consultarSerieInterna,exigirClienteCaptura} from './series.mjs';
 const SUPER=['SUPERVISOR'];
 const ROLES=['SUPERVISOR','OPERADOR','AUDITOR','LECTOR'];
 function canon(v){return Array.isArray(v)?v.map(canon):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canon(v[k])])):v;}
@@ -38,9 +39,9 @@ async function acceso(c,p,id,roles,completo=false,bloquear=false){
   n.fecha_programada,n.responsable FROM ims_op_inventario i JOIN ims_nat_inventario n ON n.inventario_id=i.id
   WHERE i.id=? ${bloquear?'FOR UPDATE':''}`,[id]);
  exigir(n,'SIN_PERMISO','Inventario nativo no autorizado.');
- const [perfiles]=await c.execute(`SELECT p.cliente_id,p.rol FROM ims_nat_perfil p
+ const [perfiles]=await c.execute(`SELECT p.cliente_id,p.rol,cli.nombre,a.puede_contar FROM ims_nat_perfil p
   JOIN ims_op_permiso a ON a.actor_id=p.actor_id AND a.inventario_id=p.inventario_id AND a.cliente_id=p.cliente_id
-  WHERE p.inventario_id=? AND p.actor_id=? FOR SHARE`,[id,p.actorId]);
+  JOIN ims_op_cliente cli ON cli.id=p.cliente_id WHERE p.inventario_id=? AND p.actor_id=? FOR SHARE`,[id,p.actorId]);
  exigir(perfiles.length&&(!roles||perfiles.every(r=>roles.includes(r.rol))),'SIN_PERMISO','Acceso no autorizado.');
  if(completo){
   const [[t]]=await c.execute('SELECT COUNT(*) AS n FROM ims_op_inventario_cliente WHERE inventario_id=?',[id]);
@@ -73,7 +74,9 @@ const CAMPOS={
  estado:['inventarioId','versionEsperada','estado','confirmarIncompleto','fechaEntrega'],
  depot:['inventarioId','versionEsperada','visible'],
  ajustar:['inventarioId','versionEsperada','lineaId','versionLinea','ajuste','motivo','justificacion'],
- usuario:['sede','correo','nombre','contrasena']
+ usuario:['sede','correo','nombre','contrasena'],
+ serie:['inventarioId','clienteId','serie','lineaId','versionLinea','etapa','posicion','nuevaPosicion','confirmarSimilar','hallazgo'],
+ hallazgo:['inventarioId','clienteId','datos']
 };
 /** Todas las mutaciones se limitan a inventarios creados aquí, nunca al histórico migrado.
  * operacionId se conserva al reintentar, incluso si se pierde la respuesta de COMMIT.
@@ -90,7 +93,8 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s}){
  return transaccion(pool,p,async c=>{
   let n;
   if(['crear','usuario'].includes(tipo))await ambito(c,p,s.sede,tipo==='usuario');
-  else n=await acceso(c,p,s.inventarioId,SUPER,true,true);
+  else n=await acceso(c,p,s.inventarioId,['serie','hallazgo'].includes(tipo)?null:SUPER,!['serie','hallazgo'].includes(tipo),true);
+  if(['serie','hallazgo'].includes(tipo))exigir(n.perfiles.some(r=>r.cliente_id===s.clienteId&&Number(r.puede_contar)===1&&['SUPERVISOR','OPERADOR'].includes(r.rol)),'SIN_PERMISO','Cliente no autorizado para captura.');
   const [[prev]]=await c.execute('SELECT tipo,payload_sha256,resultado FROM ims_nat_evento WHERE actor_id=? AND operacion_id=? FOR SHARE',[p.actorId,s.operacionId]);
   if(prev){
    exigir(prev.tipo===tipo&&prev.payload_sha256===digest,'OPERACION_REUTILIZADA','El identificador ya pertenece a otra solicitud.');
@@ -101,9 +105,11 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s}){
    }
    return {...resultado,repetida:true};
   }
-  if(n)mismaVersion(n,s);
+  const [[otro]]=await c.execute('SELECT operacion_id FROM ims_op_operacion WHERE actor_id=? AND operacion_id=? FOR SHARE',[p.actorId,s.operacionId]);
+  exigir(!otro,'OPERACION_REUTILIZADA','El identificador ya pertenece a otra captura.');
+  if(n&&!['serie','hallazgo'].includes(tipo))mismaVersion(n,s);
   let antes=n?{estado:n.estado,version:n.version,borrador:!!n.borrador}:null;
-  let result;
+  let result,persistir;
   if(tipo==='crear'){
    const codigo=texto(s.codigo,255,false);exigir(/^\d{6}_.+/.test(codigo),'SOLICITUD_INVALIDA','Usa el código literal DDMMAA_CLIENTE; la fecha se registra por separado.');
    const inicio=fecha(s.fechaInicio),programada=s.fechaProgramada?fecha(s.fechaProgramada):null;
@@ -185,6 +191,8 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s}){
    await c.execute('UPDATE ims_nat_linea SET ajuste=?,motivo=?,justificacion=? WHERE linea_id=?',[ajuste,motivo,justificacion,l.id]);
    await c.execute('UPDATE ims_op_linea SET version=version+1 WHERE id=?',[l.id]);
    result={inventarioId:n.id,lineaId:l.id,ajuste,motivo,justificacion,versionLinea:String(BigInt(l.version)+1n),version:await nuevaVersion(c,n)};
+  }else if(['serie','hallazgo'].includes(tipo)){
+   const captura=await prepararCaptura(c,n,p,s,tipo);result=captura.resultado;antes=captura.antes;persistir=captura.persistir;
   }else if(tipo==='estado'){
    exigir(!n.borrador,'INVENTARIO_NO_EDITABLE','Activa primero el stock.');
    exigir(['EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO'].includes(s.estado));
@@ -204,6 +212,7 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s}){
   const salida={ok:true,operacionId:s.operacionId,...result};
   await c.execute('INSERT INTO ims_nat_evento(actor_id,operacion_id,tipo,inventario_id,payload_sha256,resultado,antes,despues) VALUES (?,?,?,?,?,?,?,?)',
    [p.actorId,s.operacionId,tipo,result.inventarioId??null,digest,JSON.stringify(salida),JSON.stringify(antes),JSON.stringify(result)]);
+  if(persistir)await persistir();
   return {...salida,repetida:false};
  });
 }
@@ -244,5 +253,27 @@ export async function consultarOperacion(pool,p,id,{analisis=false,cursor=''}={}
    fechaInicio:n.fecha_inicio,fechaEntrega:n.fecha_entrega,fechaProgramada:n.fecha_programada,responsable:n.responsable,
    mostrarDepot:!!n.mostrar_depot,perfiles:n.perfiles},
    lineas:lineas.slice(0,50).map(r=>({...r,version:String(r.version),...(!ciego?resultadoWms(r):{})})),siguiente};
+ });
+}
+
+export async function previsualizarSerie(pool,p,id,solicitud){
+ campos(solicitud,['clienteId','serie']);
+ return transaccion(pool,p,async c=>{const n=await acceso(c,p,id);exigirClienteCaptura(n,solicitud);return consultarSerieInterna(c,n,solicitud);});
+}
+export async function historialCapturas(pool,p,id,{clienteId,cursor='',tipo='series'}={}){
+ uuid(clienteId);if(cursor)uuid(cursor);exigir(['series','hallazgos'].includes(tipo));
+ return transaccion(pool,p,async c=>{
+  const n=await acceso(c,p,id);exigir(n.perfiles.some(r=>r.cliente_id===clienteId),'SIN_PERMISO','Cliente no autorizado.');
+  const tabla=tipo==='series'?'ims_nat_serie':'ims_nat_hallazgo';
+  let filtro='',params=[id,clienteId];
+  if(cursor){
+   const [[anchor]]=await c.execute(`SELECT creado_en FROM ${tabla} WHERE id=? AND inventario_id=? AND cliente_id=?`,[cursor,id,clienteId]);
+   exigir(anchor,'SOLICITUD_INVALIDA','Cursor inválido.');
+   filtro=' AND (s.creado_en<? OR (s.creado_en=? AND s.id<?))';params.push(anchor.creado_en,anchor.creado_en,cursor);
+  }
+  const extra=tipo==='series'?',COALESCE(l.sku,h.sku) AS sku,COALESCE(d.descripcion,h.descripcion) AS descripcion':'';
+  const joins=tipo==='series'?'LEFT JOIN ims_op_linea l ON l.id=s.linea_id LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id LEFT JOIN ims_nat_hallazgo h ON h.id=s.hallazgo_id':'';
+  const [rows]=await c.execute(`SELECT s.*,u.nombre AS usuario ${extra} FROM ${tabla} s ${joins} LEFT JOIN ims_auth_usuario u ON u.actor_id=s.actor_id WHERE s.inventario_id=? AND s.cliente_id=? ${filtro} ORDER BY s.creado_en DESC,s.id DESC LIMIT 51`,params);
+  return {datos:rows.slice(0,50),siguiente:rows.length===51?rows[49].id:null};
  });
 }

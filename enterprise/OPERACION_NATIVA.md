@@ -10,7 +10,7 @@ Ejecutar desde una preparación Git limpia y fijada a una revisión aprobada, ba
 bash enterprise/deploy/preparar_y_activar_operacion.sh
 ```
 
-El script instala las dependencias de esa preparación, ejecuta las pruebas unitarias y prepara las tablas aditivas 007, once triggers y una cuenta SQL propia. Después prepara una versión inmutable y actualiza solamente `centro-mando-ims-ensayo.service`. Conserva `127.0.0.1:3003`, HTTPS 8445 y los límites del servicio. No modifica Apache, sus certificados, los proyectos vecinos ni sus servicios. No reinicia MySQL ni modifica parámetros globales.
+El script instala las dependencias de esa preparación, ejecuta las pruebas unitarias y prepara las tablas aditivas 007, trece triggers y una cuenta SQL propia. Después prepara una versión inmutable y actualiza solamente `centro-mando-ims-ensayo.service`. Conserva `127.0.0.1:3003`, HTTPS 8445 y los límites del servicio. No modifica Apache, sus certificados, los proyectos vecinos ni sus servicios. No reinicia MySQL ni modifica parámetros globales.
 
 La cuenta inicial del piloto recibe administración nativa para UIO/GYE. Mantiene su contraseña y sus permisos históricos de consulta. No se consulta ni modifica Recursos Humanos. Las contraseñas nuevas se generan/asignan de forma independiente; nunca se importan claves/PIN de Sheets.
 
@@ -54,6 +54,6 @@ La carpeta de salida debe ser nueva. Produce un stock CSV privado y un resumen; 
 
 ## Trabajo pendiente antes del corte definitivo
 
-La captura por escáner de series, hallazgos/planilla alterna, validación EAN/ABC/ubicaciones, reportes/exportaciones nativas, calendario completo y notificaciones requieren completar su paridad con el WMS. Los indicadores de esta fase corresponden a inventarios nativos; el histórico conserva su consulta y sus fuentes, sin reinterpretarlo automáticamente como stock nuevo. Falta trasladar/validar las fuentes pendientes y el delta posterior al corte descargado, comprobar conexiones ERP reales y aceptar un piloto con operarios y jefaturas. WTW permanece aplazado.
+La [captura de series y planilla alterna](SERIES_HALLAZGOS.md) está disponible para inventarios nativos, con cámara en navegadores compatibles y recuperación de confirmaciones. La validación EAN/ABC/ubicaciones, reportes/exportaciones nativas, calendario completo y notificaciones requieren completar su paridad con el WMS. Los indicadores de esta fase corresponden a inventarios nativos; el histórico conserva su consulta y sus fuentes, sin reinterpretarlo automáticamente como stock nuevo. Falta trasladar/validar las fuentes pendientes y el delta posterior al corte descargado, comprobar conexiones ERP reales y aceptar un piloto con operarios y jefaturas. WTW permanece aplazado.
 
 Los contratos vigentes INVENTARIOS 30 / REGISTRO 15 no se modifican; tampoco se declara implementada todavía su sustitución completa por exportaciones nativas. Supabase no se utiliza como fuente autoritativa. Hasta completar esos puntos, no desactivar Sheets, los archivos hijos, sus permisos o sus despliegues.

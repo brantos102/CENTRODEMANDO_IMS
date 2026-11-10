@@ -21,6 +21,7 @@ TABLES = {
  'ims_auth_usuario': 'SELECT, INSERT', 'ims_auth_sesion': 'SELECT, INSERT, UPDATE', 'ims_auth_limite': 'SELECT, INSERT, UPDATE, DELETE',
  'ims_nat_ambito': 'SELECT', 'ims_nat_inventario': 'SELECT, INSERT', 'ims_nat_perfil': 'SELECT, INSERT, UPDATE, DELETE',
  'ims_nat_linea': 'SELECT, INSERT', 'ims_nat_evento': 'SELECT, INSERT'}
+SERIES_TABLES = {'ims_nat_serie':'SELECT, INSERT', 'ims_nat_hallazgo':'SELECT, INSERT'}
 COLUMNS = {'ims_op_inventario': ['estado'], 'ims_op_linea': ['version','conteo_1','conteo_2','conteo_final','observacion','nueva_posicion'],
  'ims_nat_inventario': ['version','borrador','fecha_entrega','mostrar_depot'], 'ims_nat_linea':['ajuste','motivo','justificacion']}
 
@@ -30,7 +31,7 @@ def sql_cuenta(clave, db=DB, host='127.0.0.1'):
              and host in ('127.0.0.1', '%'), 'Cuenta o base incompatible.')
     cuenta = "'" + USER + "'@'" + host + "'"
     lines = [f"CREATE USER {cuenta} IDENTIFIED BY '{clave}' WITH MAX_USER_CONNECTIONS 5;"]
-    for tabla, grants in TABLES.items():
+    for tabla, grants in {**TABLES, **SERIES_TABLES}.items():
         lines.append(f'GRANT {grants} ON `{db}`.`{tabla}` TO {cuenta};')
     for tabla, columnas in COLUMNS.items():
         lines.append(f"GRANT UPDATE ({','.join('`'+c+'`' for c in columnas)}) ON `{db}`.`{tabla}` TO {cuenta};")
@@ -53,10 +54,12 @@ def node(repo, modo, solicitud):
     return data
 
 
-def triggers(repo, admin=p.admin_mysql):
+def triggers(repo, admin=p.admin_mysql, series=False):
     sql = (repo / 'enterprise/sql/008_proteccion_nativa.sql').read_text()
+    if series:
+        sql += (repo / 'enterprise/sql/010_proteccion_series.sql').read_text()
     definitions = re.findall(r'CREATE TRIGGER (ims_nat_[a-z_]+) (.*?)END\$\$', sql, re.S)
-    p.exigir(len(definitions) == 11, 'Protecciones SQL incompletas.')
+    p.exigir(len(definitions) == (13 if series else 11), 'Protecciones SQL incompletas.')
     for nombre, resto in definitions:
         resto = resto + 'END'
         m = re.fullmatch(r'(BEFORE) (INSERT|UPDATE|DELETE) ON ([a-z_]+) FOR EACH ROW\s+(BEGIN.*END)', resto, re.S)
@@ -70,9 +73,12 @@ def triggers(repo, admin=p.admin_mysql):
             admin(f'USE `{DB}`;\nDELIMITER $$\nCREATE TRIGGER {nombre} {resto}$$\nDELIMITER ;\n')
 
 
-def grants(admin=p.admin_mysql):
+def grants(admin=p.admin_mysql, series=True, extras=None):
+    extras = set(SERIES_TABLES if series else ()) if extras is None else set(extras)
+    p.exigir(extras <= set(SERIES_TABLES), 'Tablas adicionales incompatibles.')
+    tablas = {**TABLES, **{t: SERIES_TABLES[t] for t in extras}}
     tables = admin(f"SELECT TABLE_NAME,PRIVILEGE_TYPE FROM information_schema.TABLE_PRIVILEGES WHERE GRANTEE=CONCAT(CHAR(39),'{USER}',CHAR(39),'@',CHAR(39),'127.0.0.1',CHAR(39)) AND TABLE_SCHEMA='{DB}';")
-    expected = {(t, g) for t, gs in TABLES.items() for g in gs.split(', ')}
+    expected = {(t, g) for t, gs in tablas.items() for g in gs.split(', ')}
     p.exigir(set(map(tuple, tables)) == expected, 'Privilegios de tablas incompatibles.')
     cols = admin(f"SELECT TABLE_NAME,COLUMN_NAME,PRIVILEGE_TYPE FROM information_schema.COLUMN_PRIVILEGES WHERE GRANTEE=CONCAT(CHAR(39),'{USER}',CHAR(39),'@',CHAR(39),'127.0.0.1',CHAR(39)) AND TABLE_SCHEMA='{DB}';")
     p.exigir(set(map(tuple, cols)) == {(t, c, 'UPDATE') for t, cs in COLUMNS.items() for c in cs}, 'Privilegios de columnas incompatibles.')
@@ -80,7 +86,24 @@ def grants(admin=p.admin_mysql):
     esquemas = admin(f"SELECT TABLE_SCHEMA FROM information_schema.SCHEMA_PRIVILEGES WHERE GRANTEE=CONCAT(CHAR(39),'{USER}',CHAR(39),'@',CHAR(39),'127.0.0.1',CHAR(39));")
     p.exigir(globales == [['USAGE']] and not esquemas, 'La cuenta tiene privilegios globales o por esquema.')
     todos = admin(f"SHOW GRANTS FOR {ACCOUNT};")
-    p.exigir(len(todos) == len(TABLES)+1 and all(('`'+DB+'`.') in r[0] or r[0].startswith('GRANT USAGE ON *.*') for r in todos), 'Privilegios fuera de la base propia.')
+    p.exigir(len(todos) == len(tablas)+1 and all(('`'+DB+'`.') in r[0] or r[0].startswith('GRANT USAGE ON *.*') for r in todos), 'Privilegios fuera de la base propia.')
+
+
+def ampliar_series(admin=p.admin_mysql):
+    # Solo perfiles completos o parciales de ESTA ampliación. Esto permite
+    # reanudar un corte entre dos GRANT sin adoptar privilegios diferentes.
+    opciones = [set(SERIES_TABLES), set(), {'ims_nat_serie'}, {'ims_nat_hallazgo'}]
+    for existentes in opciones:
+        try:
+            grants(admin, extras=existentes)
+        except p.PilotoError:
+            continue
+        faltantes = set(SERIES_TABLES) - existentes
+        if faltantes:
+            admin('\n'.join(f'GRANT {SERIES_TABLES[t]} ON `{DB}`.`{t}` TO {ACCOUNT};' for t in sorted(faltantes)))
+        grants(admin, series=True)
+        return
+    raise p.PilotoError('La cuenta no coincide con el perfil anterior o su ampliación autorizada; no se ajustan privilegios.')
 
 
 def preparar(repo, datos, admin=p.admin_mysql):
@@ -99,12 +122,12 @@ def preparar(repo, datos, admin=p.admin_mysql):
     s = json.loads(p.privado(carpeta / 'solicitud.json').read_text())
     p.exigir(s.get('version') == 1 and s['actorId'] == piloto['lector']['actorId'] and s['correo'] == piloto['lector']['correo'], 'Solicitud incompatible.')
     result = node(repo, '--preparar', {'config': cfg, 'actorId': s['actorId'], 'correo': s['correo']})
-    triggers(repo, admin)
+    triggers(repo, admin, series=True)
     cuenta = admin(f"SELECT User,Host,max_user_connections FROM mysql.user WHERE User='{USER}';")
     if not cuenta:
         admin(sql_cuenta(s['clave_mysql']))
     p.exigir(admin(f"SELECT User,Host,max_user_connections FROM mysql.user WHERE User='{USER}';") == [[USER,'127.0.0.1','5']], 'Cuenta incompatible.')
-    grants(admin)
+    ampliar_series(admin)
     content = entorno(s['clave_mysql'])
     archivo = carpeta / 'operacion.env'
     if archivo.exists():

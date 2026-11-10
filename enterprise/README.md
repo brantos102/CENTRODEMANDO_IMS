@@ -100,3 +100,5 @@ node --test enterprise/tests/*.test.mjs
 La regla de consolidación y el modelo operativo/histórico propuesto están en `docs/ARQUITECTURA_OPERACION_HISTORICOS_MYSQL_20261029.md`. Los inventarios en curso se guardarán sin participar en la publicación final. El maestro no sustituye la extracción de las planillas hijas.
 
 La [operación nativa de ensayo](OPERACION_NATIVA.md) incorpora creación, stock, permisos por cliente, conteo, ajustes, validación y entrega, con indicadores de referencia WMS V124. Su activación es explícita y mantiene protegido el histórico; todavía no representa el corte definitivo de Google.
+
+La [captura de series y planilla alterna](SERIES_HALLAZGOS.md) mantiene una unidad por serie, permisos por cliente, advertencias de similitud y recuperación transaccional sin duplicados.

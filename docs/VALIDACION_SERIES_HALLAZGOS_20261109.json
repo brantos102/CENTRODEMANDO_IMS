@@ -1,0 +1,80 @@
+{
+  "fecha_local": "2026-11-09",
+  "zona_horaria": "America/Guayaquil",
+  "tipo": "validacion_sintetica_aislada",
+  "base_codigo": "b522e3b3f1001d7947524307d1ad017f73765e7a",
+  "estado_corporativo_reportado_por_usuario": {
+    "revision": "b522e3b3f1001d7947524307d1ad017f73765e7a",
+    "operacion_nativa": true,
+    "historico_protegido": true,
+    "conteos_historicos": 352,
+    "filas_historicas": 97822,
+    "conteos_nativos": 0
+  },
+  "motores": {
+    "node": "22.23.3",
+    "mysql": "8.0.46",
+    "navegador": "Chromium"
+  },
+  "pruebas": {
+    "node_y_mysql": {
+      "tests": 157,
+      "pass": 157,
+      "fail": 0,
+      "skip": 0
+    },
+    "python": {
+      "tests": 59,
+      "pass": 59,
+      "fail": 0
+    },
+    "navegador": {
+      "tests": 16,
+      "pass": 16,
+      "fail": 0
+    },
+    "navegador_final": {
+      "tests": 3,
+      "pass": 3,
+      "fail": 0
+    },
+    "mysql_final_tras_auditar_advertencias": {
+      "tests": 12,
+      "pass": 12,
+      "fail": 0
+    },
+    "ampliacion_sql": "Perfil anterior 17 tablas → 19; trece triggers; reintento y recuperación de un GRANT parcial comprobados en MySQL real"
+  },
+  "cobertura": [
+    "Diez reintentos simultáneos de serie: un C1 y una evidencia",
+    "Una serie equivale a una unidad; no sobrescribe ni elige otra etapa",
+    "Permisos por cliente, revocación y conteo ciego",
+    "Mismo serial en otro cliente permanece independiente",
+    "Similitud requiere confirmación, conservada en auditoría",
+    "Varias coincidencias requieren línea explícita",
+    "Hallazgos conservan cero, decimales y multiplicidad sin crear stock ni alterar KPI",
+    "Respuesta perdida después de COMMIT recupera la operación",
+    "Fallo al insertar serie revierte conteo, eventos y auditoría",
+    "Inventarios entregados bloquean escrituras nuevas",
+    "Historial paginado conserva empates de fecha",
+    "Cuenta SQL rechaza modificar/borrar evidencias",
+    "Cámara sintética sin audio y liberada tras leer",
+    "Regresiones de creación, stock, sesiones, resumen, búsqueda, capturas pendientes y contratos históricos"
+  ],
+  "archivos_sha256": {
+    "enterprise/sql/007_operacion_nativa.sql": "dcc86d8cd3b2b440fff0e83d7e3c2a17d2571e9e00f42cde2aa83d303329fec3",
+    "enterprise/sql/008_proteccion_nativa.sql": "062ac70664213ebd9c41b0fee29eefa8c13f3c96ce91522786c49e28916bf8d4",
+    "enterprise/sql/009_series_hallazgos.sql": "5d6db39ecb5deb70612b0be33c3eea38a78d271db3e04a7fec83b81bd926ec0a",
+    "enterprise/sql/010_proteccion_series.sql": "6a313a39525419a3082641687b0bd7036b4e9d85d6d2debe539aca70893a49bb"
+  },
+  "datos_reales_en_pruebas": false,
+  "servidor_corporativo_modificado_desde_validacion": false,
+  "puertos_corporativos_nuevos": [],
+  "apache_modificado": false,
+  "servicios_ajenos_modificados": false,
+  "erp_real_verificado": false,
+  "camara_fisica_verificada": false,
+  "camara_sintetica_verificada": true,
+  "corte_definitivo_autorizado_por_esta_validacion": false,
+  "wtw": "aplazado"
+}

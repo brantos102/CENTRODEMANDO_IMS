@@ -6,7 +6,7 @@ export async function prepararAdministrador(c,{actorId,correo}){
  if(!/^[a-f0-9-]{36}$/.test(actorId))throw Error('Actor incompatible.');correo=correoCanonico(correo);
  const [[db]]=await c.query('SELECT DATABASE() AS nombre,CURRENT_USER() AS usuario');
  if(!/^centromando_ims_(?:ensayo|pruebas(?:_[a-z0-9]+)?)$/.test(db.nombre)||/^root@/.test(db.usuario))throw Error('Base incompatible.');
- for(const sql of (await readFile(new URL('../sql/007_operacion_nativa.sql',import.meta.url),'utf8')).replace(/^--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean))await c.query(sql);
+ for(const file of ['007_operacion_nativa.sql','009_series_hallazgos.sql'])for(const sql of (await readFile(new URL('../sql/'+file,import.meta.url),'utf8')).replace(/^--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean))await c.query(sql);
  await c.beginTransaction();let tx=true;
  try{
   const [[u]]=await c.execute('SELECT u.actor_id,a.activo FROM ims_auth_usuario u JOIN ims_op_actor a ON a.id=u.actor_id WHERE u.actor_id=? AND u.correo=? FOR SHARE',[actorId,correo]);
@@ -22,6 +22,7 @@ export async function prepararAdministrador(c,{actorId,correo}){
 export async function verificarRuntime(c){
  const [[db]]=await c.query('SELECT DATABASE() AS nombre,CURRENT_USER() AS usuario');
  if(db.nombre!=='centromando_ims_ensayo'||db.usuario!=='ims_cm_operacion@127.0.0.1')throw Error('Perfil de operación incompatible.');
+ await c.query('SELECT id FROM ims_nat_serie LIMIT 0');await c.query('SELECT id FROM ims_nat_hallazgo LIMIT 0');
  const [[r]]=await c.query(`SELECT COUNT(DISTINCT i.id) AS conteos,COUNT(l.id) AS filas FROM ims_op_inventario i
   LEFT JOIN ims_op_linea l ON l.inventario_id=i.id LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE n.inventario_id IS NULL`);
  return {ok:true,historico:{conteos:Number(r.conteos),filas:Number(r.filas)}};

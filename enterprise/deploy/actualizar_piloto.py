@@ -239,7 +239,7 @@ def main():
             entorno = p.privado(op / 'operacion.env').read_text()
             exigir(solicitud.get('actorId') == s['lector']['actorId'] and entorno == operacion.entorno(solicitud['clave_mysql']), 'Perfil operativo modificado.')
             operacion.grants()
-            operacion.triggers(repo)
+            operacion.triggers(repo, series=True)
             verificado = operacion.node(release, '--verificar', {'config': dict(l.split('=',1) for l in entorno.splitlines())})
             exigir(verificado.get('historico') == {'conteos': args.conteos_esperados, 'filas': args.filas_esperadas}, 'El histórico no coincide con los totales esperados.')
         nueva = unidad_release(release, carpeta, args.revision, operacion=args.operacion_nativa)

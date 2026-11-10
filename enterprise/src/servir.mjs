@@ -25,7 +25,7 @@ async function main(){
     await pool.query('SELECT clave FROM ims_auth_limite LIMIT 0');
     await pool.query('SELECT id FROM ims_op_linea LIMIT 0');
     await pool.query('SELECT linea_id FROM ims_op_detalle_linea LIMIT 0');
-    if(config.operacionNativa)await pool.query('SELECT inventario_id FROM ims_nat_inventario LIMIT 0');
+    if(config.operacionNativa){await pool.query('SELECT inventario_id FROM ims_nat_inventario LIMIT 0');await pool.query('SELECT id FROM ims_nat_serie LIMIT 0');await pool.query('SELECT id FROM ims_nat_hallazgo LIMIT 0');}
     server=crearApi({pool,publicUrl:config.publicUrl,soloLectura:config.soloLectura,revision:config.revision,operacionNativa:config.operacionNativa});
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,config.host,resolve);});
     console.log(`Centro de Mando candidato disponible en ${config.host}:${config.port}; modo ${config.soloLectura?'solo lectura':'operativo de ensayo'}.`);
