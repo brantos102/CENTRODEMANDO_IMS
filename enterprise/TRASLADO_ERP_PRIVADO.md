@@ -67,3 +67,17 @@ Se descargan a una nueva carpeta privada de Windows:
 - **revision_asociaciones_erp_para_compartir.json**: nombres del catálogo, etiquetas de credenciales, IDs y propuestas por confirmar. No contiene usuarios ERP, contraseñas, tokens ni huellas del archivo secreto. Este es el informe necesario para revisar equivalencias de clientes.
 
 **asociaciones_erp_NO_COMPARTIR.json** permanece en el servidor: contiene las referencias e integridad de las fuentes privadas. No compartirlo. La revisión no prueba autenticación real ni habilita importación de stock; esas dos acciones requieren las asociaciones y los códigos ERP confirmados.
+
+## Copias de Quito en el proyecto GYE y comprobación de lectura
+
+El usuario confirmó que la segunda copia contiene 17 propiedades UIO y ocho GYE. Las 17 UIO coinciden con la copia original: el primer comparador les heredaba el aviso de ubicación del proyecto GYE, aunque no hubiera conflicto. Ahora se resuelve exclusivamente ese aviso cuando la fuente UIO válida confirma exactamente usuario y contraseña. Se conservan intactos ambos originales. Una contraseña discrepante, un fallback conflictivo o una credencial inutilizable sigue bloqueada; no se elige silenciosamente una fuente.
+
+Se puede ejecutar `tools/diagnosticar-erp-servidor.ps1 -RevisionCodigo REVISION_APROBADA -PlanPrivado RUTA_DEL_PLAN_PRIVADO -VerificarLectura` desde PowerShell del PC. El plan permanece en el servidor; el script no lo descarga ni vuelve a transferir credenciales. Obtiene la revisión aprobada en un worktree nuevo y ejecuta `deploy/diagnosticar_erp_lectura.sh`.
+
+La comprobación vuelve a validar todas las fuentes y la huella del catálogo del plan antes de acceder a la red. No consulta ni modifica MySQL. Usa el catálogo anterior del plan, expresamente identificado como copia. Solicita autenticación en gettoken y consulta getstock mediante GET contra los destinos fijos por sede, con TLS verificado, redirecciones rechazadas y una conexión a la vez. No toca propiedades ni cachés de Google. Cada petición tiene un límite de 20 segundos y un tamaño máximo; el presupuesto compartido de cuatro minutos limita el inicio de consultas. Las restantes figuran como pendientes y no se presentan como verificadas.
+
+Los códigos de cliente se observan antes de aplicar cualquier equivalencia. Los informes incluyen códigos y recuentos, nunca filas de productos, cantidades, contraseñas, usuarios de credencial ni tokens. No crea inventarios, clientes, permisos, KPI o servicios. El archivo `conexiones_erp_para_compartir.json` distingue conexión verificada, stock vacío, fallo, bloqueo por revisión y falta de presupuesto. Un stock vacío verifica lectura pero no inventa códigos. Los fallos muestran únicamente la etapa y el estado HTTP si se recibió; los errores internos y respuestas de autenticación no se reflejan en el informe. PowerShell presenta el avance de cada conexión mientras espera el resultado final.
+
+Se descargan al PC **conexiones_erp_para_compartir.json** y una **revision_asociaciones_erp_para_compartir.json** corregida. El JSON de conexiones puede mostrar `ok:false` si alguna conexión no pudo comprobarse; el resto de los resultados se conserva y se descarga. Este diagnóstico no autoriza automáticamente los códigos observados ni migra existencias.
+
+Las equivalencias de grupos indicadas por el usuario se documentan en [ERP_MULTICLIENTE_Y_POSICIONES.md](ERP_MULTICLIENTE_Y_POSICIONES.md). Los clientes faltantes se reportan como pendientes de catálogo; no se sustituyen por un cliente histórico que se parezca.

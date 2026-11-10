@@ -1,6 +1,7 @@
 // Conector de lectura. Los destinos y métodos son fijos: no acepta URLs del navegador.
 import {exigirOperacion as exigir,filaStock} from '../dominio/operacion.mjs';
 import {decimal,textoDecimal} from '../dominio/analisis-wms.mjs';
+import {ErrorConteo} from '../dominio/conteo.mjs';
 const BASE={UIO:'https://ec.itsanet.com/q_apidepot',GYE:'https://ec.itsanet.com/g_apidepot'};
 export function jsonExacto(body){
  return JSON.parse(body,(_k,v,context)=>{
@@ -9,8 +10,9 @@ export function jsonExacto(body){
   return context.source;
  });
 }
-async function obtener(fetchImpl,url,headers,limite){
+async function obtener(fetchImpl,url,headers,limite,diagnostico=null){
  const response=await fetchImpl(url,{method:'GET',headers,redirect:'error',signal:AbortSignal.timeout(20000)});
+ if(diagnostico)diagnostico.http=response.status;
  exigir(response.ok,'CONEXION_INVALIDA',response.status===401?'Credencial ERP rechazada.':'El ERP no respondió correctamente.');
  const chunks=[];let size=0;
  for await(const b of response.body??[]){size+=b.length;if(size>limite){await response.body.cancel().catch(()=>{});exigir(false,'CONEXION_INVALIDA','Respuesta ERP demasiado grande.');}chunks.push(b);}
@@ -56,5 +58,38 @@ export async function consultarERP({sede,clienteId,userid,password,codigosClient
   // Nunca propagar bodies, encabezados, tokens o mensajes de URL fetch.
   if(e.name==='ErrorConteo')throw e;
   exigir(false,'CONEXION_INVALIDA','No se pudo consultar el ERP. No se guardaron existencias.');
+ }
+}
+/** Diagnóstico de lectura: solo devuelve códigos de cliente y recuentos.
+ * No aplica equivalencias de clientes, no crea stock ni exporta filas. */
+export async function inspeccionarCodigosERP({sede,userid,password},{fetchImpl=fetch}={}){
+ exigir(Object.hasOwn(BASE,sede)&&typeof userid==='string'&&userid&&typeof password==='string'&&password&&!/[\r\n\x00]/.test(userid+password),'CONEXION_INVALIDA','Configuración ERP incompleta.');
+ let etapa='AUTENTICACION';const diagnostico={http:null};
+ try{
+  const auth=jsonExacto(await obtener(fetchImpl,BASE[sede]+'/gettoken',{userid,password},65536,diagnostico));
+  const token=auth?.token??auth?.Token??auth?.Result??auth?.result;
+  exigir(typeof token==='string'&&token.length>0&&token.length<=8192,'CONEXION_INVALIDA','Autenticación ERP no verificada.');
+  etapa='LECTURA_STOCK';diagnostico.http=null;
+  const body=await obtener(fetchImpl,BASE[sede]+'/getstock',{token},24*1024*1024,diagnostico);
+  etapa='FORMATO_STOCK';
+  const data=body.trim()?jsonExacto(body):[];
+  const rows=Array.isArray(data)?data:data?.Result??data?.result??data?.data;
+  exigir(Array.isArray(rows)&&rows.length<=100000,'CONEXION_INVALIDA','Formato de stock no verificado.');
+  const codigos=new Map();let sinCodigo=0;
+  for(const r of rows){
+   exigir(r&&typeof r==='object'&&!Array.isArray(r),'CONEXION_INVALIDA','Formato de stock no verificado.');
+   const valor=r['COD. CLIENTE'];
+   exigir(valor==null||typeof valor==='string','CONEXION_INVALIDA','Código ERP no verificado.');
+   const codigo=String(valor??'').trim().toUpperCase();
+   if(!codigo){sinCodigo++;continue;}
+   exigir(codigo.length<=255&&!/[\x00-\x1f\x7f]/.test(codigo),'CONEXION_INVALIDA','Código ERP no verificado.');
+   codigos.set(codigo,(codigos.get(codigo)||0)+1);
+   exigir(codigos.size<=1000,'CONEXION_INVALIDA','Demasiados códigos ERP para este diagnóstico.');
+  }
+  return {autenticacion_verificada:true,consulta_stock_verificada:true,filas_observadas:rows.length,filas_sin_codigo:sinCodigo,codigos_observados:[...codigos].sort(([a],[b])=>a.localeCompare(b)).map(([codigo,filas])=>({codigo,filas}))};
+ }catch{
+  const error=new ErrorConteo('CONEXION_INVALIDA','Consulta de códigos ERP no verificada. No se guardaron existencias ni respuestas privadas.');
+  error.etapaERP=etapa;error.httpERP=Number.isInteger(diagnostico.http)&&diagnostico.http>=100&&diagnostico.http<=599?diagnostico.http:null;
+  throw error;
  }
 }

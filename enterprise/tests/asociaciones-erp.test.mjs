@@ -74,3 +74,34 @@ test('rutas con enlace, salida ajena o revisiones repetidas no abren MySQL',asyn
  await assert.rejects(prepararRevisionAsociaciones({...f,revisiones:[f.revision,f.revision]}));
  await assert.rejects(prepararRevisionAsociaciones({...f,revisiones:[f.revision],salida:join(f.base,'..','salida-ajena')}));assert.equal(calls,0);
 });
+test('copia UIO dentro del proyecto GYE no invalida la misma credencial confirmada por el proyecto UIO',()=>{
+ const uio=reg(fuente()),gye=reg({...fuente(),...ORIGEN_ERP_GYE});
+ assert.equal(gye.entradas[0].requiere_revision,true);const antes=JSON.stringify([uio,gye]);
+ const r=proponerAsociacionesERP({registros:[gye,uio],clientes});
+ assert.equal(r.conexiones[0].estado,'COINCIDENCIA_PENDIENTE_CONFIRMACION');assert.equal(r.resumen.avisos_ubicacion_resueltos,1);assert.equal(r.resumen.credenciales_para_revision,0);
+ assert.deepEqual(r,proponerAsociacionesERP({registros:[uio,gye],clientes}));assert.equal(JSON.stringify([uio,gye]),antes);assert.equal(JSON.stringify(r).includes(SECRET),false);
+});
+test('aviso GYE sin fuente UIO, claves distintas o legacy conflictiva no se resuelven por ubicación',()=>{
+ const gye=reg({...fuente(),...ORIGEN_ERP_GYE});
+ assert.equal(proponerAsociacionesERP({registros:[gye],clientes}).resumen.credenciales_para_revision,1);
+ const distinta=reg(fuente({CRED_API_FLUKE:JSON.stringify({user:USER,pass:'OTRA'})}));
+ const r=proponerAsociacionesERP({registros:[distinta,gye],clientes});assert.equal(r.resumen.conflictos_entre_fuentes,1);assert.equal(r.resumen.avisos_ubicacion_resueltos,0);
+ const legacy=fuente({});legacy.legacy_uio=[['FLUKE',USER,SECRET],['FLUKE',USER,'OTRA']];
+ const r2=proponerAsociacionesERP({registros:[reg(legacy),gye],clientes});assert.equal(r2.resumen.credenciales_para_revision,1);assert.equal(r2.resumen.avisos_ubicacion_resueltos,0);
+});
+test('17 copias UIO y ocho conexiones GYE producen 25 conexiones y resuelven solo 17 avisos de ubicación',()=>{
+ const props=Object.fromEntries(Array.from({length:17},(_,i)=>['CRED_API_C'+i,JSON.stringify({user:USER+i,pass:SECRET+i})]));
+ const otras=Object.fromEntries(Array.from({length:8},(_,i)=>['CREDGYE_API_G'+i,JSON.stringify({user:USER+i,pass:SECRET+i})]));
+ const uio=reg(fuente(props)),gye=reg({...fuente({...props,...otras}),...ORIGEN_ERP_GYE});
+ const r=proponerAsociacionesERP({registros:[gye,uio],clientes});assert.equal(r.resumen.conexiones,25);assert.equal(r.resumen.uio,17);assert.equal(r.resumen.gye,8);assert.equal(r.resumen.avisos_ubicacion_resueltos,17);assert.equal(r.resumen.credenciales_para_revision,0);assert.equal(r.resumen.conflictos_entre_fuentes,0);assert.equal(r.resumen.clientes_asignados,0);
+});
+test('grupos confirmados preservan subclientes, detectan altas pendientes y no inventan códigos ni parentesco de FINI',()=>{
+ const etiquetas=['ALU','ALU SWAP','ALULTE','NOKIA5G','NOKIACNT3G','NOKIACNTLTE','FOC 5G','MOD 2024'];
+ const props=Object.fromEntries(etiquetas.map(etiqueta=>['CREDGYE_API_'+etiqueta,JSON.stringify({user:USER,pass:SECRET})]));
+ const gye=reg({...fuente(props),...ORIGEN_ERP_GYE});
+ const r=proponerAsociacionesERP({registros:[gye,reg(fuente({CRED_API_FINI:JSON.stringify({user:USER,pass:SECRET})}))],clientes:[...clientes,{id:'10000000-0000-4000-8000-000000000003',nombre:'ALU'}]});
+ assert.deepEqual(r.resumen.grupos_pendientes_de_catalogo,['FOC 5G','MOD 2024','NOKIA']);assert.equal(r.resumen.conexiones_con_grupo_confirmado,8);
+ assert.equal(r.conexiones.find(c=>c.etiqueta_credencial==='ALU SWAP').grupo_confirmado_por_usuario,'ALU');assert.equal(r.conexiones.find(c=>c.etiqueta_credencial==='NOKIA5G').grupo_confirmado_por_usuario,'NOKIA');
+ assert.equal(r.conexiones.find(c=>c.etiqueta_credencial==='FOC 5G').tipo_cliente,'INDEPENDIENTE');assert.equal(r.conexiones.find(c=>c.etiqueta_credencial==='MOD 2024').tipo_cliente,'INDEPENDIENTE');
+ assert.equal(r.conexiones.find(c=>c.etiqueta_credencial==='FINI').grupo_confirmado_por_usuario,null);assert.ok(r.conexiones.every(c=>c.cliente_confirmado===null&&c.codigos_cliente_erp.length===0));
+});

@@ -1,0 +1,74 @@
+{
+  "fecha_local": "2026-11-10",
+  "zona_horaria": "America/Guayaquil",
+  "tipo": "validacion_sintetica_aislada",
+  "base_codigo": "23bb09d92529c059b795ab95bed6dcd33ea0777d",
+  "estado_reportado_por_usuario": {
+    "copias_fuente": 2,
+    "conexiones_distintas": 25,
+    "uio": 17,
+    "gye": 8,
+    "clientes_catalogados": 39,
+    "conflictos_entre_fuentes": 0,
+    "catalogo_mysql_consultado": true,
+    "erp_real_verificado": false
+  },
+  "pruebas": {
+    "node22_unitarias": {
+      "tests": 122,
+      "pass": 122,
+      "fail": 0,
+      "skip": 0
+    },
+    "python": {
+      "tests": 65,
+      "pass": 65,
+      "fail": 0
+    },
+    "red": "Fetch simulado; contenedor Node 22 sin red. No se leyeron credenciales ni se consultó el ERP corporativo.",
+    "powershell": "Revisión de código y Bash -n del script remoto; ejecución Windows/SSH del nuevo diagnóstico pendiente."
+  },
+  "reproduccion_con_etiquetas_del_informe_y_credenciales_inventadas": {
+    "conexiones": 25,
+    "avisos_ubicacion_resueltos": 17,
+    "credenciales_para_revision": 0,
+    "grupos_gye_confirmados": 8,
+    "coincidencias_nombre_uio_pendientes": 16,
+    "etiquetas_sin_equivalencia": 1,
+    "grupos_pendientes_de_catalogo": [
+      "FOC 5G",
+      "MOD 2024",
+      "NOKIA"
+    ],
+    "red_utilizada": false
+  },
+  "cobertura": [
+    "Copia UIO en GYE solo resuelve aviso de ubicación si la fuente UIO válida confirma usuario y clave idénticos",
+    "Claves discrepantes, fallback conflictivo y ausencia de fuente UIO conservan bloqueo",
+    "No altera los registros ni originales privados; fuentes y catálogo se verifican antes de red",
+    "Preserva los grupos ALU/NOKIA y clientes independientes FOC 5G/MOD 2024 sin crear registros ni autorizar códigos",
+    "GET únicamente contra endpoints fijos de la sede; TLS normal y sin redirecciones",
+    "Consultas seriales con presupuesto compartido y límites de respuesta",
+    "Informe de códigos/recuentos sin productos, cantidades, claves ni tokens",
+    "Stock vacío no inventa códigos; fallo individual no oculta otras comprobaciones",
+    "Errores muestran solo etapa y estado HTTP acotados",
+    "La descarga obtiene dos informes sin credenciales; el plan permanece en el servidor"
+  ],
+  "archivos_sha256": {
+    "enterprise/src/migracion/asociaciones-erp.mjs": "7a71f6453c8be17b7e3b40b10db6b802d395e58d23ed6561bd26a61156099376",
+    "enterprise/src/conexiones/grupos-erp.mjs": "07dd8d90f055540892a0c862519df3aebda2a8a74e0665ea8bcc5974084ecab2",
+    "enterprise/src/conexiones/itsanet.mjs": "ea18841d03239adbd628d5631243f3cd88336c985cf7ce6895da60cb84c08c89",
+    "enterprise/tools/diagnosticar-erp-lectura.mjs": "3a70dcdc547a58ff70b9893c2e1228077c158ef44b766135de5079045a6d70f5",
+    "enterprise/tools/diagnosticar-erp-servidor.ps1": "b2042f28683433c23d1b618667a553fa9dda0d3308b03b05e807e11b3f218c15",
+    "enterprise/deploy/diagnosticar_erp_lectura.sh": "5afd419342f75cb3e53016090b7917afcee85b67d887007bebca592f51b4159c"
+  },
+  "erp_real_verificado": false,
+  "credenciales_reales_leidas": false,
+  "base_datos_modificada": false,
+  "apache_modificado": false,
+  "servicios_reiniciados": false,
+  "puertos_abiertos": [],
+  "selector_erp_por_posiciones_activado": false,
+  "importacion_erp_desde_interfaz_activada": false,
+  "corte_definitivo_autorizado_por_esta_validacion": false
+}
