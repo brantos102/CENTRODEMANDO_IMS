@@ -1,18 +1,25 @@
 param(
     [Parameter(Mandatory=$true)][string]$ArchivoPrivado,
     [string]$RevisionCodigo,
+    [switch]$CompararCatalogo,
+    [string[]]$RevisionERPAdicional = @(),
     [switch]$Enviar
 )
-# Copia privada y verificación SHA. No ejecuta SQL, exportadores ni servicios.
+# Copia privada y verificación SHA. CompararCatalogo añade únicamente lectura SQL.
 $ErrorActionPreference = 'Stop'
 if (!$env:USERPROFILE) { throw 'Ejecuta este archivo en PowerShell de tu PC Windows.' }
 $ArchivoPrivado = $ArchivoPrivado.Trim().Trim('"')
 if ($Enviar -and $RevisionCodigo -notmatch '^[a-f0-9]{40}$') { throw 'Indica la revision Git aprobada con -RevisionCodigo (40 caracteres).' }
+if ($CompararCatalogo -and !$Enviar) { throw 'CompararCatalogo requiere Enviar para verificar primero la copia privada.' }
+if ($RevisionERPAdicional.Count -gt 9 -or ($RevisionERPAdicional.Count -gt 0 -and !$CompararCatalogo)) { throw 'Las revisiones adicionales requieren CompararCatalogo y admiten hasta nueve rutas.' }
+foreach ($imsRutaRevision in $RevisionERPAdicional) {
+    if ($imsRutaRevision -notmatch '^/home/enicolalde/bryan/centro_mando_ims_datos/ERP_REVISION_[a-f0-9]{32}$') { throw 'Ruta de revision ERP incompatible.' }
+}
 $imsFichero = Get-Item -LiteralPath $ArchivoPrivado
 if ($imsFichero.PSIsContainer -or $imsFichero.Extension -ine '.json' -or
     $imsFichero.Name -notlike 'NO_COMPARTIR_ERP_PRIVADO_*.json' -or
     $imsFichero.Length -gt 2097152) {
-    throw 'Selecciona el JSON privado generado por IMSExportarERPPrivado20261109; no uses ZIP ni otros archivos.'
+    throw 'Selecciona el JSON privado generado por el exportador ERP de UIO o GYE; no uses ZIP ni otros archivos.'
 }
 function Get-ImsOpenSsh([string]$Nombre) {
     $imsComando = Get-Command $Nombre -CommandType Application -ErrorAction SilentlyContinue
@@ -42,6 +49,7 @@ $imsResumen = [ordered]@{
     credenciales_publicadas = $false
     revision_codigo = $RevisionCodigo
     diagnostico_completado = $false
+    asociaciones_revisadas = $false
 }
 $imsInforme = Join-Path $imsSalida 'resumen_envio_erp_para_compartir.json'
 $imsUtf8 = [System.Text.UTF8Encoding]::new($false)
@@ -121,7 +129,51 @@ env -u NODE_OPTIONS -u NODE_PATH /usr/bin/node "$imsTrabajo/enterprise/tools/rev
     $imsResumen.diagnostico_completado = $true
     $imsResumen['diagnostico'] = $imsDiagnostico
     Save-ImsInforme
+    if ($CompararCatalogo) {
+        $imsCarpetaRevision = [string]$imsDiagnostico.archivo_para_compartir
+        if ($imsCarpetaRevision -notmatch '^(/home/enicolalde/bryan/centro_mando_ims_datos/ERP_REVISION_[a-f0-9]{32})/resumen_erp_para_compartir.json$') { throw 'Directorio del diagnostico incompatible; no se consulto el catalogo.' }
+        $imsRevisiones = @($Matches[1]) + @($RevisionERPAdicional)
+        if (@($imsRevisiones | Select-Object -Unique).Count -ne $imsRevisiones.Count) { throw 'No repitas una revision ERP.' }
+        $imsArgumentosRevision = ($imsRevisiones | ForEach-Object { "'$_'" }) -join ' '
+        $imsNombreAsociaciones = 'ERP_ASOCIACIONES_' + [guid]::NewGuid().ToString('N')
+        $imsAsociar = @'
+set -eu
+umask 077
+test "$(hostname)" = apps
+test "$(id -un)" = enicolalde
+imsBase='/home/enicolalde/bryan/centro_mando_ims_datos'
+imsTrabajo="$imsBase/preparaciones/__REVISION__/codigo"
+test "$(realpath -m "$imsTrabajo")" = "$imsTrabajo"
+test "$(git -C "$imsTrabajo" rev-parse HEAD)" = __REVISION__
+test -z "$(git -C "$imsTrabajo" status --porcelain)"
+test "$(stat -c %a "$imsBase")" = 700
+cd "$imsTrabajo/enterprise"
+for imsDir in "$imsBase/cache" "$imsBase/cache/npm-erp"; do
+  test ! -L "$imsDir"
+  if [ ! -e "$imsDir" ]; then mkdir "$imsDir"; fi
+  test -d "$imsDir"
+  test -O "$imsDir"
+  test "$(stat -c %a "$imsDir")" = 700
+done
+test ! -L node_modules
+env -u NODE_OPTIONS -u NODE_PATH npm ci --omit=dev --ignore-scripts --no-audit --no-fund --cache "$imsBase/cache/npm-erp" >/dev/null
+env -u NODE_OPTIONS -u NODE_PATH /usr/bin/node tools/revisar-asociaciones-erp.mjs --salida "$imsBase/__ASOCIACIONES__" --revisiones __REVISIONES__
+'@
+        $imsCmd = $imsAsociar.Replace('__REVISION__', $RevisionCodigo).Replace('__ASOCIACIONES__', $imsNombreAsociaciones).Replace('__REVISIONES__', $imsArgumentosRevision).Replace("`r", '')
+        $imsB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($imsCmd))
+        $imsDatos = & $imsSsh 'enicolalde@192.168.4.94' ("printf %s $imsB64 | base64 -d | env -u BASH_ENV -u ENV bash")
+        if ($LASTEXITCODE -ne 0) { throw 'Credenciales copiadas; la revision del catalogo no termino. Los servicios y los datos se conservan.' }
+        try { $imsAsociaciones = ($imsDatos -join [Environment]::NewLine) | ConvertFrom-Json } catch { throw 'Respuesta de asociaciones incompatible.' }
+        if ($imsAsociaciones.ok -ne $true -or $imsAsociaciones.base_de_datos_modificada -ne $false -or $imsAsociaciones.clientes_asignados -ne 0) { throw 'La revision de asociaciones no se confirmo.' }
+        $imsInformeRevision = '/home/enicolalde/bryan/centro_mando_ims_datos/' + $imsNombreAsociaciones + '/revision_asociaciones_erp_para_compartir.json'
+        if ($imsAsociaciones.archivo_para_compartir -ne $imsInformeRevision) { throw 'Ruta del informe incompatible.' }
+        & $imsScp ('enicolalde@192.168.4.94:' + $imsInformeRevision) (Join-Path $imsSalida 'revision_asociaciones_erp_para_compartir.json')
+        if ($LASTEXITCODE -ne 0) { throw 'Revision terminada en el servidor; no se pudo descargar el informe sin claves.' }
+        $imsResumen.asociaciones_revisadas = $true
+        $imsResumen['asociaciones'] = $imsAsociaciones
+        Save-ImsInforme
+    }
 }
 $imsResumen | ConvertTo-Json -Depth 5
-Write-Output 'Comparte solo resumen_envio_erp_para_compartir.json. Nunca adjuntes el JSON de credenciales.'
+Write-Output 'Comparte resumen_envio_erp_para_compartir.json y, si se genero, revision_asociaciones_erp_para_compartir.json. Nunca adjuntes el JSON de credenciales.'
 Invoke-Item -LiteralPath $imsSalida

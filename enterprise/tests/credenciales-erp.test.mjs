@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
-import {prepararCredencialesERP,ORIGEN_ERP} from '../src/migracion/credenciales-erp.mjs';
+import {prepararCredencialesERP,ORIGEN_ERP,ORIGEN_ERP_GYE} from '../src/migracion/credenciales-erp.mjs';
 const secreta='NO_PUBLICAR_CLAVE_SINTETICA';
 function fuente(){return {formato:'ims-erp-origen-v1',...ORIGEN_ERP,creado_en:'2026-11-09T20:00:00Z',propiedades:{CRED_API_CLIENTE:JSON.stringify({user:' usuario ',pass:' '+secreta+' '})},legacy_uio:[]};}
 const source=await readFile(new URL('../tools/EXPORTAR_ERP_PRIVADO.gs.txt',import.meta.url),'utf8');
@@ -77,4 +77,30 @@ test('permisos abiertos, enlaces y rutas fuera de la carpeta se rechazan antes d
 test('JSON malformado que contiene una clave nunca aparece en el error de revisión', {skip:process.platform!=='linux'},async t=>{
  const f=await archivos(t);await writeFile(f.archivo,'{ "clave":"'+secreta+'",',{mode:0o600});
  await assert.rejects(revisarCopia(f.archivo,f.salida,{base:f.base}),e=>!e.message.includes(secreta));
+});
+
+test('proyecto GYE autorizado conserva sede explícita y no admite maestro ni fallback de Quito',()=>{
+ const f={...fuente(),...ORIGEN_ERP_GYE,propiedades:{CREDGYE_API_CLIENTE:JSON.stringify({user:'GYE',pass:secreta})}};
+ const r=prepararCredencialesERP(f);assert.equal(r.resumen.gye,1);assert.equal(r.resumen.uio,0);assert.equal(r.registro.origen.proyecto,ORIGEN_ERP_GYE.proyecto);assert.equal(r.registro.entradas[0].requiere_revision,false);
+ for(const patch of [{maestro:ORIGEN_ERP.maestro},{legacy_uio:[['CLIENTE','USER',secreta]]}])assert.throws(()=>prepararCredencialesERP({...f,...patch}));
+ f.propiedades.CRED_API_OTRO=JSON.stringify({user:'UIO',pass:secreta});
+ const r2=prepararCredencialesERP(f);assert.equal(r2.registro.entradas.find(e=>e.sede==='UIO').requiere_revision,true);assert.equal(r2.registro.entradas.find(e=>e.sede==='GYE').requiere_revision,false);
+});
+const sourceGYE=await readFile(new URL('../tools/EXPORTAR_ERP_GYE_PRIVADO.gs.txt',import.meta.url),'utf8');
+function simularGYE({proyecto=ORIGEN_ERP_GYE.proyecto,email='brantos102@gmail.com',privado=true,propiedades={CREDGYE_API_CLIENTE:JSON.stringify({user:'GYE',pass:secreta})}}={}){
+ const logs=[],events=[],files=[];let leidas=0;
+ const resource=()=>{
+  const r={setSharing(){return r;},getSharingAccess:()=>privado?'PRIVATE':'DOMAIN',getEditors:()=>[],getViewers:()=>[],getUrl:()=> 'https://drive.google.com/privado',setContent(s){events.push('contenido');r.content=s;},createFile(n,s){assert.equal(s,'{}');const f=resource();files.push(f);return f;}};return r;
+ };
+ const ctx=vm.createContext({ScriptApp:{getScriptId:()=>proyecto},Session:{getActiveUser:()=>({getEmail:()=>email}),getEffectiveUser:()=>({getEmail:()=>email})},PropertiesService:{getScriptProperties:()=>({getProperties:()=>{leidas++;return {...propiedades,ITSANET_TOKEN_GYE_CLIENTE:secreta};}})},Utilities:{newBlob:s=>({getBytes:()=>Buffer.from(s)})},MimeType:{PLAIN_TEXT:'text/plain'},DriveApp:{Access:{PRIVATE:'PRIVATE'},Permission:{VIEW:'VIEW'},createFolder:()=>{events.push('carpeta');return resource();}},Logger:{log:s=>logs.push(s)}});
+ vm.runInContext(sourceGYE,ctx);return {run:()=>ctx.IMSExportarERPGYEPrivado20261110(),logs,events,files,leidas:()=>leidas};
+}
+test('exportador GYE solo lee propiedades del proyecto indicado y no abre hojas de Quito ni exporta tokens',()=>{
+ const s=simularGYE();assert.equal(s.run().ok,true);assert.equal(s.logs.join('').includes(secreta),false);
+ const out=JSON.parse(s.files[0].content);assert.deepEqual(Object.keys(out.propiedades),['CREDGYE_API_CLIENTE']);assert.equal(out.maestro,null);assert.deepEqual(out.legacy_uio,[]);assert.equal(prepararCredencialesERP(out).resumen.gye,1);
+});
+test('GYE bloquea proyecto/cuenta ajenos, propiedades vacías y privacidad no verificada',()=>{
+ for(const opts of [{proyecto:ORIGEN_ERP.proyecto},{email:'otro@prueba.invalid'}]){const s=simularGYE(opts);assert.throws(s.run);assert.equal(s.leidas(),0);assert.deepEqual(s.events,[]);}
+ const vacio=simularGYE({propiedades:{}});assert.throws(vacio.run);assert.deepEqual(vacio.events,[]);
+ const abierto=simularGYE({privado:false});assert.throws(abierto.run);assert.equal(abierto.events.includes('contenido'),false);assert.equal(abierto.logs.length,0);
 });

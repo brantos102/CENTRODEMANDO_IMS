@@ -36,4 +36,34 @@ La revisión conserva la precedencia del getter actual: propiedad válida primer
 
 Las etiquetas de credenciales se conservan separadas del cliente MySQL. Los nombres del panel mantienen su autoridad y las asociaciones con cliente/sede/códigos ERP deben confirmarse antes de usar estas credenciales. Un ok del diagnóstico indica que se pudo leer y clasificar la copia, no que el ERP ya esté conectado. GYE=0 describe este proyecto; no descarta que exista otra configuración en la copia de desarrollo.
 
-La secuencia de transferencia PowerShell fue revisada y sus scripts remotos se validaron con Bash; la ejecución real de Windows/SSH y el acceso de Drive siguen pendientes. Esta fase no hace peticiones gettoken/getstock ni modifica las conexiones de producción.
+El usuario confirmó la ejecución de la primera transferencia: 17 credenciales UIO, cero GYE y ninguna incidencia; copia remota verificada. Esto valida el traslado informado, todavía no el acceso gettoken/getstock. Ninguna credencial real ha sido compartida con el entorno de revisión de código.
+
+## Proyecto independiente de Guayaquil
+
+El proyecto GYE confirmado por el usuario es `1qF3PYXIJb8liPB2lGpbltE6CD4r4dmV57O0G1-FGt3WgjbNq3zyGJ27e`. Abrir ese proyecto, añadir un archivo nuevo y pegar [EXPORTAR_ERP_GYE_PRIVADO.gs.txt](tools/EXPORTAR_ERP_GYE_PRIVADO.gs.txt). Guardar y ejecutar **IMSExportarERPGYEPrivado20261110**, sin desplegar ni sustituir código existente. Descargar el JSON del enlace privado mostrado en el registro.
+
+Este exportador lee únicamente las propiedades de ese proyecto. No abre el maestro de Quito, no presume el ID de una planilla de Guayaquil y no aplica el fallback legacy UIO. Si el proyecto no contiene propiedades ERP se detiene antes de crear archivos; no equivale a que Guayaquil no tenga una conexión en otro almacenamiento. El prefijo CREDGYE_API_ identifica GYE; una propiedad CRED_API_ encontrada en ese proyecto se conserva con su prefijo original y queda para revisión, sin convertirla a GYE automáticamente.
+
+## Comparar con los clientes MySQL, sin asignar ni conectar al ERP
+
+La transferencia admite `-CompararCatalogo` y `-RevisionERPAdicional` para reunir la nueva copia con una revisión anterior en el servidor. Desde PowerShell del PC:
+
+```powershell
+& '.\enterprise\tools\enviar-erp-privado.ps1' `
+  -ArchivoPrivado (Read-Host 'Ruta completa del JSON privado de GYE') `
+  -RevisionCodigo 'REVISION_APROBADA_DE_40_CARACTERES' `
+  -CompararCatalogo `
+  -RevisionERPAdicional '/home/enicolalde/bryan/centro_mando_ims_datos/ERP_REVISION_ID_DE_LA_COPIA_UIO' `
+  -Enviar
+```
+
+Esta opción instala exclusivamente las dependencias de producción del worktree de preparación, con npm ci, lockfile y scripts desactivados, usando una caché privada propia. Nunca reinstala dependencias de la versión que está atendiendo solicitudes. Lee el perfil operativo privado existente; no lo ejecuta como código ni usa root. Verifica la identidad de la base y la cuenta SQL antes de consultar únicamente id/nombre de ims_op_cliente dentro de una transacción de solo lectura que termina en rollback. No crea tablas, usuarios, permisos, asociaciones ni inventarios. No reinicia servicios ni cambia Apache o puertos.
+
+La revisión vuelve a verificar original, huella privada y registro preparado antes de abrir MySQL. Si alguien alteró la copia o el registro, se detiene. Las fuentes se mantienen separadas por sede y etiqueta; dos fuentes con contraseñas distintas para la misma conexión quedan como conflicto. Una coincidencia de nombre exacto normalizado solo es una propuesta pendiente de confirmación. No elimina signos ni acentos, no resuelve alias por prefijo y nunca inventa códigos COD. CLIENTE a partir de la etiqueta. Los nombres existentes del catálogo del panel se conservan.
+
+Se descargan a una nueva carpeta privada de Windows:
+
+- **resumen_envio_erp_para_compartir.json**: resultado de traslado y totales de revisión.
+- **revision_asociaciones_erp_para_compartir.json**: nombres del catálogo, etiquetas de credenciales, IDs y propuestas por confirmar. No contiene usuarios ERP, contraseñas, tokens ni huellas del archivo secreto. Este es el informe necesario para revisar equivalencias de clientes.
+
+**asociaciones_erp_NO_COMPARTIR.json** permanece en el servidor: contiene las referencias e integridad de las fuentes privadas. No compartirlo. La revisión no prueba autenticación real ni habilita importación de stock; esas dos acciones requieren las asociaciones y los códigos ERP confirmados.

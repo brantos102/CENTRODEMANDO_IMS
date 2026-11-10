@@ -1,0 +1,42 @@
+// Archivo NUEVO en el proyecto GYE indicado. Guardar y ejecutar; no desplegar.
+function IMSExportarERPGYEPrivado20261110() {
+  var etapa = 'PROYECTO';
+  try {
+    var proyecto = '1qF3PYXIJb8liPB2lGpbltE6CD4r4dmV57O0G1-FGt3WgjbNq3zyGJ27e';
+    if (ScriptApp.getScriptId() !== proyecto) throw new Error('PROYECTO');
+    etapa = 'CUENTA';
+    var activo = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+    var efectivo = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+    if (!activo || activo !== efectivo ||
+        ['brantos102@gmail.com', 'bespinoza@itsanet.com'].indexOf(activo) < 0) throw new Error('CUENTA');
+    etapa = 'LECTURA';
+    var props = PropertiesService.getScriptProperties().getProperties(), cred = {};
+    Object.keys(props).forEach(function(k) {
+      if (/^(CRED_API_|CREDGYE_API_)/.test(k)) cred[k] = props[k];
+    });
+    var n = Object.keys(cred).length;
+    if (!n) throw new Error('VACIO');
+    var payload = { formato: 'ims-erp-origen-v1', proyecto: proyecto, maestro: null,
+      creado_en: new Date().toISOString(), propiedades: cred, legacy_uio: [] };
+    var texto = JSON.stringify(payload);
+    if (Utilities.newBlob(texto).getBytes().length > 2097152) throw new Error('TAMANO');
+    var nombre = 'NO_COMPARTIR_ERP_PRIVADO_GYE_' + new Date().getTime();
+    etapa = 'DRIVE_PRIVADO';
+    var carpeta = DriveApp.createFolder(nombre);
+    carpeta.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW);
+    var archivo = carpeta.createFile(nombre + '.json', '{}', MimeType.PLAIN_TEXT);
+    archivo.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW);
+    [carpeta, archivo].forEach(function(x) {
+      if (x.getSharingAccess() !== DriveApp.Access.PRIVATE ||
+          x.getEditors().length || x.getViewers().length) throw new Error('PRIVACIDAD');
+    });
+    archivo.setContent(texto);
+    var resumen = { ok: true, propiedades_erp: n, filas_legacy: 0,
+      fuentes_modificadas: false, claves_en_registro: false, archivo_privado: true };
+    Logger.log(JSON.stringify(resumen));
+    Logger.log('ABRIR SOLO EN TU CUENTA; NO ADJUNTAR AL CHAT: ' + archivo.getUrl());
+    return resumen;
+  } catch (e) {
+    throw new Error('Exportación GYE detenida (' + etapa + '). Revisa proyecto, cuenta y permisos. No compartas claves ni propiedades.');
+  }
+}

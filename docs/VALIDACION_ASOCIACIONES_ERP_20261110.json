@@ -1,0 +1,57 @@
+{
+  "fecha_local": "2026-11-10",
+  "zona_horaria": "America/Guayaquil",
+  "tipo": "validacion_sintetica_aislada",
+  "base_codigo": "6813febc10002d680390765d61f2452c85d9edea",
+  "estado_reportado_por_usuario": {
+    "copia_uio_verificada": true,
+    "credenciales_uio": 17,
+    "credenciales_gye_en_copia_uio": 0,
+    "incidencias": 0,
+    "erp_real_verificado": false
+  },
+  "pruebas": {
+    "node22_unitarias": {
+      "tests": 109,
+      "pass": 109,
+      "fail": 0,
+      "skip": 0
+    },
+    "python": {
+      "tests": 63,
+      "pass": 63,
+      "fail": 0
+    },
+    "google_apps_script": "Simulación de ambos proyectos, cuentas autorizadas, privacidad antes de escribir, exclusión de tokens y ausencia de lectura del maestro UIO desde el exportador GYE.",
+    "powershell": "Revisión de código y Bash -n de los cuatro scripts remotos. La nueva opción CompararCatalogo aún requiere ejecución real Windows/SSH.",
+    "mysql": "Identidad y transacción de solo lectura comprobadas con adaptador de prueba. Nueva consulta real al catálogo corporativo pendiente."
+  },
+  "cobertura": [
+    "GYE solo acepta el ID de proyecto suministrado por el usuario; no inventa un maestro de Sheets",
+    "No clasifica como GYE las propiedades con prefijo de Quito halladas en ese proyecto",
+    "La asociación requiere originales y registros privados intactos antes de abrir MySQL",
+    "Nombres iguales solo proponen confirmación; no se asignan clientes ni códigos ERP",
+    "Preserva los nombres del catálogo y no resuelve alias por prefijos",
+    "Nombres ambiguos y claves discrepantes entre fuentes quedan en revisión",
+    "UIO/GYE permanecen separados y fuentes repetidas no duplican conexiones",
+    "Los informes compartibles excluyen usuarios ERP, claves, tokens y huellas de archivos de credenciales",
+    "La consulta valida base y usuario y termina con rollback de una transacción de solo lectura",
+    "La transferencia opcional instala dependencias únicamente en un worktree privado y descarga exclusivamente el informe sin claves"
+  ],
+  "archivos_sha256": {
+    "enterprise/tools/EXPORTAR_ERP_GYE_PRIVADO.gs.txt": "d9e1f0e26b44d3fb2f0aff8310fc35d242620c47f4687ed5aa2cedabd2b2c9a2",
+    "enterprise/tools/enviar-erp-privado.ps1": "a78d368b82e28c3bb3a13eb30187dbab1314393b7f0acb1cc1d9b1bd40d493ab",
+    "enterprise/tools/revisar-asociaciones-erp.mjs": "b55bd261c77e8ba234ae5de47ff83d51afaf9fd229702caa585e487d23b2739f",
+    "enterprise/src/migracion/asociaciones-erp.mjs": "7b6e8cd7f885fb0ef1608366e1c9a526ad3db92bcb92d2f9b214a6b3a4d4fe75",
+    "enterprise/src/migracion/archivos-erp-privados.mjs": "34f7f4e0a3e3878fd73bef9d15998b0d0b180e5b5ebfa3f09fb399cc3bf7b7f0",
+    "enterprise/src/migracion/credenciales-erp.mjs": "dc002df84c2bc35a5e879a9c4c2ce37dc3964d865af6b31658bcaf545cbb8963"
+  },
+  "credenciales_reales_leidas": false,
+  "erp_real_verificado": false,
+  "base_datos_modificada": false,
+  "servidor_corporativo_modificado_desde_validacion": false,
+  "apache_modificado": false,
+  "servicios_reiniciados": false,
+  "puertos_abiertos": [],
+  "corte_definitivo_autorizado_por_esta_validacion": false
+}
