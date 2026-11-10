@@ -8,9 +8,10 @@ import {registroVerificado} from './revisar-asociaciones-erp.mjs';
 import {BASE_ERP_PRIVADA,rutaERPPrivada,leerERPPrivado,jsonERPPrivado} from '../src/migracion/archivos-erp-privados.mjs';
 import {proponerAsociacionesERP,conciliarCredencialesERP} from '../src/migracion/asociaciones-erp.mjs';
 import {inspeccionarCodigosERP,soportaJSONExacto} from '../src/conexiones/itsanet.mjs';
+import {validarInformeLecturaERP,prepararRegistroCuentasERP} from '../src/migracion/cuentas-erp.mjs';
 const sha=v=>createHash('sha256').update(v).digest('hex');
 const exigir=v=>{if(!v)throw Error('Plan ERP privado incompatible. No se importaron datos.');};
-export async function diagnosticarLecturaERP({plan,salida,base=BASE_ERP_PRIVADA,fetchImpl=fetch,ahora=Date.now,presupuestoMs=240000,progreso=()=>{}}){
+export async function diagnosticarLecturaERP({plan,salida,diagnosticoAnterior=null,base=BASE_ERP_PRIVADA,fetchImpl=fetch,ahora=Date.now,presupuestoMs=240000,progreso=()=>{}}){
  base=resolve(base);await rutaERPPrivada(base,{base,directorio:true});
  exigir(Number.isInteger(presupuestoMs)&&presupuestoMs>0&&presupuestoMs<=240000);
  const original=jsonERPPrivado(await leerERPPrivado(plan,{base}));
@@ -24,7 +25,11 @@ export async function diagnosticarLecturaERP({plan,salida,base=BASE_ERP_PRIVADA,
  }
  const asociaciones=proponerAsociacionesERP({registros,clientes:original.revision.catalogo_clientes});
  const prioridad=c=>c.entrada.sede==='UIO'&&c.entrada.cliente_configurado==='BELIA'?0:c.entrada.sede==='GYE'&&c.entrada.cliente_configurado==='ALU'?1:2;
- const conexiones=conciliarCredencialesERP(registros).sort((a,b)=>prioridad(a)-prioridad(b));exigir(conexiones.length>0&&conexiones.length<=64);
+ const disponibles=conciliarCredencialesERP(registros).sort((a,b)=>prioridad(a)-prioridad(b));exigir(disponibles.length>0&&disponibles.length<=64);
+ let anteriores=null;
+ if(diagnosticoAnterior)anteriores=validarInformeLecturaERP(jsonERPPrivado(await leerERPPrivado(diagnosticoAnterior,{base})),disponibles);
+ const conexiones=anteriores?disponibles.filter(c=>{const r=anteriores.get(c.entrada.referencia);return r.estado==='VERIFICADA'&&r.previsualizacion?.totales_calculados===false;}):disponibles;
+ exigir(conexiones.length>0);
  salida=resolve(salida);exigir(salida.startsWith(base+'/'));await rutaERPPrivada(dirname(salida),{base,directorio:true});
  // Nunca sobrescribir un diagnóstico anterior, ni siquiera si no hubo conexión.
  await mkdir(salida,{mode:0o700});
@@ -57,6 +62,8 @@ export async function diagnosticarLecturaERP({plan,salida,base=BASE_ERP_PRIVADA,
  const verificadas=resultados.filter(r=>r.estado==='VERIFICADA'||r.estado==='VERIFICADA_SIN_STOCK').length;
  const resumen={ok:verificadas===conexiones.length,diagnostico_terminado:!resultados.some(r=>r.estado==='PENDIENTE_PRESUPUESTO'),
   conexiones:conexiones.length,conexiones_verificadas:verificadas,sin_stock:resultados.filter(r=>r.estado==='VERIFICADA_SIN_STOCK').length,
+  alcance:anteriores?'SOLO_PREVISUALIZACIONES_PENDIENTES':'TODAS_LAS_CONEXIONES',conexiones_fuera_de_esta_revision:disponibles.length-conexiones.length,
+  conexiones_con_totales_pendientes:resultados.filter(r=>r.estado==='VERIFICADA'&&r.previsualizacion?.totales_calculados===false).length,
   no_verificadas:resultados.filter(r=>r.estado==='NO_VERIFICADA').length,bloqueadas:resultados.filter(r=>r.estado==='BLOQUEADA_POR_REVISION').length,
   pendientes_por_presupuesto:resultados.filter(r=>r.estado==='PENDIENTE_PRESUPUESTO').length,
   avisos_ubicacion_resueltos:asociaciones.resumen.avisos_ubicacion_resueltos,clientes_asignados:0,codigos_erp_confirmados:0,
@@ -66,13 +73,18 @@ export async function diagnosticarLecturaERP({plan,salida,base=BASE_ERP_PRIVADA,
   motor:{node:process.versions.node,json_numeros_exactos:soportaJSONExacto()},
   archivo_para_compartir:join(salida,'conexiones_erp_para_compartir.json')};
  const report={formato:'ims-erp-diagnostico-lectura-v1',resumen,conexiones:resultados};
+ const evidencia=anteriores?new Map(anteriores):new Map();for(const r of resultados)evidencia.set(r.referencia,r);
+ const cuentas=prepararRegistroCuentasERP({registros,clientes:original.revision.catalogo_clientes,informe:{formato:'ims-erp-diagnostico-lectura-v1',conexiones:[...evidencia.values()]}});
+ await writeFile(join(salida,'registro_erp_runtime_NO_COMPARTIR.json'),JSON.stringify(cuentas.privado)+'\n',{mode:0o600,flag:'wx'});
+ await writeFile(join(salida,'cuentas_erp_para_compartir.json'),JSON.stringify(cuentas.reporte,null,2)+'\n',{mode:0o600,flag:'wx'});
+ resumen.registro_preparado={...cuentas.reporte.resumen};
  await writeFile(resumen.archivo_para_compartir,JSON.stringify(report,null,2)+'\n',{mode:0o600,flag:'wx'});
  return resumen;
 }
 async function main(){
  const a=process.argv.slice(2);
- exigir(process.platform==='linux'&&a.length===5&&a[0]==='--verificar-lectura-erp'&&a[1]==='--plan'&&a[3]==='--salida');
- const resumen=await diagnosticarLecturaERP({plan:a[2],salida:a[4],progreso:p=>console.log(JSON.stringify({tipo:'progreso_erp',...p}))});
+ exigir(process.platform==='linux'&&[5,7].includes(a.length)&&a[0]==='--verificar-lectura-erp'&&a[1]==='--plan'&&a[3]==='--salida'&&(a.length===5||a[5]==='--datos-pendientes-de'));
+ const resumen=await diagnosticarLecturaERP({plan:a[2],salida:a[4],diagnosticoAnterior:a[6]??null,progreso:p=>console.log(JSON.stringify({tipo:'progreso_erp',...p}))});
  console.log(JSON.stringify({tipo:'resultado_erp',resumen}));
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(()=>{console.error('Diagnóstico ERP detenido. Conserva el plan y las copias privadas; no compartas claves ni errores internos. No se importaron existencias.');process.exitCode=1;});

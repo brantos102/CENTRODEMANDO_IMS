@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$RevisionCodigo,
     [Parameter(Mandatory=$true)][string]$PlanPrivado,
+    [string]$InformeAnterior,
     [switch]$VerificarLectura
 )
 # Windows: solicita el diagnóstico GET en el servidor y descarga solo informes sin claves.
@@ -9,6 +10,7 @@ if (!$env:USERPROFILE) { throw 'Ejecuta en PowerShell del PC Windows.' }
 if (!$VerificarLectura) { throw 'Indica VerificarLectura para consultar autenticacion y stock ERP.' }
 if ($RevisionCodigo -notmatch '^[a-f0-9]{40}$') { throw 'Revision de codigo incompatible.' }
 if ($PlanPrivado -notmatch '^/home/enicolalde/bryan/centro_mando_ims_datos/ERP_ASOCIACIONES_[a-f0-9]{32}/asociaciones_erp_NO_COMPARTIR\.json$') { throw 'Ruta del plan privado incompatible.' }
+if ($InformeAnterior -and $InformeAnterior -notmatch '^/home/enicolalde/bryan/centro_mando_ims_datos/ERP_LECTURA_[a-f0-9]{32}/conexiones_erp_para_compartir\.json$') { throw 'Ruta del informe anterior incompatible.' }
 function Get-ImsOpenSsh([string]$Nombre) {
     $imsComando = Get-Command $Nombre -CommandType Application -ErrorAction SilentlyContinue
     if (!$imsComando -and $env:WINDIR) {
@@ -36,9 +38,11 @@ if [ ! -e "$imsTrabajo" ]; then
 fi
 test "$(git -C "$imsTrabajo" rev-parse HEAD)" = __REVISION__
 test -z "$(git -C "$imsTrabajo" status --porcelain)"
-bash "$imsTrabajo/enterprise/deploy/diagnosticar_erp_lectura.sh" '__PLAN__'
+bash "$imsTrabajo/enterprise/deploy/diagnosticar_erp_lectura.sh" '__PLAN__' __PENDIENTES__
 '@
-$imsCmd = $imsScript.Replace('__REVISION__', $RevisionCodigo).Replace('__PLAN__', $PlanPrivado).Replace("`r", '')
+$imsPendientes = ''
+if ($InformeAnterior) { $imsPendientes = "'--datos-pendientes-de' '$InformeAnterior'" }
+$imsCmd = $imsScript.Replace('__REVISION__', $RevisionCodigo).Replace('__PLAN__', $PlanPrivado).Replace('__PENDIENTES__', $imsPendientes).Replace("`r", '')
 $imsB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($imsCmd))
 $imsResumen = $null
 & $imsSsh 'enicolalde@192.168.4.94' ("printf %s $imsB64 | base64 -d | env -u BASH_ENV -u ENV bash") | ForEach-Object {
@@ -77,10 +81,10 @@ $imsDirectorioRemoto = $Matches[1]
 $imsSalida = Join-Path (Join-Path $env:USERPROFILE 'IMS_DATOS_PRIVADOS') ('CONEXIONES_ERP_' + [guid]::NewGuid().ToString('N'))
 if (Test-Path -LiteralPath $imsSalida) { throw 'La carpeta local ya existe; no se sobrescribe.' }
 $null = New-Item -ItemType Directory -Path $imsSalida
-foreach ($imsInforme in @('conexiones_erp_para_compartir.json', 'revision_asociaciones_erp_para_compartir.json')) {
+foreach ($imsInforme in @('conexiones_erp_para_compartir.json', 'revision_asociaciones_erp_para_compartir.json', 'cuentas_erp_para_compartir.json')) {
     & $imsScp ('enicolalde@192.168.4.94:' + $imsDirectorioRemoto + '/' + $imsInforme) (Join-Path $imsSalida $imsInforme)
     if ($LASTEXITCODE -ne 0) { throw 'El diagnostico quedo en el servidor, pero la descarga del informe no termino.' }
 }
 $imsResumen | ConvertTo-Json -Depth 6
-Write-Output 'Comparte conexiones_erp_para_compartir.json y revision_asociaciones_erp_para_compartir.json. No adjuntes planes ni credenciales.'
+Write-Output 'Comparte conexiones_erp_para_compartir.json, cuentas_erp_para_compartir.json y revision_asociaciones_erp_para_compartir.json. El registro runtime NO_COMPARTIR permanece privado en el servidor, sin activarse.'
 Invoke-Item -LiteralPath $imsSalida

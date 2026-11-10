@@ -32,7 +32,8 @@ test('diagnóstico devuelve códigos exactos y recuentos, sin filtrar por etique
  const llamadas=[],f=async(url,opts)=>{llamadas.push({url,...opts});return new Response(url.endsWith('gettoken')?'{"token":"TOKEN_SINTETICO"}':'{"Result":[{"COD. CLIENTE":" NOKIACNT ","COD. PRODUCTO":"SKU_PRIVADO","CANTIDAD":100},{"COD. CLIENTE":"nokiacnt"},{"COD. CLIENTE":"0007"},{"COD. CLIENTE":9007199254740993},{}]}');};
  const r=await inspeccionarCodigosERP({sede:'GYE',userid:'USER_SINTETICO',password:'CLAVE_SINTETICA'},{fetchImpl:f});
  assert.equal(r.filas_observadas,5);assert.equal(r.filas_sin_codigo,1);assert.deepEqual(r.codigos_observados,[{codigo:'0007',filas:1},{codigo:'9007199254740993',filas:1},{codigo:'NOKIACNT',filas:2}]);
- for(const valor of ['TOKEN_SINTETICO','USER_SINTETICO','CLAVE_SINTETICA','SKU_PRIVADO','CANTIDAD'])assert.equal(JSON.stringify(r).includes(valor),false);
+ for(const valor of ['TOKEN_SINTETICO','USER_SINTETICO','CLAVE_SINTETICA','SKU_PRIVADO'])assert.equal(JSON.stringify(r).includes(valor),false);
+ assert.equal(JSON.stringify(r).includes('"CANTIDAD":'),false); // El nombre del campo sí puede identificar una incidencia.
  assert.deepEqual(llamadas.map(c=>c.url),['https://ec.itsanet.com/g_apidepot/gettoken','https://ec.itsanet.com/g_apidepot/getstock']);assert.ok(llamadas.every(c=>c.method==='GET'&&c.redirect==='error'));
 });
 test('stock vacío verifica consulta sin inventar códigos; token vacío, redirecciones y formatos inválidos fallan sin reflejar cuerpos',async()=>{

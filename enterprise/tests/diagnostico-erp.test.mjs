@@ -55,3 +55,18 @@ test('informe conserva diagnóstico de formato y versión del motor sin afirmar 
  const report=JSON.parse(await readFile(r.archivo_para_compartir,'utf8'));assert.equal(report.conexiones[0].http,200);assert.equal(report.conexiones[0].diagnostico_autenticacion.json_valido,false);assert.equal(report.conexiones[0].tipo_contenido,'HTML');assert.equal(JSON.stringify(report).includes(SECRET),false);
  assert.equal(logs[0].formato_autenticacion.tipo_contenido,'HTML');assert.equal(JSON.stringify(logs).includes(SECRET),false);
 });
+test('revisión dirigida consulta solo la previsualización pendiente y prepara registro completo sin activar ni publicar claves',async t=>{
+ const f=await fixture(t);
+ const primero=await diagnosticarLecturaERP({...f,fetchImpl:async url=>new Response(url.endsWith('gettoken')?JSON.stringify({token:TOKEN}):JSON.stringify([{'COD. CLIENTE':url.includes('/q_apidepot/')?'FLUKE':'ALU','COD. PRODUCTO':'SKU_PRIVADO',CANTIDAD:'1',DESCRIPCION:url.includes('/q_apidepot/')?'D'.repeat(4001):'correcta'}]))});
+ const llamadas=[];
+ const r=await diagnosticarLecturaERP({...f,salida:join(f.base,'segunda'),diagnosticoAnterior:primero.archivo_para_compartir,fetchImpl:async url=>{llamadas.push(url);assert.ok(url.includes('/q_apidepot/'));return new Response(url.endsWith('gettoken')?JSON.stringify({token:TOKEN}):JSON.stringify([{'COD. CLIENTE':'FLUKE','COD. PRODUCTO':'SKU_PRIVADO',CANTIDAD:'1e3'}]));}});
+ assert.equal(llamadas.length,2);assert.equal(r.conexiones,1);assert.equal(r.conexiones_fuera_de_esta_revision,1);assert.equal(r.conexiones_con_totales_pendientes,0);assert.equal(r.alcance,'SOLO_PREVISUALIZACIONES_PENDIENTES');assert.equal(r.registro_preparado.conexiones_preparadas,2);assert.equal(r.registro_preparado.configuracion_activa,false);
+ const privado=join(f.base,'segunda','registro_erp_runtime_NO_COMPARTIR.json');assert.ok((await readFile(privado,'utf8')).includes(SECRET));assert.equal((await stat(privado)).mode&0o777,0o600);
+ const publico=await readFile(join(f.base,'segunda','cuentas_erp_para_compartir.json'),'utf8');assert.equal(publico.includes(SECRET),false);assert.equal(publico.includes(USER),false);
+});
+test('informe anterior incompatible detiene antes de consultar ERP o crear otra carpeta',async t=>{
+ const f=await fixture(t);
+ const primero=await diagnosticarLecturaERP({...f,fetchImpl:async url=>new Response(url.endsWith('gettoken')?JSON.stringify({token:TOKEN}):'[]')});
+ const informe=JSON.parse(await readFile(primero.archivo_para_compartir,'utf8'));informe.conexiones[0].referencia='0'.repeat(24);await writeFile(primero.archivo_para_compartir,JSON.stringify(informe));
+ let calls=0;await assert.rejects(diagnosticarLecturaERP({...f,salida:join(f.base,'segunda'),diagnosticoAnterior:primero.archivo_para_compartir,fetchImpl:async()=>{calls++;throw Error('NO_LLEGAR');}}));assert.equal(calls,0);
+});

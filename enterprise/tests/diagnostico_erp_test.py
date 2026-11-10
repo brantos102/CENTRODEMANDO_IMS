@@ -10,7 +10,7 @@ class DiagnosticoERPTests(unittest.TestCase):
         text = (ROOT/'tools/diagnosticar-erp-servidor.ps1').read_text()
         scripts = re.findall(r"@'\n(.*?)\n'@", text, re.S)
         self.assertEqual(len(scripts), 1)
-        script = scripts[0].replace('__REVISION__', 'a'*40).replace('__PLAN__', '/home/enicolalde/bryan/centro_mando_ims_datos/ERP_ASOCIACIONES_'+'b'*32+'/asociaciones_erp_NO_COMPARTIR.json')
+        script = scripts[0].replace('__REVISION__', 'a'*40).replace('__PLAN__', '/home/enicolalde/bryan/centro_mando_ims_datos/ERP_ASOCIACIONES_'+'b'*32+'/asociaciones_erp_NO_COMPARTIR.json').replace('__PENDIENTES__', "'--datos-pendientes-de' '/home/enicolalde/bryan/centro_mando_ims_datos/ERP_LECTURA_"+'c'*32+"/conexiones_erp_para_compartir.json'")
         run = subprocess.run(['bash', '-n'], input=script, text=True, capture_output=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         for word in ['sudo ', 'systemctl ', 'apache2ctl ', 'npm ', 'mysql ', 'git checkout', 'git pull', 'rm -', 'StrictHostKeyChecking=no']:

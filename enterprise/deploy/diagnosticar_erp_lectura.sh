@@ -4,7 +4,7 @@ set -euo pipefail
 umask 077
 test "$(hostname)" = apps
 test "$(id -un)" = enicolalde
-if [ "$#" -ne 1 ]; then
+if [ "$#" -ne 1 ] && [ "$#" -ne 3 ]; then
   echo 'Uso: diagnosticar_erp_lectura.sh /ruta/privada/asociaciones_erp_NO_COMPARTIR.json' >&2
   exit 1
 fi
@@ -21,4 +21,4 @@ read -r imsNonce < /proc/sys/kernel/random/uuid
 imsSalida="$imsBase/ERP_LECTURA_${imsNonce//-/}"
 env -u NODE_OPTIONS -u NODE_PATH /usr/bin/node --max-old-space-size=256 \
   "$imsEnterprise/tools/diagnosticar-erp-lectura.mjs" \
-  --verificar-lectura-erp --plan "$1" --salida "$imsSalida"
+  --verificar-lectura-erp --plan "$1" --salida "$imsSalida" "${@:2}"

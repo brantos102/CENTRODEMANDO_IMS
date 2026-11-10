@@ -1,0 +1,82 @@
+{
+  "fecha_local": "2026-11-10",
+  "zona_horaria": "America/Guayaquil",
+  "tipo": "validacion_sintetica_aislada",
+  "base_codigo": "ee6ca275b6e825ca1f785f368c1891ca7a330045",
+  "resultado_corporativo_reportado_por_usuario": {
+    "conexiones_verificadas": 24,
+    "uio": 16,
+    "gye": 8,
+    "fini": "HTTP_401",
+    "previsualizaciones_pendientes": [
+      "ALU",
+      "ALULTE",
+      "NOKIACNT3G"
+    ],
+    "belia": {
+      "filas_recibidas": 586,
+      "filas_previsualizadas": 485,
+      "unidades": "66818.000000000"
+    },
+    "node": "22.23.3",
+    "json_numeros_exactos": true
+  },
+  "pruebas": {
+    "node22": {
+      "tests": 138,
+      "pass": 138,
+      "fail": 0,
+      "skip": 0,
+      "concurrencia_archivos": 2
+    },
+    "python": {
+      "tests": 65,
+      "pass": 65,
+      "fail": 0
+    },
+    "red": "Fetch simulado; contenedor sin red. Ninguna credencial real se leyó en el entorno de validación.",
+    "powershell": "Revisión de código y Bash -n del remoto y su argumento de informe previo. La nueva opción InformeAnterior requiere ejecución real Windows/SSH."
+  },
+  "simulacion_registro_con_etiquetas_y_catalogo_compartidos_y_claves_inventadas": {
+    "conexiones_preparadas": 24,
+    "pendientes": 1,
+    "codigos_observados_preparados": 24,
+    "altas_catalogo_pendientes": [
+      "FOC 5G",
+      "MOD 2024",
+      "NOKIA"
+    ],
+    "configuracion_activa": false
+  },
+  "cobertura": [
+    "Notación científica y ceros de escala se convierten con enteros escalados, sin redondeo",
+    "Miles ambiguos, negativos y decimales no representables permanecen rechazados",
+    "Captura humana mantiene prohibición de exponentes",
+    "Incidencias por campo, longitud, controles y cantidad sin publicar valores de filas",
+    "Muestras indican índices originales de respuesta, incluso cuando existen varios códigos",
+    "El informe previo se valida antes de red y solo se consultan sus previsualizaciones pendientes",
+    "Los resultados previos de otras conexiones se usan solo para preparar el registro; no se afirma que se reconsultaron",
+    "Registro preserva contraseña y usuario solo en archivo privado 0600; informes públicos no los contienen",
+    "Etiqueta de conexión, código ERP y cliente del panel permanecen separados",
+    "Códigos compartidos, varias cuentas sin asociación, conexión no verificada y clientes ambiguos no se habilitan automáticamente",
+    "No se crean IDs ni clientes SQL para grupos pendientes de catálogo",
+    "El registro se prepara en modo solo previsualización, sin activar servicios ni importación"
+  ],
+  "archivos_sha256": {
+    "enterprise/src/conexiones/cantidad-erp.mjs": "103370811109f313af6b8ef5ba63ac42403576180e8c80f7cae3f13193c4c335",
+    "enterprise/src/conexiones/itsanet.mjs": "ee9d94e4baaa0a60b88584fa2a8028adf9b3093ecc3a6a09b1dd3764baed4c19",
+    "enterprise/src/migracion/cuentas-erp.mjs": "db549956e7994546efef7f8f3ee6a748b26f77cdde15c99865cbbae6a7981784",
+    "enterprise/tools/diagnosticar-erp-lectura.mjs": "b9c30ea440005813d2b93eeffe3b1540435c072383a1be7059530387f2949d30",
+    "enterprise/tools/diagnosticar-erp-servidor.ps1": "02c39ab4bde49e3395899436ad1436fc89d6f1da00a276f7d6a3be787ca9ffa4",
+    "enterprise/deploy/diagnosticar_erp_lectura.sh": "c13cd282f8c2f32eaedc0eb17fd937742f2bc073c7ce6cadffc2ed3c76477d87"
+  },
+  "causas_de_los_tres_bloqueos_reales_pendientes_de_observar": true,
+  "credenciales_reales_leidas": false,
+  "erp_corporativo_consultado_desde_validacion": false,
+  "base_de_datos_modificada": false,
+  "configuracion_corporativa_activada": false,
+  "servicios_reiniciados": false,
+  "apache_modificado": false,
+  "puertos_abiertos": [],
+  "corte_definitivo_autorizado_por_esta_validacion": false
+}

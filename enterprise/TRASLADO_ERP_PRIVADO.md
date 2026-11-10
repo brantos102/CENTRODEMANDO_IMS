@@ -95,3 +95,18 @@ La consola y el informe también muestran filas recibidas y totales de previsual
 El alcance de esos totales son todos los códigos devueltos por la credencial, sin filtro de SKU ni posiciones. El informe separa los códigos para contrastarlos con la selección del wizard; no presume que una consulta posterior al ERP deba tener las mismas existencias que una captura anterior. Las consultas comienzan por BELIA de UIO y ALU de GYE, los ejemplos que el usuario confirmó operativos. No se crea un inventario durante esta comparación.
 
 Apps Script reutiliza su token del día si ya lo tiene; la comprobación del servidor solicita autenticación nueva. Por eso FINI requiere una revisión independiente si mantiene el 401. No borrar cachés ni reemplazar claves de Google para ejecutar el diagnóstico.
+
+## Resultado real: 24 lecturas verificadas y tres totales pendientes
+
+El informe posterior confirmó 24 conexiones con token y stock válidos: 16 UIO y ocho GYE. FINI conservó el HTTP 401. BELIA devolvió 586 filas, agrupadas en 485 líneas y 66818 unidades. ALU devolvió 838 filas; ALU, ALULTE y NOKIACNT3G quedaron pendientes de calcular totales. No confundir esos tres controles de formato con errores de conexión.
+
+`-InformeAnterior RUTA_PRIVADA_DEL_INFORME_COMPLETO` permite consultar exclusivamente las conexiones verificadas cuya previsualización quedó pendiente. El script valida que las referencias, sedes, etiquetas y recuentos del informe coincidan con todas las fuentes del plan antes de hacer peticiones. El resultado identifica expresamente el alcance y cuántas conexiones quedaron fuera de esa ejecución; no presenta FINI como reintentado ni declara que se volvió a consultar el resto.
+
+Las cantidades del proveedor admiten notación científica y ceros de escala adicionales cuando caben exactamente en DECIMAL(30,9). La conversión usa enteros escalados: no redondea, no adivina miles y no convierte negativos o valores inválidos en cero. El contrato de captura humana permanece igual. Las incidencias indican campo, causa, número de filas únicas y hasta 12 posiciones dentro de la respuesta ERP original. Se reportan separadores ambiguos, negativos, precisión, longitudes de esquema y caracteres de control sin publicar SKU, textos, series o cantidades por fila. La causa de los tres casos reales todavía requiere ejecutar esa revisión; no se presume que sean negativos ni se amplían columnas a ciegas.
+
+El mismo paso prepara, sin activar, un registro para la integración posterior:
+
+- **cuentas_erp_para_compartir.json** contiene etiquetas, códigos realmente observados, cliente/grupo del panel y pendientes de catálogo. Se descarga al PC con los otros dos informes.
+- **registro_erp_runtime_NO_COMPARTIR.json** contiene las credenciales originales y sus códigos permitidos, en modo de solo previsualización. Se guarda exclusivamente en la carpeta privada del servidor con permisos 0600, sin cargarse en el servicio, copiarse al PC ni compartirse en Git/chat.
+
+El registro utiliza los nuevos resultados de las conexiones reconsultadas y el informe previo para las demás. Solo prepara conexiones verificadas, de fuentes compatibles y con una cuenta identificada de forma inequívoca. Una credencial con varios códigos sin asociación o un código repetido entre credenciales de la misma sede queda para revisión. FINI permanece pendiente. Los grupos confirmados NOKIA, FOC 5G y MOD 2024 conservan un ID nulo hasta su alta real en el catálogo; no se inventan registros SQL. Esta preparación no habilita importación ni modifica el perfil o la versión de la aplicación.
