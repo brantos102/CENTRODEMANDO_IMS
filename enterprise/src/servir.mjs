@@ -1,6 +1,8 @@
 import {pathToFileURL} from 'node:url';
 import {crearPoolConteos} from './mysql/conteos.mjs';
 import {crearApi,origenPublico} from './http/api.mjs';
+import {registroERPDesdeEntorno} from './conexiones/registro-runtime.mjs';
+import {crearGestorVistasERP} from './conexiones/vistas-erp.mjs';
 
 export function configuracionApi(env){
   if(env.IMS_API_HABILITADA!=='1')throw new Error('API candidata deshabilitada; habilitar solo en un entorno preparado.');
@@ -12,7 +14,9 @@ export function configuracionApi(env){
   if(env.IMS_RELEASE!==undefined&&!/^[a-f0-9]{40}$/.test(env.IMS_RELEASE))throw Error('Revisión inválida.');
   if(env.IMS_OPERACION_NATIVA!==undefined&&!['0','1'].includes(env.IMS_OPERACION_NATIVA))throw Error('Modo operativo inválido.');
   if(env.IMS_OPERACION_NATIVA==='1'&&env.IMS_SOLO_LECTURA!=='0')throw Error('Operación nativa requiere perfil explícito.');
-  return {operacionNativa:env.IMS_OPERACION_NATIVA==='1',host:'127.0.0.1',port,publicUrl:origenPublico(env.IMS_PUBLIC_URL),soloLectura:env.IMS_SOLO_LECTURA==='1',revision:env.IMS_RELEASE};
+  if(env.IMS_ERP_HABILITADO!==undefined&&!['0','1'].includes(env.IMS_ERP_HABILITADO))throw Error('Modo ERP inválido.');
+  if(env.IMS_ERP_HABILITADO==='1'&&env.IMS_OPERACION_NATIVA!=='1')throw Error('ERP requiere el perfil nativo propio.');
+  return {erpHabilitado:env.IMS_ERP_HABILITADO==='1',operacionNativa:env.IMS_OPERACION_NATIVA==='1',host:'127.0.0.1',port,publicUrl:origenPublico(env.IMS_PUBLIC_URL),soloLectura:env.IMS_SOLO_LECTURA==='1',revision:env.IMS_RELEASE};
 }
 async function main(){
   const config=configuracionApi(process.env),pool=await crearPoolConteos(process.env);
@@ -26,7 +30,8 @@ async function main(){
     await pool.query('SELECT id FROM ims_op_linea LIMIT 0');
     await pool.query('SELECT linea_id FROM ims_op_detalle_linea LIMIT 0');
     if(config.operacionNativa){await pool.query('SELECT inventario_id FROM ims_nat_inventario LIMIT 0');await pool.query('SELECT id FROM ims_nat_serie LIMIT 0');await pool.query('SELECT id FROM ims_nat_hallazgo LIMIT 0');}
-    server=crearApi({pool,publicUrl:config.publicUrl,soloLectura:config.soloLectura,revision:config.revision,operacionNativa:config.operacionNativa});
+    const gestorERP=config.erpHabilitado?crearGestorVistasERP({conexiones:registroERPDesdeEntorno(process.env)}):null;
+    server=crearApi({pool,publicUrl:config.publicUrl,soloLectura:config.soloLectura,revision:config.revision,operacionNativa:config.operacionNativa,gestorERP});
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,config.host,resolve);});
     console.log(`Centro de Mando candidato disponible en ${config.host}:${config.port}; modo ${config.soloLectura?'solo lectura':'operativo de ensayo'}.`);
     let cerrando=false;

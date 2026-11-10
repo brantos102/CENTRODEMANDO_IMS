@@ -91,10 +91,13 @@ def preparar_release(repo, revision, destino, instalar):
     return destino
 
 
-def unidad_release(release, carpeta, revision, operacion=False):
+def unidad_release(release, carpeta, revision, operacion=False, erp=False):
     body = p.plantillas(release, carpeta)[SERVICIO]
     if operacion:
         body = body.replace(str(carpeta / 'piloto.env'), str(carpeta.parent / 'operacion/operacion.env'))
+    if erp:
+        exigir(operacion, 'ERP requiere operación nativa.')
+        body = body.replace('\nExecStart=', '\nEnvironmentFile='+str(carpeta.parent/'erp'/(revision+'.env'))+'\nExecStart=', 1)
     return body.replace('EnvironmentFile=', 'Environment=IMS_RELEASE=' + revision + '\nEnvironmentFile=', 1)
 
 
@@ -178,6 +181,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--revision', required=True)
     parser.add_argument('--operacion-nativa', action='store_true', help='Usa el perfil propio preparado; solo inventarios nuevos, histórico protegido.')
+    parser.add_argument('--erp-consulta', action='store_true', help='Habilita consulta ERP sin importación ni cambios de inventario.')
     parser.add_argument('--conteos-esperados', type=int, required=True)
     parser.add_argument('--filas-esperadas', type=int, required=True)
     args = parser.parse_args()
@@ -205,7 +209,7 @@ def main():
         if estado:
             previa = estado['revision']
             exigir(bool(re.fullmatch('[a-f0-9]{40}', previa)), 'Estado de versión anterior inválido.')
-            esperado = unidad_release(datos / 'releases' / previa, carpeta, previa, operacion=estado.get('modo') == 'operacion_nativa_ensayo')
+            esperado = unidad_release(datos / 'releases' / previa, carpeta, previa, operacion=estado.get('modo') == 'operacion_nativa_ensayo', erp=estado.get('erp_consulta',False))
         else:
             previa = None
             esperado = p.plantillas(p.APP, carpeta)[SERVICIO]
@@ -242,7 +246,12 @@ def main():
             operacion.triggers(repo, series=True)
             verificado = operacion.node(release, '--verificar', {'config': dict(l.split('=',1) for l in entorno.splitlines())})
             exigir(verificado.get('historico') == {'conteos': args.conteos_esperados, 'filas': args.filas_esperadas}, 'El histórico no coincide con los totales esperados.')
-        nueva = unidad_release(release, carpeta, args.revision, operacion=args.operacion_nativa)
+        erp_meta=None
+        if args.erp_consulta:
+            exigir(args.operacion_nativa, 'ERP requiere el perfil operativo propio.')
+            from preparar_erp import validar_entorno
+            erp_meta=validar_entorno(repo,datos,args.revision)
+        nueva = unidad_release(release, carpeta, args.revision, operacion=args.operacion_nativa, erp=args.erp_consulta)
         validar = carpeta / ('unidad_validar_' + args.revision + '.service')
         if validar.exists():
             exigir(p.privado(validar).read_text() == nueva, 'Borrador de unidad modificado.')
@@ -258,7 +267,7 @@ def main():
             esperar(transporte, args.revision)
             if args.operacion_nativa:
                 from comprobar_operacion import comprobar
-                return comprobar(transporte, s['lector'], args.conteos_esperados, args.filas_esperadas)
+                return comprobar(transporte, s['lector'], args.conteos_esperados, args.filas_esperadas, erp_conexiones=erp_meta['conexiones'] if erp_meta else None)
             return https.comprobar_acceso(transporte, s['lector'], args.conteos_esperados,
                                          filas_esperadas=args.filas_esperadas)
         def recuperar():
@@ -267,6 +276,7 @@ def main():
             if estado and estado.get('revision') == args.revision and estado.get('unidad_sha256') == unit_sha:
                 return
             guardar(estado_path, {'revision': args.revision, 'unidad_sha256': unit_sha, 'modo': 'operacion_nativa_ensayo' if args.operacion_nativa else 'solo_lectura',
+                                 'erp_consulta':args.erp_consulta,
                                  'revision_anterior': previa, 'copia_unidad_anterior': copia_anterior.name,
                                  'inicio_automatico_anterior': actual['inicio_automatico']})
         r = activar(sistema, actual['contenido'], nueva, probar, recuperar, confirmar)

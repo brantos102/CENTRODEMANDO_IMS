@@ -1,5 +1,7 @@
 # Preparación de la migración de Centro de Mando a MySQL
 
+Actualización del 10 de noviembre: [consulta ERP integrada en la web candidata](ERP_CONSULTA_WEB.md), con cuentas múltiples, filtros SKU/variantes y posiciones de toda la sede. Reutiliza sesión y permisos nativos; mantiene la creación ERP deshabilitada y el histórico protegido. Su activación corporativa requiere el actualizador de esa entrega; preparar el registro de credenciales no activa la pantalla.
+
 Estado al 9 de noviembre de 2026: **piloto de consulta desplegado en el servidor empresarial**, no aplicación operativa terminada. El usuario confirmó el acceso HTTPS y login. La operación actual sigue en Apps Script. Este directorio está excluido por `.claspignore` y no se publica mediante clasp.
 
 Ensayo corporativo confirmado por las salidas del usuario: MySQL 8.0.46, base exclusiva `centromando_ims_ensayo`, resguardo de 19 hojas/287.027 filas, 351 archivos físicos/352 conteos/97.822 líneas nativas y lector con 352 permisos. Los originales de INVENTARIOS (102.033 líneas) y REGISTRO (65.773) permanecen conservados, incluidas las incidencias. No se publica KPI ni se utiliza Supabase como fuente.

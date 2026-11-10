@@ -1,5 +1,7 @@
 # Recuperar las conexiones ERP del sistema vigente
 
+La revisión dirigida posterior ya confirmó los totales de ALU, ALULTE y NOKIACNT3G y preparó 24 conexiones privadas. La siguiente entrega es la [consulta ERP dentro del aplicativo](ERP_CONSULTA_WEB.md); las secciones siguientes documentan la exportación y diagnósticos previos, que no deben repetirse para activar esa pantalla.
+
 El piloto corporativo permanece en ef556ba. Esta fase prepara una copia privada de las credenciales y un diagnóstico. No cambia el servicio, Apache, puertos, datos de inventario, MySQL o las conexiones que utilizan los operarios. Todavía no comprueba autenticación contra el ERP.
 
 Los ZIP de código de Apps Script no incluyen ScriptProperties. Por eso se requiere una exportación específica desde el proyecto vigente. El archivo central y el ID del proyecto se verifican en el exportador; no usar las secuencias de INVENTARIOS_UIO o INTERFAZ.

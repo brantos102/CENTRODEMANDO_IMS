@@ -90,6 +90,18 @@ export async function consultarERP({sede,clienteId,userid,password,codigosClient
   exigir(false,'CONEXION_INVALIDA','No se pudo consultar el ERP. No se guardaron existencias.');
  }
 }
+/** Lectura interna del servidor para aplicar selección por SKU/posiciones.
+ * Las filas de este resultado nunca se envían directamente al navegador. */
+export async function leerStockERP({sede,userid,password},{fetchImpl=fetch}={}){
+ exigir(Object.hasOwn(BASE,sede)&&typeof userid==='string'&&userid&&typeof password==='string'&&password&&!/[\r\n\x00]/.test(userid+password),'CONEXION_INVALIDA','Configuración ERP incompleta.');
+ try{
+  const token=leerTokenERP(await obtener(fetchImpl,BASE[sede]+'/gettoken',{userid,password},65536));
+  const body=await obtener(fetchImpl,BASE[sede]+'/getstock',{token},24*1024*1024);
+  const data=body.trim()?jsonExacto(body):[],rows=Array.isArray(data)?data:data?.Result??data?.result??data?.data;
+  exigir(Array.isArray(rows)&&rows.length<=100000&&rows.every(r=>r&&typeof r==='object'&&!Array.isArray(r)),'CONEXION_INVALIDA','Formato de stock no verificado.');
+  return rows;
+ }catch{throw new ErrorConteo('CONEXION_INVALIDA','No se pudo consultar el stock ERP. No se guardaron existencias.');}
+}
 /** Diagnóstico de lectura: solo devuelve códigos de cliente y recuentos.
  * No aplica equivalencias de clientes, no crea stock ni exporta filas. */
 export async function inspeccionarCodigosERP({sede,userid,password},{fetchImpl=fetch}={}){

@@ -1,0 +1,139 @@
+{
+  "fecha_local": "2026-11-10",
+  "zona_horaria": "America/Guayaquil",
+  "base_codigo": "28da2b11b77823fb50435d6bbec0879e06ef5415",
+  "entrega": "Consulta ERP autenticada en /erp; sin importación de stock",
+  "evidencia_corporativa_aportada_por_usuario": {
+    "registro_privado_preparado": {
+      "conexiones": 24,
+      "uio": 16,
+      "gye": 8,
+      "fini": "PENDIENTE_HTTP_401",
+      "altas_catalogo_pendientes": [
+        "FOC 5G",
+        "MOD 2024",
+        "NOKIA"
+      ]
+    },
+    "ultima_revision": {
+      "alcance": "SOLO_PREVISUALIZACIONES_PENDIENTES",
+      "conexiones_reconsultadas": 3,
+      "otras_conexiones_no_reconsultadas": 22,
+      "totales": [
+        {
+          "sede": "GYE",
+          "cuenta": "ALU",
+          "filas": 838,
+          "lineas": 810,
+          "unidades": "17171.080000000"
+        },
+        {
+          "sede": "GYE",
+          "cuenta": "ALULTE",
+          "filas": 71,
+          "lineas": 69,
+          "unidades": "863.440000000"
+        },
+        {
+          "sede": "GYE",
+          "cuenta": "NOKIACNT3G",
+          "filas": 97,
+          "lineas": 96,
+          "unidades": "1461.200000000"
+        }
+      ]
+    },
+    "web_erp_de_esta_revision_verificada_en_servidor": false
+  },
+  "pruebas": {
+    "node22_unitarias": {
+      "node": "22.23.3",
+      "tests": 146,
+      "pass": 146,
+      "fail": 0,
+      "skip": 0,
+      "red": "Contenedor sin red"
+    },
+    "mysql_api_conteos_operacion_erp": {
+      "node": "22.23.3",
+      "mysql": "8.0.46",
+      "tests": 44,
+      "pass": 44,
+      "fail": 0,
+      "skip": 0,
+      "permisos_minimos_y_13_triggers_verificados": true,
+      "erp": "Fetch simulado; claves sintéticas"
+    },
+    "python_despliegue": {
+      "tests": 69,
+      "pass": 69,
+      "fail": 0,
+      "incluye": "Perfil privado por revisión, no sobrescritura, secreto no publicado, compatibilidad de unidad, rollback y comprobación HTTPS"
+    },
+    "chromium_flujos": {
+      "tests": 18,
+      "pass": 18,
+      "fail": 0,
+      "skip": 0,
+      "cobertura": "13 flujos generales, 3 nativos y 2 ERP sobre MySQL real; últimos 2 ERP repetidos tras ajuste visual y comprobación móvil de 390 px",
+      "erp": "Fetch simulado; claves sintéticas",
+      "chromium": "154.0.8037.57"
+    },
+    "bash": "bash -n enterprise/deploy/preparar_y_activar_erp.sh",
+    "pantalla_inspeccionada": "Captura de Chromium con posiciones ALU y NOKIA, datos sintéticos, texto HTML mostrado sin ejecutarse"
+  },
+  "controles": [
+    "Sesión, origen, CSRF y ámbito ADMIN/SUPERVISOR por sede antes de consultar ERP",
+    "Revalidación de permisos entre cuentas y antes de devolver resultados; consultas ligadas al actor",
+    "Posiciones de toda la sede sin intersectarlas con las casillas de cliente del modo SKU",
+    "Metadatos, cliente del panel, cuenta y código ERP separados; SKU/series como texto",
+    "Resultados normalizados con cantidades exactas y sin publicar respuestas crudas ni secretos",
+    "Una extracción simultánea, límites de memoria/filas/tiempo, páginas de 50 y caché temporal",
+    "Fallo no publica resultados parciales; error de red conserva consulta completa anterior con su fecha",
+    "Cambio o revocación de sesión limpia stock visible; cantidades cero conservadas",
+    "ERP funciona con el usuario SQL operativo existente sin ampliar sus privilegios",
+    "Histórico, conteos registrados, auditoría, tablas de staging y otras bases continúan protegidos",
+    "Perfil secreto separado por revisión con directorios 0700/archivos 0600 y sin sobrescritura",
+    "Actualizador conserva versiones y perfil SQL; comprueba login, histórico y metadatos ERP sin consultar proveedores durante el reinicio"
+  ],
+  "no_realizado_en_corporativo": {
+    "lectura_de_credenciales_reales_en_cloud": true,
+    "consulta_directa_del_erp_desde_cloud": true,
+    "activacion_de_esta_version": true,
+    "cambios_apache_mysql_global_otros_servicios": true
+  },
+  "destino_despliegue": {
+    "backend": "127.0.0.1:3003",
+    "https": "https://apps.flexnetuio.com:8445",
+    "servicio_unico_a_actualizar": "centro-mando-ims-ensayo.service",
+    "reinicio_breve_de_ese_servicio": true,
+    "puertos_nuevos": [],
+    "ddl_nuevo": false,
+    "clientes_sql_creados": false,
+    "importacion_erp": false
+  },
+  "pendientes": [
+    "FINI HTTP 401",
+    "Alta de catálogo NOKIA, FOC 5G y MOD 2024",
+    "Aceptación real de la nueva consulta web",
+    "Creación ERP con procedencia persistente",
+    "Paridad completa del WMS y corte/delta final; WTW aplazado"
+  ],
+  "archivos_codigo_sha256": {
+    "enterprise/src/conexiones/registro-runtime.mjs": "c6c126e0f3d9c4c6efbbb19bcd00b9030752a88303e07002a987d8cea1923855",
+    "enterprise/src/conexiones/vistas-erp.mjs": "815d5ef6c6a2e5a0b3e77485b7eb86075bbeae11901ee027c3a6dbfb65bd9778",
+    "enterprise/src/conexiones/itsanet.mjs": "9562bdffb4d388d7c0e1f7a8758ca006bd06116924d07e564ca217e4010f051e",
+    "enterprise/src/mysql/acceso-erp.mjs": "cb5652640a00b90cee92a14adb093c0021bcb2fde3edd0b119b7fa2ff76e485f",
+    "enterprise/src/http/api.mjs": "1b5c37bfa0c79e3b83d0dd0bed238ce80c76aa1fc2f41820a9a3aa63c28b5a76",
+    "enterprise/src/http/estaticos.mjs": "949052c6918d0403abe9a32a784b971186038b1c686c646204a5626f89fd15ec",
+    "enterprise/src/servir.mjs": "1dbfe01096c65458bb76c3971b9c40cb33d1e7026ec3102cfe14898c3753d6ff",
+    "enterprise/public/erp.html": "2d829e1996d8a70fdd67d48d8bd3eedf7cd15a33f72e4c4e7b36511b2ceee409",
+    "enterprise/public/erp.mjs": "cef3f584ae2d3f83a37869bdb1cdd79feda5782bd159f79287a83af3cbb75a62",
+    "enterprise/public/estilos.css": "63da549376fb68320c31e1a06c5f859e6bce934c1ae3d76c86fb550de139d204",
+    "enterprise/deploy/preparar_erp.py": "f4b3781fe0e762f346eba22009926df60d1c8b0fb2b03a041f1710ed9ce446d8",
+    "enterprise/deploy/preparar_y_activar_erp.sh": "2f878e3f0499ca487830464c57baffdd56a2fedfb591d4c0bc6b6f3a403662ca",
+    "enterprise/deploy/actualizar_piloto.py": "2bee6064fc6d6b80cf184e6cc83672cef4a4336be2cb3007282dec69c0d8c990",
+    "enterprise/deploy/comprobar_operacion.py": "9c7131a82a7fe3da3798ea963169444c39d11a73256c529a2c548e8b7a54d25f",
+    "enterprise/tools/validar-erp-runtime.mjs": "6010b16e7dd4ebd8b5a7fefc643a6a33116f66861921f20f1e2754e818f2168d"
+  }
+}

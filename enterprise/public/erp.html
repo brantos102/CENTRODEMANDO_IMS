@@ -1,0 +1,18 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stock ERP · Centro de Mando</title><link rel="stylesheet" href="/assets/estilos.css"><script type="module" src="/assets/erp.mjs"></script></head><body class="operacion-nativa erp-consulta">
+<header class="cabecera"><div><strong>Centro de Mando · ITSANET IMS</strong><p>Consulta de stock ERP</p></div><a href="/operacion">Volver a operación</a></header>
+<main><h1>Stock por cuentas, productos o posiciones</h1><p id="erp-usuario"></p><p id="erp-aviso" role="status">Consultando acceso…</p>
+<section id="erp-contenido" hidden><p class="tarjeta">Solo consulta. Esta pantalla no crea inventarios ni modifica existencias. La operación vigente continúa en su sistema actual.</p>
+<form id="erp-form" class="tarjeta"><fieldset id="erp-controles"><legend>Elegir stock para revisar</legend>
+<label for="erp-sede">Sede</label><select id="erp-sede" required></select>
+<label for="erp-modo">Criterio de conteo</label><select id="erp-modo"><option value="SKU">Por código de producto (SKU)</option><option value="POSICIONES">Por posiciones de la sede</option></select>
+<div id="erp-panel-cuentas"><p>Elige una o varias cuentas; pueden pertenecer al mismo cliente o a clientes distintos.</p><div id="erp-cuentas"></div>
+<label for="erp-skus">SKU opcionales · separados por línea, coma o espacio; vacío consulta todos</label><textarea id="erp-skus" maxlength="10000" rows="3"></textarea>
+<label><input id="erp-variantes" type="checkbox" checked> Incluir variantes cuyo código empieza por el SKU indicado</label></div>
+<div id="erp-panel-posiciones" hidden><p>Se consultarán todas las cuentas ERP habilitadas de esta sede que tengan stock en las posiciones indicadas.</p>
+<label for="erp-posiciones">Posiciones exactas · una por línea; conserva guiones y ceros</label><textarea id="erp-posiciones" maxlength="10000" rows="3"></textarea></div>
+<button class="primario" id="erp-extraer">Extraer stock para revisar</button></fieldset></form>
+<p id="erp-progreso" role="status"></p><button id="erp-recuperar" type="button" class="secundario" hidden>Consultar el estado de la extracción</button>
+<section id="erp-resultados" class="tarjeta" hidden><h2>Resultado de la consulta</h2><p id="erp-fecha"></p><p id="erp-totales"></p>
+<div class="tabla-scroll"><table><thead><tr><th>Cuenta y cliente</th><th>Filas recibidas</th><th>Filas seleccionadas</th><th>Líneas</th><th>Unidades</th></tr></thead><tbody id="erp-resumen"></tbody></table></div>
+<h3>Productos y ubicaciones</h3><div class="tabla-scroll"><table><thead><tr><th>Línea</th><th>Cliente / código ERP</th><th>SKU / descripción</th><th>Posición</th><th>Serie / lote</th><th>Unidades</th></tr></thead><tbody id="erp-filas"></tbody></table></div><button id="erp-mas" type="button" class="secundario" hidden>Ver más líneas</button></section>
+</section><p><a href="/">Inventarios e inicio de sesión</a></p></main></body></html>

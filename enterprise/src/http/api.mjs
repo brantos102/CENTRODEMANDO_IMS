@@ -5,6 +5,7 @@ import {guardarConteo} from '../mysql/conteos.mjs';
 import {listarInventarios,listarLineas,consultarResumen} from '../mysql/consultas.mjs';
 import {ejecutarOperacion,contextoOperacion,consultarOperacion,previsualizarSerie,historialCapturas} from '../mysql/operacion-nativa.mjs';
 import {servirEstatico} from './estaticos.mjs';
+import {sedesAutorizadasERP,autorizarSedeERP} from '../mysql/acceso-erp.mjs';
 
 export const COOKIE='__Host-ims_cm_session';
 export function origenPublico(value){
@@ -61,9 +62,10 @@ const STATUS={NO_AUTENTICADO:401,SIN_PERMISO:403,BASE_NO_PERMITIDA:503,SOLICITUD
   INVENTARIO_NO_EDITABLE:409,CONFIRMACION_REQUERIDA:409,SERIE_DUPLICADA:409,SERIE_SIMILAR:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503};
 
 /** No instala esquema ni crea usuarios. Todas las rutas de datos exigen sesión. */
-export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision}){
+export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision,gestorERP=null}){
   const origin=origenPublico(publicUrl);
   if(operacionNativa&&soloLectura)throw Error('Operación nativa incompatible con solo lectura.');
+  if(gestorERP&&!operacionNativa)throw Error('ERP requiere operación nativa.');
   if(revision!==undefined&&!/^[a-f0-9]{40}$/.test(revision))throw Error('Revisión inválida.');
   let loginsEnCurso=0;
   let minuto=0,intentosMinuto=0;
@@ -85,12 +87,12 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           if(Object.keys(body).some(k=>!['correo','contrasena'].includes(k)))throw new ErrorAuth('SOLICITUD_INVALIDA','Campos no permitidos.',400);
           const sesion=await iniciarSesion(pool,body);
           res.setHeader('Set-Cookie',cookie(sesion.token));
-          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf,soloLectura,operacionNativa});
+          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP});
         }finally{loginsEnCurso--;}
       }
       if(!url.pathname.startsWith('/api/'))return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
       const principal=await autenticar(pool,tokenDeCookie(req.headers.cookie));
-      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura,operacionNativa});
+      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP});
       if(req.method==='POST'){
         if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Vuelve a consultar la sesión.',403);
         if(url.pathname==='/api/sesion/cerrar'){
@@ -100,6 +102,27 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           if(soloLectura)throw new ErrorAuth('SOLO_LECTURA','Este piloto permite únicamente consultar inventarios.',403);
           return json(res,200,await guardarConteo({pool,principal,solicitud:await leerJson(req),soloNativos:operacionNativa}));
         }
+      }
+      if(url.pathname.startsWith('/api/erp/')){
+        if(!gestorERP)throw new ErrorAuth('ERP_NO_CONFIGURADO','La consulta ERP todavía no está habilitada.',403);
+        if(req.method==='GET'&&url.pathname==='/api/erp/conexiones'){
+          if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          const sedes=await sedesAutorizadasERP(pool,principal);
+          if(!sedes.length)throw new ErrorAuth('SIN_PERMISO','No tienes autorización para consultar stock ERP.',403);
+          return json(res,200,{sedes,conexiones:gestorERP.listar(sedes),soloPrevisualizacion:true});
+        }
+        if(req.method==='POST'&&url.pathname==='/api/erp/consultas'){
+          if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          const body=await leerJson(req);await autorizarSedeERP(pool,principal,body.sede);
+          return json(res,202,gestorERP.iniciar(principal.actorId,body,sede=>autorizarSedeERP(pool,principal,sede)));
+        }
+        const erp=/^\/api\/erp\/consultas\/([a-f0-9-]+)$/.exec(url.pathname);
+        if(req.method==='GET'&&erp){
+          if([...url.searchParams.keys()].some(k=>k!=='desde')||url.searchParams.getAll('desde').length>1||!/^\d{1,6}$/.test(url.searchParams.get('desde')||'0'))throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          const sede=gestorERP.sede(principal.actorId,erp[1]);await autorizarSedeERP(pool,principal,sede);
+          return json(res,200,gestorERP.consultar(principal.actorId,erp[1],Number(url.searchParams.get('desde')||0)));
+        }
+        return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
       }
       if(url.pathname.startsWith('/api/operacion')){
         if(!operacionNativa)throw new ErrorAuth('SOLO_LECTURA','La operación nativa todavía no está habilitada.',403);

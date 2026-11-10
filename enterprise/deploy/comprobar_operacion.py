@@ -5,7 +5,7 @@ import uuid
 from publicar_piloto_https import exigir
 
 
-def comprobar(request, usuario, conteos, filas):
+def comprobar(request, usuario, conteos, filas, erp_conexiones=None):
     cookie = csrf = None
 
     def consultar(method, path, body=None, auth=True):
@@ -28,6 +28,12 @@ def comprobar(request, usuario, conteos, filas):
         exigir(status == 200 and isinstance(contexto.get('inventarios'), list) and len(contexto['inventarios']) < 500
                and {(r.get('sede'), r.get('rol')) for r in contexto.get('ambitos', [])} == {('UIO','ADMIN'),('GYE','ADMIN')}, 'Ámbitos o contexto nativo incompatibles.')
         natives = {r['id'] for r in contexto['inventarios']}
+        if erp_conexiones is not None:
+            exigir(s.get('erpDisponible') is True,'ERP no está habilitado en la sesión.')
+            status, _, erp=consultar('GET','/api/erp/conexiones')
+            exigir(status == 200 and erp.get('soloPrevisualizacion') is True and set(erp.get('sedes',[])) == {'UIO','GYE'}
+                   and len(erp.get('conexiones',[])) == erp_conexiones
+                   and all(set(c) == {'referencia','sede','etiqueta','clienteId','clienteNombre','codigosCliente'} for c in erp['conexiones']), 'El catálogo ERP no coincide o expone campos privados.')
         lineas_nativas = sum(int(r['lineas']) for r in contexto['inventarios'])
         ids, historicos, cursor = set(), [], ''
         while True:
@@ -61,5 +67,5 @@ def comprobar(request, usuario, conteos, filas):
             exigir(status == 200 and r.get('ok') is True, 'No se confirmó el logout.')
     status, _, _ = consultar('GET', '/api/sesion')
     exigir(status == 401, 'La sesión continúa vigente tras salir.')
-    return {'login_https':True, 'logout_verificado':True, 'operacion_nativa':True, 'historico_protegido':True,
+    return {**({'erp_consulta':True,'conexiones_erp':erp_conexiones} if erp_conexiones is not None else {}),'login_https':True, 'logout_verificado':True, 'operacion_nativa':True, 'historico_protegido':True,
             'conteos_historicos':conteos,'filas_historicas':filas,'conteos_nativos':len(natives),'publicacion_kpi':False}
