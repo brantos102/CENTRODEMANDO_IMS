@@ -8,3 +8,8 @@ skills-lock.json
 
 # Binding local de clasp (cada carpeta apunta a su Apps Script: real o copia)
 .clasp.json
+
+# Copias ERP privadas: no deben entrar en ningún commit.
+NO_COMPARTIR_ERP_PRIVADO_*.json
+registro_erp_NO_COMPARTIR.json
+origen_NO_COMPARTIR.json

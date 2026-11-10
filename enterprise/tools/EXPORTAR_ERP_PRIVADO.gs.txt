@@ -1,0 +1,51 @@
+// Añadir como archivo NUEVO al proyecto indicado. Guardar y ejecutar esta función.
+// No implementar/desplegar ni reemplazar archivos existentes.
+function IMSExportarERPPrivado20261109() {
+  var etapa = 'PROYECTO';
+  try {
+    var proyecto = '1QPDNLYYqLXkOjNyWoL49JepzxW32XaTskLWfSYOfCdE10Dt62FAfhlsD';
+    var maestro = '1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk';
+    if (ScriptApp.getScriptId() !== proyecto) throw new Error('PROYECTO');
+    etapa = 'CUENTA';
+    var activo = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+    var efectivo = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+    if (!activo || activo !== efectivo ||
+        ['brantos102@gmail.com', 'bespinoza@itsanet.com'].indexOf(activo) < 0) throw new Error('CUENTA');
+    etapa = 'LECTURA';
+    var props = PropertiesService.getScriptProperties().getProperties(), cred = {};
+    Object.keys(props).forEach(function(k) {
+      if (/^(CRED_API_|CREDGYE_API_)/.test(k)) cred[k] = props[k];
+    });
+    var sh = SpreadsheetApp.openById(maestro).getSheetByName('CREDENCIALES_API'), legacy = [];
+    if (sh && sh.getLastRow() > 1) {
+      if (sh.getLastRow() > 10001) throw new Error('TAMANO');
+      legacy = sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues().map(function(r) {
+        return r.map(function(v) { return v == null ? '' : String(v); });
+      });
+    }
+    var n = Object.keys(cred).length;
+    if (!n && !legacy.length) throw new Error('VACIO');
+    var payload = { formato: 'ims-erp-origen-v1', proyecto: proyecto, maestro: maestro,
+      creado_en: new Date().toISOString(), propiedades: cred, legacy_uio: legacy };
+    var texto = JSON.stringify(payload);
+    if (Utilities.newBlob(texto).getBytes().length > 2097152) throw new Error('TAMANO');
+    var nombre = 'NO_COMPARTIR_ERP_PRIVADO_' + new Date().getTime();
+    etapa = 'DRIVE_PRIVADO';
+    var carpeta = DriveApp.createFolder(nombre);
+    carpeta.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW);
+    var archivo = carpeta.createFile(nombre + '.json', '{}', MimeType.PLAIN_TEXT);
+    archivo.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.VIEW);
+    [carpeta, archivo].forEach(function(x) {
+      if (x.getSharingAccess() !== DriveApp.Access.PRIVATE ||
+          x.getEditors().length || x.getViewers().length) throw new Error('PRIVACIDAD');
+    });
+    archivo.setContent(texto);
+    var resumen = { ok: true, propiedades_erp: n, filas_legacy: legacy.length,
+      fuentes_modificadas: false, claves_en_registro: false, archivo_privado: true };
+    Logger.log(JSON.stringify(resumen));
+    Logger.log('ABRIR SOLO EN TU CUENTA; NO ADJUNTAR AL CHAT: ' + archivo.getUrl());
+    return resumen;
+  } catch (e) {
+    throw new Error('Exportación detenida (' + etapa + '). Revisa proyecto, cuenta autorizada y permisos de Drive. No compartas credenciales ni propiedades.');
+  }
+}

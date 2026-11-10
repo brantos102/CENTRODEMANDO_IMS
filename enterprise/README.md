@@ -102,3 +102,5 @@ La regla de consolidación y el modelo operativo/histórico propuesto están en 
 La [operación nativa de ensayo](OPERACION_NATIVA.md) incorpora creación, stock, permisos por cliente, conteo, ajustes, validación y entrega, con indicadores de referencia WMS V124. Su activación es explícita y mantiene protegido el histórico; todavía no representa el corte definitivo de Google.
 
 La [captura de series y planilla alterna](SERIES_HALLAZGOS.md) mantiene una unidad por serie, permisos por cliente, advertencias de similitud y recuperación transaccional sin duplicados.
+
+El [traslado ERP privado](TRASLADO_ERP_PRIVADO.md) recupera las credenciales ausentes en los ZIP de código y prepara un diagnóstico sin imprimir claves, asociar clientes automáticamente ni reiniciar el aplicativo.

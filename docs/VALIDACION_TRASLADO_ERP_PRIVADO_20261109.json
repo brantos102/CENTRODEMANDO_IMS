@@ -1,0 +1,62 @@
+{
+  "fecha_local": "2026-11-09",
+  "zona_horaria": "America/Guayaquil",
+  "tipo": "validacion_sintetica_aislada",
+  "base_codigo": "ef556ba5faaf885b4c5568807f145e466e48a3ef",
+  "estado_corporativo_reportado_por_usuario": {
+    "revision": "ef556ba5faaf885b4c5568807f145e466e48a3ef",
+    "operacion_nativa": true,
+    "historico_protegido": true,
+    "conteos_historicos": 352,
+    "filas_historicas": 97822,
+    "conteos_nativos": 0
+  },
+  "pruebas": {
+    "node22_unitarias": {
+      "tests": 96,
+      "pass": 96,
+      "fail": 0,
+      "skip": 0
+    },
+    "python": {
+      "tests": 62,
+      "pass": 62,
+      "fail": 0
+    },
+    "erp_dirigidas_finales": {
+      "tests": 11,
+      "pass": 11,
+      "fail": 0
+    },
+    "google_apps_script": "Simulado: proyecto/cuenta, lectura de fuentes, privacidad antes de escribir y registros sin claves",
+    "powershell": "Revisión de código y Bash -n de los tres scripts remotos; ejecución Windows/SSH real pendiente"
+  },
+  "cobertura": [
+    "Excluye tokens y propiedades ajenas a ERP",
+    "Bloquea cuenta/proyecto no autorizados antes de leer",
+    "No escribe credenciales si Drive no confirma privacidad",
+    "Replica precedencia y fallback legacy original sin cambiar claves",
+    "Preserva espacios y datos originales; no ejecuta texto de credenciales",
+    "No asocia etiquetas de credencial a clientes MySQL",
+    "Resumen no contiene claves, usuarios ERP ni nombres de clientes",
+    "Lectura rechaza enlaces/rutas/permisos incompatibles",
+    "Conserva copia original exacta y no sobrescribe una revisión previa",
+    "JSON inválido no se refleja en errores",
+    "Transferencia fija destino privado y revisión Git; no cambia servicios ni usa SQL"
+  ],
+  "archivos_sha256": {
+    "enterprise/tools/EXPORTAR_ERP_PRIVADO.gs.txt": "9543417ef0f2925e574b5a4149428f5f2ee6773c86d4b6c7f0f70febf5cdfedb",
+    "enterprise/tools/enviar-erp-privado.ps1": "efd9b8414778530cbc7370231ede1b7f965d5de1a7438931bb6308988e82b6a8",
+    "enterprise/tools/revisar-erp-privado.mjs": "9c8e77f7bd97510299d27cdbb5afdd246e5de68a553a3ba075c2c7db9d65f734"
+  },
+  "google_real_ejecutado": false,
+  "credenciales_reales_leidas": false,
+  "transferencia_real_ejecutada": false,
+  "erp_real_verificado": false,
+  "base_datos_modificada": false,
+  "servidor_corporativo_modificado_desde_validacion": false,
+  "puertos_abiertos": [],
+  "apache_modificado": false,
+  "servicios_reiniciados": false,
+  "corte_definitivo_autorizado_por_esta_validacion": false
+}
