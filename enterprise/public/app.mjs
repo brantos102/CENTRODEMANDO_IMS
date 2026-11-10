@@ -32,7 +32,12 @@ function mostrarAcceso(message=''){
 function errorActual(e,c){if(!actual(c))return;if(e.status===401)mostrarAcceso('La sesión venció. Inicia sesión para continuar.');else aviso(e.message,true);}
 async function entrar(sesion){
   state.epoch++;state.usuario=sesion.usuario;state.csrf=sesion.csrf;
-  state.soloLectura=sesion.soloLectura===true;$('modo-lectura').hidden=!state.soloLectura;
+  state.soloLectura=sesion.soloLectura===true;
+  $('modo-nativo').hidden=!sesion.operacionNativa;
+  $('resumen-titulo').textContent=sesion.operacionNativa?'Tus inventarios autorizados':'Tu resumen de inventarios';
+  $('tipo-resumen').textContent=sesion.operacionNativa?'INVENTARIOS AUTORIZADOS':'HISTÓRICO AUTORIZADO';
+  $('descripcion-resumen').textContent=sesion.operacionNativa?'Incluye el histórico consultable y los inventarios nativos de ensayo autorizados.':'Cifras de los inventarios trasladados a los que tienes acceso.';
+$('modo-lectura').hidden=!state.soloLectura;
   $('acceso').hidden=true;$('operacion').hidden=false;$('detalle').hidden=true;$('seleccion-vacia').hidden=false;
   $('usuario').textContent=sesion.usuario.nombre+' · '+sesion.usuario.correo;
   state.inv=null;state.lineas=[];state.inventarios=[];state.cursorInv=null;aviso();

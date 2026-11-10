@@ -27,7 +27,7 @@ export async function listarInventarios(pool,principal,opciones){
     WHERE i.id>? ${filtros} ORDER BY i.id LIMIT ${limite+1}`,params);
   return resultado(rows,limite);
 }
-export async function listarLineas(pool,principal,inventarioId,opciones){
+export async function listarLineas(pool,principal,inventarioId,opciones,{operacionNativa=false}={}){
   if(!UUID.test(inventarioId))throw new ErrorAuth('SOLICITUD_INVALIDA','Inventario inválido.',400);
   const {cursor,limite}=paginacion(opciones);
   const buscar=textoBusqueda(opciones?.buscar),params=[principal.actorId,inventarioId,cursor];let filtro='';
@@ -37,13 +37,15 @@ export async function listarLineas(pool,principal,inventarioId,opciones){
   }
   const [[acceso]]=await pool.execute('SELECT 1 AS permitido FROM ims_op_permiso WHERE actor_id=? AND inventario_id=? LIMIT 1',[principal.actorId,inventarioId]);
   if(!acceso)throw new ErrorAuth('SIN_PERMISO','Acceso no autorizado.',403);
+  const permiso=operacionNativa?"(p.puede_contar=1 AND n.borrador=0 AND z.rol IN ('SUPERVISOR','OPERADOR'))":'p.puede_contar';
+  const joins=operacionNativa?' LEFT JOIN ims_nat_inventario n ON n.inventario_id=l.inventario_id LEFT JOIN ims_nat_perfil z ON z.actor_id=p.actor_id AND z.inventario_id=p.inventario_id AND z.cliente_id=p.cliente_id ':'';
   const [rows]=await pool.execute(`SELECT l.id,l.inventario_id,l.cliente_id,l.sku,l.version,l.conteo_1,l.conteo_2,l.conteo_final,
-    l.observacion,l.nueva_posicion,p.puede_contar,c.nombre AS cliente,
+    l.observacion,l.nueva_posicion,${permiso} AS puede_contar,c.nombre AS cliente,
     d.posicion,d.descripcion,d.serie,d.lote,d.unidad FROM ims_op_linea l
     JOIN ims_op_permiso p ON p.inventario_id=l.inventario_id AND p.cliente_id=l.cliente_id AND p.actor_id=?
     JOIN ims_op_actor a ON a.id=p.actor_id AND a.activo=1
     JOIN ims_op_cliente c ON c.id=l.cliente_id
-    LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id
+    LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id ${joins}
     WHERE l.inventario_id=? AND l.id>? ${filtro} ORDER BY l.id LIMIT ${limite+1}`,params);
   return resultado(rows.map(r=>({...r,version:String(r.version),puede_contar:!!r.puede_contar})),limite);
 }

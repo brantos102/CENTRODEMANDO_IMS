@@ -1,0 +1,75 @@
+{
+  "fecha_local": "2026-11-09",
+  "zona_horaria": "America/Guayaquil",
+  "tipo": "validacion_sintetica_aislada",
+  "base_codigo": "2cc647e910062b28e44bc1785d758ef4ec07829d",
+  "motores": {
+    "node": "22.23.3",
+    "mysql": "8.0.46",
+    "navegador": "Chromium"
+  },
+  "pruebas": {
+    "node_y_mysql": {
+      "casos_distintos": 142,
+      "pasaron_en_corrida_principal": 141,
+      "omitida_en_corrida_principal": 1,
+      "omitida": "Cuenta SQL lector: completada después con credenciales sintéticas y SQL de privilegios reales",
+      "regresion_lector_dirigida": {
+        "tests": 4,
+        "pass": 4,
+        "fail": 0,
+        "skip": 0
+      }
+    },
+    "python": {
+      "tests": 56,
+      "pass": 56,
+      "fail": 0
+    },
+    "navegador": {
+      "tests": 14,
+      "pass": 14,
+      "fail": 0
+    },
+    "navegador_final_tras_mejorar_lotes": {
+      "tests": 1,
+      "pass": 1,
+      "fail": 0
+    },
+    "aprovisionador": "Once triggers existentes y privilegios exactos verificados contra MySQL real; sin adoptar ni sobrescribir objetos distintos"
+  },
+  "referencia_indicadores": "ITSANET_IMS_WMS_V124_parseAnalysisData",
+  "cotejo_indicadores": {
+    "escenarios": 15,
+    "filas_por_escenario": 80,
+    "cantidades": "BigInt escalado a nueve decimales"
+  },
+  "cobertura": [
+    "Crear borrador multicliente",
+    "Stock reanudable, total y multiplicidad",
+    "Permisos por cliente y revocación",
+    "Cero/C1/C2/C3 e idempotencia",
+    "Ajuste auditado y validación",
+    "Confirmación explícita de entrega incompleta",
+    "Conteo ciego sin filtrar stock al operador",
+    "Respuesta perdida después de COMMIT",
+    "Rollback por fallo de auditoría",
+    "SQL rechaza editar histórico, SKU y conteos previos",
+    "SQL rechaza otras bases, staging y modificación de auditoría",
+    "ERP GET fijo UIO/GYE con transporte simulado y cantidades JSON exactas"
+  ],
+  "archivos_sha256": {
+    "enterprise/tests/fixtures/analisis-wms-v124.js": "4961b637210f1b7afccafeaaa4d0c4ed32e57b76a27f52344a8282f559076830",
+    "enterprise/sql/007_operacion_nativa.sql": "dcc86d8cd3b2b440fff0e83d7e3c2a17d2571e9e00f42cde2aa83d303329fec3",
+    "enterprise/sql/008_proteccion_nativa.sql": "062ac70664213ebd9c41b0fee29eefa8c13f3c96ce91522786c49e28916bf8d4"
+  },
+  "servidor_corporativo_modificado_desde_validacion": false,
+  "datos_reales_en_pruebas": false,
+  "puertos_corporativos_nuevos": [],
+  "servicios_ajenos_modificados": false,
+  "apache_modificado": false,
+  "erp_real_verificado": false,
+  "corte_definitivo_autorizado_por_esta_validacion": false,
+  "wtw": "aplazado",
+  "activacion": "Script del servidor prepara solo recursos propios y actualiza únicamente su backend; el usuario debe ejecutar la revisión fijada y compartir el resultado sin credenciales"
+}

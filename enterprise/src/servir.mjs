@@ -10,7 +10,9 @@ export function configuracionApi(env){
     throw new Error('Puerto inválido o reservado para otro aplicativo.');
   if(env.IMS_SOLO_LECTURA!==undefined&&!['0','1'].includes(env.IMS_SOLO_LECTURA))throw Error('Modo de acceso inválido.');
   if(env.IMS_RELEASE!==undefined&&!/^[a-f0-9]{40}$/.test(env.IMS_RELEASE))throw Error('Revisión inválida.');
-  return {host:'127.0.0.1',port,publicUrl:origenPublico(env.IMS_PUBLIC_URL),soloLectura:env.IMS_SOLO_LECTURA==='1',revision:env.IMS_RELEASE};
+  if(env.IMS_OPERACION_NATIVA!==undefined&&!['0','1'].includes(env.IMS_OPERACION_NATIVA))throw Error('Modo operativo inválido.');
+  if(env.IMS_OPERACION_NATIVA==='1'&&env.IMS_SOLO_LECTURA!=='0')throw Error('Operación nativa requiere perfil explícito.');
+  return {operacionNativa:env.IMS_OPERACION_NATIVA==='1',host:'127.0.0.1',port,publicUrl:origenPublico(env.IMS_PUBLIC_URL),soloLectura:env.IMS_SOLO_LECTURA==='1',revision:env.IMS_RELEASE};
 }
 async function main(){
   const config=configuracionApi(process.env),pool=await crearPoolConteos(process.env);
@@ -23,7 +25,8 @@ async function main(){
     await pool.query('SELECT clave FROM ims_auth_limite LIMIT 0');
     await pool.query('SELECT id FROM ims_op_linea LIMIT 0');
     await pool.query('SELECT linea_id FROM ims_op_detalle_linea LIMIT 0');
-    server=crearApi({pool,publicUrl:config.publicUrl,soloLectura:config.soloLectura,revision:config.revision});
+    if(config.operacionNativa)await pool.query('SELECT inventario_id FROM ims_nat_inventario LIMIT 0');
+    server=crearApi({pool,publicUrl:config.publicUrl,soloLectura:config.soloLectura,revision:config.revision,operacionNativa:config.operacionNativa});
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,config.host,resolve);});
     console.log(`Centro de Mando candidato disponible en ${config.host}:${config.port}; modo ${config.soloLectura?'solo lectura':'operativo de ensayo'}.`);
     let cerrando=false;

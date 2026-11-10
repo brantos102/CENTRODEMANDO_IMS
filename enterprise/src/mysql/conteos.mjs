@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {exigirCapturaNativa} from './operacion-nativa.mjs';
 import {ErrorConteo,normalizarSolicitud,prepararCambio} from '../dominio/conteo.mjs';
 
 function exigir(ok,codigo,mensaje){if(!ok)throw new ErrorConteo(codigo,mensaje);}
@@ -12,7 +13,7 @@ export async function crearPoolConteos(env){
  * por el adaptador de autenticación, nunca de req.body ni de localStorage.
  * La base vuelve a comprobar actor y permiso para cada operación/reintento.
  */
-export async function guardarConteo({pool,principal,solicitud}){
+export async function guardarConteo({pool,principal,solicitud,soloNativos=false}){
   exigir(principal?.actorId,'NO_AUTENTICADO','Se requiere una sesión validada.');
   const {payload:p,hash}=normalizarSolicitud(principal.actorId,solicitud);
   for(let intento=0;intento<3;intento++){
@@ -45,7 +46,8 @@ export async function guardarConteo({pool,principal,solicitud}){
       const [[permiso]]=await c.execute('SELECT puede_contar FROM ims_op_permiso WHERE actor_id=? AND inventario_id=? AND cliente_id=? FOR SHARE',
         [p.actorId,p.inventarioId,linea.cliente_id]);
       exigir(permiso&&Number(permiso.puede_contar)===1,'SIN_PERMISO','Acceso no autorizado.');
-      const [[previa]]=await c.execute('SELECT payload_sha256,resultado FROM ims_op_operacion WHERE actor_id=? AND operacion_id=? FOR UPDATE',[p.actorId,p.operacionId]);
+      if(soloNativos)await exigirCapturaNativa(c,principal,p.inventarioId,linea.cliente_id);
+      const [[previa]]=await c.execute('SELECT payload_sha256,resultado FROM ims_op_operacion WHERE actor_id=? AND operacion_id=? FOR SHARE',[p.actorId,p.operacionId]);
       if(previa){
         exigir(previa.payload_sha256===hash,'OPERACION_REUTILIZADA','El identificador ya pertenece a otra solicitud.');
         const resultado=JSON.parse(previa.resultado);

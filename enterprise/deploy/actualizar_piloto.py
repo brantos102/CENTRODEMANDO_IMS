@@ -91,8 +91,10 @@ def preparar_release(repo, revision, destino, instalar):
     return destino
 
 
-def unidad_release(release, carpeta, revision):
+def unidad_release(release, carpeta, revision, operacion=False):
     body = p.plantillas(release, carpeta)[SERVICIO]
+    if operacion:
+        body = body.replace(str(carpeta / 'piloto.env'), str(carpeta.parent / 'operacion/operacion.env'))
     return body.replace('EnvironmentFile=', 'Environment=IMS_RELEASE=' + revision + '\nEnvironmentFile=', 1)
 
 
@@ -175,6 +177,7 @@ def esperar(transporte, revision=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--revision', required=True)
+    parser.add_argument('--operacion-nativa', action='store_true', help='Usa el perfil propio preparado; solo inventarios nuevos, histórico protegido.')
     parser.add_argument('--conteos-esperados', type=int, required=True)
     parser.add_argument('--filas-esperadas', type=int, required=True)
     args = parser.parse_args()
@@ -202,7 +205,7 @@ def main():
         if estado:
             previa = estado['revision']
             exigir(bool(re.fullmatch('[a-f0-9]{40}', previa)), 'Estado de versión anterior inválido.')
-            esperado = unidad_release(datos / 'releases' / previa, carpeta, previa)
+            esperado = unidad_release(datos / 'releases' / previa, carpeta, previa, operacion=estado.get('modo') == 'operacion_nativa_ensayo')
         else:
             previa = None
             esperado = p.plantillas(p.APP, carpeta)[SERVICIO]
@@ -229,7 +232,17 @@ def main():
                                   "await import('mysql2/promise'); await import('./src/http/api.mjs');"],
                                  cwd=release / 'enterprise', capture_output=True, text=True, timeout=30)
         exigir(modulos.returncode == 0, 'No se pudieron cargar los módulos de la versión preparada; el piloto actual se conserva.')
-        nueva = unidad_release(release, carpeta, args.revision)
+        if args.operacion_nativa:
+            import preparar_operacion as operacion
+            op = p.privado(datos / 'operacion', True)
+            solicitud = json.loads(p.privado(op / 'solicitud.json').read_text())
+            entorno = p.privado(op / 'operacion.env').read_text()
+            exigir(solicitud.get('actorId') == s['lector']['actorId'] and entorno == operacion.entorno(solicitud['clave_mysql']), 'Perfil operativo modificado.')
+            operacion.grants()
+            operacion.triggers(repo)
+            verificado = operacion.node(release, '--verificar', {'config': dict(l.split('=',1) for l in entorno.splitlines())})
+            exigir(verificado.get('historico') == {'conteos': args.conteos_esperados, 'filas': args.filas_esperadas}, 'El histórico no coincide con los totales esperados.')
+        nueva = unidad_release(release, carpeta, args.revision, operacion=args.operacion_nativa)
         validar = carpeta / ('unidad_validar_' + args.revision + '.service')
         if validar.exists():
             exigir(p.privado(validar).read_text() == nueva, 'Borrador de unidad modificado.')
@@ -243,6 +256,9 @@ def main():
             p.escribir(copia_anterior, actual['contenido'])
         def probar():
             esperar(transporte, args.revision)
+            if args.operacion_nativa:
+                from comprobar_operacion import comprobar
+                return comprobar(transporte, s['lector'], args.conteos_esperados, args.filas_esperadas)
             return https.comprobar_acceso(transporte, s['lector'], args.conteos_esperados,
                                          filas_esperadas=args.filas_esperadas)
         def recuperar():
@@ -250,7 +266,7 @@ def main():
         def confirmar(unit_sha):
             if estado and estado.get('revision') == args.revision and estado.get('unidad_sha256') == unit_sha:
                 return
-            guardar(estado_path, {'revision': args.revision, 'unidad_sha256': unit_sha, 'modo': 'solo_lectura',
+            guardar(estado_path, {'revision': args.revision, 'unidad_sha256': unit_sha, 'modo': 'operacion_nativa_ensayo' if args.operacion_nativa else 'solo_lectura',
                                  'revision_anterior': previa, 'copia_unidad_anterior': copia_anterior.name,
                                  'inicio_automatico_anterior': actual['inicio_automatico']})
         r = activar(sistema, actual['contenido'], nueva, probar, recuperar, confirmar)

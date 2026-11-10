@@ -3,6 +3,7 @@ import {ErrorAuth,tokensIguales} from '../auth/credenciales.mjs';
 import {iniciarSesion,autenticar,cerrarSesion} from '../auth/sesiones.mjs';
 import {guardarConteo} from '../mysql/conteos.mjs';
 import {listarInventarios,listarLineas,consultarResumen} from '../mysql/consultas.mjs';
+import {ejecutarOperacion,contextoOperacion,consultarOperacion} from '../mysql/operacion-nativa.mjs';
 import {servirEstatico} from './estaticos.mjs';
 
 export const COOKIE='__Host-ims_cm_session';
@@ -57,11 +58,12 @@ function opciones(url,extras=[]){
 }
 const STATUS={NO_AUTENTICADO:401,SIN_PERMISO:403,BASE_NO_PERMITIDA:503,SOLICITUD_INVALIDA:400,CANTIDAD_INVALIDA:400,
   VERSION_DESACTUALIZADA:409,ETAPA_COMPLETA:409,ETAPA_INVALIDA:409,OPERACION_REUTILIZADA:409,
-  INVENTARIO_NO_EDITABLE:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503};
+  INVENTARIO_NO_EDITABLE:409,CONFIRMACION_REQUERIDA:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503};
 
 /** No instala esquema ni crea usuarios. Todas las rutas de datos exigen sesión. */
-export function crearApi({pool,publicUrl,soloLectura=false,revision}){
+export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision}){
   const origin=origenPublico(publicUrl);
+  if(operacionNativa&&soloLectura)throw Error('Operación nativa incompatible con solo lectura.');
   if(revision!==undefined&&!/^[a-f0-9]{40}$/.test(revision))throw Error('Revisión inválida.');
   let loginsEnCurso=0;
   let minuto=0,intentosMinuto=0;
@@ -83,12 +85,12 @@ export function crearApi({pool,publicUrl,soloLectura=false,revision}){
           if(Object.keys(body).some(k=>!['correo','contrasena'].includes(k)))throw new ErrorAuth('SOLICITUD_INVALIDA','Campos no permitidos.',400);
           const sesion=await iniciarSesion(pool,body);
           res.setHeader('Set-Cookie',cookie(sesion.token));
-          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf,soloLectura});
+          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf,soloLectura,operacionNativa});
         }finally{loginsEnCurso--;}
       }
       if(!url.pathname.startsWith('/api/'))return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
       const principal=await autenticar(pool,tokenDeCookie(req.headers.cookie));
-      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura});
+      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura,operacionNativa});
       if(req.method==='POST'){
         if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Vuelve a consultar la sesión.',403);
         if(url.pathname==='/api/sesion/cerrar'){
@@ -96,7 +98,25 @@ export function crearApi({pool,publicUrl,soloLectura=false,revision}){
         }
         if(url.pathname==='/api/conteos'){
           if(soloLectura)throw new ErrorAuth('SOLO_LECTURA','Este piloto permite únicamente consultar inventarios.',403);
-          return json(res,200,await guardarConteo({pool,principal,solicitud:await leerJson(req)}));
+          return json(res,200,await guardarConteo({pool,principal,solicitud:await leerJson(req),soloNativos:operacionNativa}));
+        }
+      }
+      if(url.pathname.startsWith('/api/operacion')){
+        if(!operacionNativa)throw new ErrorAuth('SOLO_LECTURA','La operación nativa todavía no está habilitada.',403);
+        if(req.method==='GET'&&url.pathname==='/api/operacion'){
+          if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          return json(res,200,await contextoOperacion(pool,principal));
+        }
+        const op=/^\/api\/operacion\/(crear|lineas|activar|asignar|estado|depot|ajustar|usuario)$/.exec(url.pathname);
+        if(req.method==='POST'&&op){
+          if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Consulta tu sesión.',403);
+          if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          return json(res,200,await ejecutarOperacion({pool,principal,tipo:op[1],solicitud:await leerJson(req)}));
+        }
+        const inv=/^\/api\/operacion\/inventarios\/([a-f0-9-]+)(\/analisis)?$/.exec(url.pathname);
+        if(req.method==='GET'&&inv){
+          if([...url.searchParams.keys()].some(k=>k!=='cursor')||url.searchParams.getAll('cursor').length>1)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          return json(res,200,await consultarOperacion(pool,principal,inv[1],{analisis:!!inv[2],cursor:url.searchParams.get('cursor')||''}));
         }
       }
       if(req.method==='GET'&&url.pathname==='/api/resumen'){
@@ -105,7 +125,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,revision}){
       }
       if(req.method==='GET'&&url.pathname==='/api/inventarios')return json(res,200,await listarInventarios(pool,principal,opciones(url,['buscar','sede','cliente'])));
       const m=/^\/api\/inventarios\/([a-f0-9-]+)\/lineas$/.exec(url.pathname);
-      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url,['buscar'])));
+      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url,['buscar']),{operacionNativa}));
       return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
     }catch(e){
       if(e.status===413)res.setHeader('Connection','close');

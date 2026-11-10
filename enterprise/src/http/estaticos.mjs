@@ -1,6 +1,10 @@
 import {readFile} from 'node:fs/promises';
 const ROOT=new URL('../../public/',import.meta.url);
 const FILES={
+  '/operacion':['operacion.html','text/html; charset=utf-8'],
+  '/plantilla-stock.csv':['plantilla-stock.csv','text/csv; charset=utf-8'],
+  '/assets/operacion.mjs':['operacion.mjs','text/javascript; charset=utf-8'],
+  '/assets/stock-csv.mjs':['stock-csv.mjs','text/javascript; charset=utf-8'],
   '/':['index.html','text/html; charset=utf-8'],
   '/assets/estilos.css':['estilos.css','text/css; charset=utf-8'],
   '/assets/app.mjs':['app.mjs','text/javascript; charset=utf-8'],

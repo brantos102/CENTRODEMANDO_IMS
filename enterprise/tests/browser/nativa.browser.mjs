@@ -1,0 +1,53 @@
+import {before,after,test} from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
+import {chromium} from 'playwright-core';
+import {crearPoolConteos} from '../../src/mysql/conteos.mjs';
+import {crearHashPassword} from '../../src/auth/credenciales.mjs';
+import {crearApi} from '../../src/http/api.mjs';
+const ORIGIN='https://ims-nativa.invalid',PASSWORD='Clave_nativa_sintetica_2026!';
+if(process.env.IMS_MYSQL_PRUEBAS!=='1'||!/^centromando_ims_pruebas(?:_[a-z0-9]+)?$/.test(process.env.MYSQL_DATABASE||''))throw Error('Solo base de pruebas.');
+let pool,browser;
+before(async()=>{pool=await crearPoolConteos(process.env);browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});});
+after(async()=>{await browser?.close();await pool?.end();});
+async function fixture(t){
+ const actor=randomUUID(),cliente=randomUUID(),correo=actor+'@sintetico.invalid';
+ await pool.execute('INSERT INTO ims_op_actor VALUES (?,1)',[actor]);
+ await pool.execute('INSERT INTO ims_auth_usuario(actor_id,correo,nombre,password_hash) VALUES (?,?,?,?)',[actor,correo,'Administrador sintético',await crearHashPassword(PASSWORD)]);
+ await pool.execute("INSERT INTO ims_nat_ambito VALUES (?,'UIO','ADMIN')",[actor]);
+ await pool.execute('INSERT INTO ims_op_cliente VALUES (?,?)',[cliente,'CLIENTE BROWSER '+cliente]);
+ const server=crearApi({pool,publicUrl:ORIGIN,operacionNativa:true});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const context=await browser.newContext({viewport:{width:1280,height:950}}),page=await context.newPage();
+ const base='http://127.0.0.1:'+server.address().port,errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await context.route('**/*',async route=>{
+  const r=route.request(),url=new URL(r.url());if(url.origin!==ORIGIN)return route.abort();
+  const headers={...await r.allHeaders()};for(const k of ['host','connection','content-length','accept-encoding'])delete headers[k];
+  const response=await fetch(base+url.pathname+url.search,{method:r.method(),headers,body:['GET','HEAD'].includes(r.method())?undefined:r.postDataBuffer()});
+  const h=Object.fromEntries(response.headers);for(const k of ['connection','content-length','transfer-encoding','keep-alive'])delete h[k];
+  await route.fulfill({status:response.status,headers:h,body:Buffer.from(await response.arrayBuffer())});
+ });
+ t.after(async()=>{await context.close();server.closeAllConnections();await new Promise(r=>server.close(r));assert.deepEqual(errors,[]);});
+ await page.goto(ORIGIN);await page.locator('#correo').fill(correo);await page.locator('#contrasena').fill(PASSWORD);await page.locator('#entrar').click();await page.locator('#operacion').waitFor({state:'visible'});
+ await page.goto(ORIGIN+'/operacion');await page.locator('#op-contenido').waitFor({state:'visible'});
+ return {page,actor,cliente};
+}
+test('navegador: crear, cargar CSV, reanudar carga, activar, contar cero y entregar con confirmación',async t=>{
+ const f=await fixture(t),p=f.page;
+ await p.locator('#op-creacion summary').click();await p.locator('#op-codigo').fill('091126_BROWSER');await p.locator('#op-clientes').selectOption(f.cliente);await p.locator('#op-fecha').fill('2026-11-09');
+ await p.locator('#op-crear button').click();await p.waitForFunction(()=>document.querySelector('#op-detalle').textContent.includes('091126_BROWSER'));
+ const inv=await p.locator('#op-inventario').inputValue();
+ const csv={name:'stock.csv',mimeType:'text/csv',buffer:Buffer.from('sku,depot,posicion\r\n0001,10,A-01\r\n0001,4,A-02\r\n')};
+ await p.locator('#op-csv').setInputFiles(csv);await p.locator('#op-cargar button').click();await p.waitForFunction(()=>document.querySelector('#op-total-filas').value==='2'&&document.querySelector('#op-lineas').rows.length===2);
+ await p.locator('#op-cargar button').click();await p.waitForFunction(()=>!document.querySelector('#op-cargar button').disabled);
+ await p.locator('#op-activar button').click();await p.locator('#op-cargar').waitFor({state:'hidden'});
+ await p.goto(ORIGIN);await p.locator('#operacion').waitFor({state:'visible'});await p.locator('.inventario').first().click();
+ await p.getByRole('button',{name:'Contar · 1',exact:true}).first().click();await p.locator('#cantidad').fill('0');await p.locator('#guardar-conteo').click();
+ await p.waitForFunction(()=>document.querySelector('#aviso').textContent.includes('confirmado'));
+ await p.goto(ORIGIN+'/operacion');await p.locator('#op-inventario').selectOption(inv);await p.waitForFunction(()=>document.querySelector('#op-detalle').textContent.includes('091126_BROWSER'));
+ await p.locator('#op-analisis').click();await p.waitForFunction(()=>document.querySelector('#op-kpis').textContent.includes('avance 1/2'));
+ await p.locator('#op-destino').selectOption('EN_VALIDACION');await p.locator('#op-estado button').click();await p.waitForFunction(()=>document.querySelector('#op-detalle').textContent.includes('EN_VALIDACION'));
+ await p.locator('#op-destino').selectOption('ENTREGADO');await p.locator('#op-entrega').fill('2026-11-09');await p.locator('#op-estado button').click();await p.waitForFunction(()=>document.querySelector('#op-aviso').textContent.includes('incompleto'));
+ await p.locator('#op-incompleto').check();await p.locator('#op-estado button').click();await p.waitForFunction(()=>document.querySelector('#op-detalle').textContent.includes('ENTREGADO'));
+ const [[n]]=await pool.execute('SELECT COUNT(*) AS n,SUM(conteo_1=0) AS ceros FROM ims_op_linea WHERE inventario_id=?',[inv]);assert.equal(Number(n.n),2);assert.equal(Number(n.ceros),1);
+});

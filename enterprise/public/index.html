@@ -22,8 +22,9 @@
     <section id="operacion" hidden>
       <p id="modo-lectura" class="aviso" hidden>Piloto de solo lectura · Consulta del histórico trasladado. La operación actual continúa en el sistema vigente.</p>
       <div class="barra-usuario"><div><span class="sobrelinea">ESPACIO DE TRABAJO</span><h1>Inventarios</h1><p id="usuario"></p></div><button id="salir" type="button" class="secundario">Cerrar sesión</button></div>
+      <p id="modo-nativo" class="aviso" hidden>Ensayo operativo de inventarios nuevos en MySQL. El histórico permanece protegido. Los inventarios abiertos en Google continúan operándose allí.</p>
       <section id="panel-resumen" class="resumen" aria-labelledby="resumen-titulo">
-        <div class="titulo-panel"><div><span class="sobrelinea">HISTÓRICO AUTORIZADO</span><h2 id="resumen-titulo">Tu resumen de inventarios</h2><p class="nota">Cifras de los inventarios trasladados a los que tienes acceso.</p></div><button id="actualizar-resumen" class="secundario" type="button">Actualizar resumen</button></div>
+        <div class="titulo-panel"><div><span id="tipo-resumen" class="sobrelinea">HISTÓRICO AUTORIZADO</span><h2 id="resumen-titulo">Tu resumen de inventarios</h2><p id="descripcion-resumen" class="nota">Cifras de los inventarios trasladados a los que tienes acceso.</p></div><button id="actualizar-resumen" class="secundario" type="button">Actualizar resumen</button></div>
         <div class="metricas">
           <div class="tarjeta metrica"><span>Conteos</span><strong id="total-conteos">—</strong><small>Inventarios independientes</small></div>
           <div class="tarjeta metrica"><span>Líneas</span><strong id="total-lineas">—</strong><small>Productos y ubicaciones registrados</small></div>
@@ -34,7 +35,7 @@
         <details class="tarjeta clientes-resumen"><summary>Consultar por cliente</summary><div class="tabla-scroll"><table><thead><tr><th>Cliente</th><th>Conteos</th><th>Líneas</th><th>Consulta</th></tr></thead><tbody id="resumen-clientes"></tbody></table></div></details>
       </section>
       <div class="distribucion">
-        <aside class="tarjeta inventarios" aria-labelledby="inventarios-titulo"><div class="titulo-panel"><h2 id="inventarios-titulo">Tus inventarios</h2><button id="actualizar-inv" class="texto-boton" type="button">Actualizar</button></div>
+        <aside class="tarjeta inventarios" aria-labelledby="inventarios-titulo"><div class="titulo-panel"><h2 id="inventarios-titulo">Tus inventarios</h2><a href="/operacion">Operación</a><button id="actualizar-inv" class="texto-boton" type="button">Actualizar</button></div>
           <form id="form-inventarios"><fieldset id="filtros-inventarios"><legend class="sr-only">Filtros de inventarios</legend>
             <label for="buscar-inventarios">Código o cliente</label><input id="buscar-inventarios" type="search" maxlength="120" placeholder="Ej. FLUKE o 260608" autocomplete="off">
             <label for="cliente-inventarios">Cliente</label><select id="cliente-inventarios"><option value="">Todos los autorizados</option></select>
