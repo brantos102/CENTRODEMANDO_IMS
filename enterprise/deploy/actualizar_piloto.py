@@ -182,9 +182,11 @@ def main():
     parser.add_argument('--revision', required=True)
     parser.add_argument('--operacion-nativa', action='store_true', help='Usa el perfil propio preparado; solo inventarios nuevos, histórico protegido.')
     parser.add_argument('--erp-consulta', action='store_true', help='Habilita consulta ERP sin importación ni cambios de inventario.')
+    parser.add_argument('--erp-creacion', action='store_true', help='Habilita creación nativa desde extracciones revisadas.')
     parser.add_argument('--conteos-esperados', type=int, required=True)
     parser.add_argument('--filas-esperadas', type=int, required=True)
     args = parser.parse_args()
+    exigir(not args.erp_creacion or args.erp_consulta and args.operacion_nativa,'Creación ERP requiere consulta y operación nativa.')
     os.umask(0o077)
     exigir(bool(re.fullmatch('[a-f0-9]{40}', args.revision)) and 0 < args.conteos_esperados <= 10000
            and args.filas_esperadas > 0, 'Revisión o cantidades inválidas.')
@@ -242,7 +244,7 @@ def main():
             solicitud = json.loads(p.privado(op / 'solicitud.json').read_text())
             entorno = p.privado(op / 'operacion.env').read_text()
             exigir(solicitud.get('actorId') == s['lector']['actorId'] and entorno == operacion.entorno(solicitud['clave_mysql']), 'Perfil operativo modificado.')
-            operacion.grants()
+            operacion.grants(erp_extras=operacion.ERP_TABLES if args.erp_creacion else ())
             operacion.triggers(repo, series=True)
             verificado = operacion.node(release, '--verificar', {'config': dict(l.split('=',1) for l in entorno.splitlines())})
             exigir(verificado.get('historico') == {'conteos': args.conteos_esperados, 'filas': args.filas_esperadas}, 'El histórico no coincide con los totales esperados.')
@@ -250,7 +252,7 @@ def main():
         if args.erp_consulta:
             exigir(args.operacion_nativa, 'ERP requiere el perfil operativo propio.')
             from preparar_erp import validar_entorno
-            erp_meta=validar_entorno(repo,datos,args.revision)
+            erp_meta=validar_entorno(repo,datos,args.revision,creacion=args.erp_creacion)
         nueva = unidad_release(release, carpeta, args.revision, operacion=args.operacion_nativa, erp=args.erp_consulta)
         validar = carpeta / ('unidad_validar_' + args.revision + '.service')
         if validar.exists():
@@ -267,7 +269,7 @@ def main():
             esperar(transporte, args.revision)
             if args.operacion_nativa:
                 from comprobar_operacion import comprobar
-                return comprobar(transporte, s['lector'], args.conteos_esperados, args.filas_esperadas, erp_conexiones=erp_meta['conexiones'] if erp_meta else None)
+                return comprobar(transporte, s['lector'], args.conteos_esperados, args.filas_esperadas, erp_conexiones=erp_meta['conexiones'] if erp_meta else None,erp_creacion=args.erp_creacion)
             return https.comprobar_acceso(transporte, s['lector'], args.conteos_esperados,
                                          filas_esperadas=args.filas_esperadas)
         def recuperar():
@@ -277,6 +279,7 @@ def main():
                 return
             guardar(estado_path, {'revision': args.revision, 'unidad_sha256': unit_sha, 'modo': 'operacion_nativa_ensayo' if args.operacion_nativa else 'solo_lectura',
                                  'erp_consulta':args.erp_consulta,
+                                 'erp_creacion':args.erp_creacion,
                                  'revision_anterior': previa, 'copia_unidad_anterior': copia_anterior.name,
                                  'inicio_automatico_anterior': actual['inicio_automatico']})
         r = activar(sistema, actual['contenido'], nueva, probar, recuperar, confirmar)

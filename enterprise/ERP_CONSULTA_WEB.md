@@ -1,5 +1,7 @@
 # Consulta ERP dentro de Centro de Mando
 
+Continuación: [crear inventarios nativos desde el stock revisado](CREACION_DESDE_ERP.md). Las limitaciones de creación descritas abajo corresponden a la entrega de consulta `fad668a`; la continuación tiene preparación y habilitación separadas.
+
 Actualización del 10 de noviembre de 2026. La candidata incorpora `/erp`, accesible desde **Operación → Consultar stock ERP**, con la misma sesión del aplicativo. Esta entrega consulta existencias; todavía no crea inventarios desde ERP ni sustituye el sistema operativo de Google.
 
 ## Selección y resultados

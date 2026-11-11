@@ -1,0 +1,167 @@
+{
+  "fecha_local": "2026-11-10",
+  "zona_horaria": "America/Guayaquil",
+  "base_codigo": "fad668a0b5bb41b7f04a527db9d8d32123ded5de",
+  "entrega": "Creación de inventarios nativos desde la extracción ERP revisada, con procedencia y activación atómicas",
+  "evidencia_corporativa_aportada_por_usuario": {
+    "version_activada": "fad668a0b5bb41b7f04a527db9d8d32123ded5de",
+    "consulta_erp": true,
+    "conexiones_configuradas": 24,
+    "historico": {
+      "conteos": 352,
+      "lineas": 97822
+    },
+    "conteos_nativos_reportados": 0,
+    "capturas_web": [
+      {
+        "sede": "UIO",
+        "cuentas": [
+          "BELIA"
+        ],
+        "filas": 586,
+        "lineas": 485,
+        "unidades": "66818.000000000"
+      },
+      {
+        "sede": "GYE",
+        "cuentas": [
+          "ALU",
+          "ALU SWAP"
+        ],
+        "filas": 984,
+        "lineas": 956,
+        "unidades": "17357.080000000"
+      }
+    ],
+    "creacion_de_esta_revision_verificada_en_servidor": false
+  },
+  "pruebas": {
+    "node_unitarias": {
+      "node": "22.23.3",
+      "tests": 149,
+      "pass": 149,
+      "fail": 0,
+      "skip": 0,
+      "red": "Contenedor sin red"
+    },
+    "mysql": {
+      "node": "22.23.3",
+      "mysql": "8.0.46",
+      "tests": 55,
+      "pass": 55,
+      "fail": 0,
+      "skip": 0,
+      "detalle": "44 regresiones de API/conteos/nativo/consulta ERP y 11 de creación ERP, ejecutadas juntas al final",
+      "usuario_operativo_con_privilegios_minimos": true,
+      "protecciones_sql_anteriores": 13,
+      "tablas_procedencia_permisos": "SELECT, INSERT; sin UPDATE/DELETE/DDL"
+    },
+    "python": {
+      "tests": 73,
+      "pass": 73,
+      "fail": 0,
+      "skip": 0,
+      "incluye": "Entornos por revisión, no sobrescritura, ampliación estricta/reanudable de dos GRANT y comprobación HTTPS de habilitación sin crear stock"
+    },
+    "chromium": {
+      "version": "154.0.8037.57",
+      "tests": 21,
+      "pass": 21,
+      "fail": 0,
+      "skip": 0,
+      "detalle": "13 flujos generales, 3 nativos y 5 ERP. Los cinco ERP se repitieron con la verificación completa de copia SQL incluida.",
+      "stock": "Sintético; proveedor simulado; MySQL real local"
+    },
+    "carga": {
+      "lineas": 5000,
+      "unidades": "500.000000000",
+      "cuentas": 2,
+      "mismo_sku_en_cuentas_distintas": true,
+      "filas_y_contenido_y_procedencia_conciliados": true,
+      "duracion_ensayo_aproximada_segundos": 1,
+      "duracion_no_es_garantia_corporativa": true
+    },
+    "sintaxis_bash": "bash -n enterprise/deploy/preparar_y_activar_creacion_erp.sh"
+  },
+  "controles_verificados": [
+    "Solicitud de creación no acepta stock, IDs de cliente, URLs ni credenciales del navegador",
+    "Sesión/CSRF/origen y ámbito de sede; consultas ligadas al actor; otra cuenta y rol revocado no crean stock",
+    "Resuelve cliente por ID y nombre exactos o por nombre único; no sustituye por una etiqueta parecida",
+    "Una transacción crea inventario, permisos, stock, procedencia, activación y auditoría",
+    "Comprueba filas, numeración y unidades y relee todo el contenido desde MySQL antes del COMMIT",
+    "SKU alterado con igual número de filas y unidades impide confirmar la carga",
+    "Stock completo se usa aunque la pantalla solo muestre 50 líneas",
+    "Múltiples cuentas de ALU conservan SKU/posición repetidos y códigos ERP distintos",
+    "Posiciones crean varios clientes y cuentas conservando su procedencia",
+    "Doble envío, colisión de operación y consulta usada se controlan con claves únicas y relectura transaccional",
+    "COMMIT confirmado con respuesta perdida se recupera desde SQL incluso sin caché",
+    "Fallo entre stock y procedencia revierte inventario, auditoría y permisos completos",
+    "Procedencia por línea requiere permiso nativo; lector parcial no ve los otros clientes",
+    "Navegador recupera creación tras error de red/recarga sin otra extracción; no envía sin resguardo local",
+    "Preparador conserva nombres/IDs existentes, crea solo tres grupos confirmados y no los duplica al reintentar",
+    "Esquema modificado se rechaza; perfil SQL ajeno no se amplía; privilegios parciales propios se reanudan",
+    "Inventario creado queda activo para conteo, stock cerrado y cantidades contadas vacías; conteo cero funciona"
+  ],
+  "preparacion_corporativa_pendiente": {
+    "base_unica": "centromando_ims_ensayo",
+    "tablas_aditivas": [
+      "ims_erp_inventario",
+      "ims_erp_linea"
+    ],
+    "altas_si_faltan": [
+      "FOC 5G",
+      "MOD 2024",
+      "NOKIA"
+    ],
+    "usuario_sql_operativo_sin_insert_catalogo": true,
+    "entorno_privado_nuevo_por_revision": true,
+    "historico_a_conservar": {
+      "conteos": 352,
+      "lineas": 97822
+    },
+    "no_crea_inventarios_durante_despliegue": true
+  },
+  "despliegue": {
+    "servicio_unico": "centro-mando-ims-ensayo.service",
+    "backend": "127.0.0.1:3003",
+    "https": "https://apps.flexnetuio.com:8445",
+    "apache_modificado": false,
+    "otros_servicios_a_reiniciar": [],
+    "puertos_nuevos": [],
+    "rollback": "Restaura unidad anterior; conserva tablas, catálogo y posibles creaciones confirmadas"
+  },
+  "entorno_de_validacion": {
+    "credenciales": "Sintéticas",
+    "credenciales_corporativas_leidas": false,
+    "erp_real_consultado_desde_cloud": false,
+    "servidor_corporativo_modificado_desde_cloud": false,
+    "base_local_sintetica_modificada": true,
+    "google_modificado": false
+  },
+  "pendientes": [
+    "Activación y aceptación corporativa de creación ERP",
+    "FINI HTTP 401",
+    "Paridad restante de Centro de Mando, reportes y exportaciones",
+    "Conciliación de corte/delta final; Google sigue en operación",
+    "WTW aplazado"
+  ],
+  "archivos_codigo_sha256": {
+    "enterprise/sql/011_creacion_erp.sql": "8c3a2558f2e57b1e82f2150400a54f6aab99e63981dfc2ef7f699061151e8fa8",
+    "enterprise/src/mysql/crear-desde-erp.mjs": "08cfb20109870698966e095210d010376ae151eaa9e8a3b5fadc2b0518e01fb1",
+    "enterprise/src/mysql/esquema-erp.mjs": "fb40d50417342e543bc17c07af626d85b8d6082c85959e738e2d3b6425923747",
+    "enterprise/src/mysql/operacion-nativa.mjs": "3cc5c4f84209455975721078209d2c88a4f8bc74b3082827d312b1f3066a10a9",
+    "enterprise/src/conexiones/vistas-erp.mjs": "874371b06781525500ec67de40ba7c50f1ff4c015897d848d8ee8451e743b1e9",
+    "enterprise/src/http/api.mjs": "8d81ad1dc6792bf1d3ce4dc43ca4f4a3d3ee9b953c6aeb0997dfea9eda6d5c96",
+    "enterprise/src/servir.mjs": "a61f82f3557940b8e4ec605a57707d00cbc0ae90b1820ce241b2c511098f598b",
+    "enterprise/public/erp.html": "f515f7b0e3ba8278fd57825e020e5be4db4d10e9629ea3a0cee0f5cc6904aa7b",
+    "enterprise/public/erp.mjs": "354df4a52f66b474bc062607108c3ec85bc668eda087a62c13319cb55455f485",
+    "enterprise/public/operacion.mjs": "553a3488dc357d15c2364d29a3365ad7e8172d4a75c62d0f55cfaa8b8aea323e",
+    "enterprise/tools/preparar-creacion-erp.mjs": "d22c5a331f7d696493587988203ab7be6081256e5d14f23356c0cc93ae4b514b",
+    "enterprise/deploy/preparar_creacion_erp.py": "0088662aced67e827347af951a9a5cebdb01b6af9265e87fe7aaf7e6d55bef60",
+    "enterprise/deploy/preparar_y_activar_creacion_erp.sh": "4cad58f4a2e5760f91da27af9ee4d9db6e0b25dc6c6fa7ffeb5f68a570926cff",
+    "enterprise/deploy/preparar_erp.py": "a763523e40622315e906db476eefe5797504a58744e5a470c2ce8d4c215770ec",
+    "enterprise/deploy/preparar_operacion.py": "118802c8a5cb682d9f2ebc6997efe99db45b473d119e00f817bca5ac3866f7a5",
+    "enterprise/deploy/actualizar_piloto.py": "883e30bea7cbfe26ff849b7c720ea4d64e34dc423a6a79d588e38ac541c15745",
+    "enterprise/deploy/comprobar_operacion.py": "aaed5e774be9bd7f31df3f177cc4580e6d54700f77a7f3fee1fdd103b6565b14"
+  }
+}

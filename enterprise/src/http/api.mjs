@@ -6,6 +6,7 @@ import {listarInventarios,listarLineas,consultarResumen} from '../mysql/consulta
 import {ejecutarOperacion,contextoOperacion,consultarOperacion,previsualizarSerie,historialCapturas} from '../mysql/operacion-nativa.mjs';
 import {servirEstatico} from './estaticos.mjs';
 import {sedesAutorizadasERP,autorizarSedeERP} from '../mysql/acceso-erp.mjs';
+import {crearInventarioERP,consultarOrigenERP} from '../mysql/crear-desde-erp.mjs';
 
 export const COOKIE='__Host-ims_cm_session';
 export function origenPublico(value){
@@ -59,13 +60,15 @@ function opciones(url,extras=[]){
 }
 const STATUS={NO_AUTENTICADO:401,SIN_PERMISO:403,BASE_NO_PERMITIDA:503,SOLICITUD_INVALIDA:400,CANTIDAD_INVALIDA:400,
   VERSION_DESACTUALIZADA:409,ETAPA_COMPLETA:409,ETAPA_INVALIDA:409,OPERACION_REUTILIZADA:409,
-  INVENTARIO_NO_EDITABLE:409,CONFIRMACION_REQUERIDA:409,SERIE_DUPLICADA:409,SERIE_SIMILAR:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503};
+  INVENTARIO_NO_EDITABLE:409,CONFIRMACION_REQUERIDA:409,SERIE_DUPLICADA:409,SERIE_SIMILAR:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503,
+  ERP_CONSULTA_UTILIZADA:409,ERP_CLIENTE_PENDIENTE:409,CODIGO_EXISTENTE:409};
 
 /** No instala esquema ni crea usuarios. Todas las rutas de datos exigen sesión. */
-export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision,gestorERP=null}){
+export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision,gestorERP=null,erpCreacion=false}){
   const origin=origenPublico(publicUrl);
   if(operacionNativa&&soloLectura)throw Error('Operación nativa incompatible con solo lectura.');
   if(gestorERP&&!operacionNativa)throw Error('ERP requiere operación nativa.');
+  if(erpCreacion&&!gestorERP)throw Error('Creación ERP requiere consulta habilitada.');
   if(revision!==undefined&&!/^[a-f0-9]{40}$/.test(revision))throw Error('Revisión inválida.');
   let loginsEnCurso=0;
   let minuto=0,intentosMinuto=0;
@@ -87,12 +90,12 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           if(Object.keys(body).some(k=>!['correo','contrasena'].includes(k)))throw new ErrorAuth('SOLICITUD_INVALIDA','Campos no permitidos.',400);
           const sesion=await iniciarSesion(pool,body);
           res.setHeader('Set-Cookie',cookie(sesion.token));
-          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP});
+          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP,erpCreacionDisponible:erpCreacion});
         }finally{loginsEnCurso--;}
       }
       if(!url.pathname.startsWith('/api/'))return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
       const principal=await autenticar(pool,tokenDeCookie(req.headers.cookie));
-      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP});
+      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP,erpCreacionDisponible:erpCreacion});
       if(req.method==='POST'){
         if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Vuelve a consultar la sesión.',403);
         if(url.pathname==='/api/sesion/cerrar'){
@@ -105,6 +108,17 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       }
       if(url.pathname.startsWith('/api/erp/')){
         if(!gestorERP)throw new ErrorAuth('ERP_NO_CONFIGURADO','La consulta ERP todavía no está habilitada.',403);
+        if(req.method==='POST'&&url.pathname==='/api/erp/inventarios'){
+          if(!erpCreacion)throw new ErrorAuth('ERP_NO_CONFIGURADO','La creación ERP todavía no está habilitada.',403);
+          if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          return json(res,200,await crearInventarioERP({pool,principal,solicitud:await leerJson(req),obtenerVista:(actor,id)=>gestorERP.paraCrear(actor,id)}));
+        }
+        const origenERP=/^\/api\/erp\/inventarios\/([a-f0-9-]+)\/origen$/.exec(url.pathname);
+        if(req.method==='GET'&&origenERP){
+          if(!erpCreacion)throw new ErrorAuth('ERP_NO_CONFIGURADO','La procedencia ERP todavía no está habilitada.',403);
+          if([...url.searchParams.keys()].some(k=>k!=='lineas')||url.searchParams.getAll('lineas').length!==1)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          return json(res,200,await consultarOrigenERP(pool,principal,origenERP[1],url.searchParams.get('lineas').split(',')));
+        }
         if(req.method==='GET'&&url.pathname==='/api/erp/conexiones'){
           if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
           const sedes=await sedesAutorizadasERP(pool,principal);

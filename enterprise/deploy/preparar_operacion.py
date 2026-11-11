@@ -22,6 +22,7 @@ TABLES = {
  'ims_nat_ambito': 'SELECT', 'ims_nat_inventario': 'SELECT, INSERT', 'ims_nat_perfil': 'SELECT, INSERT, UPDATE, DELETE',
  'ims_nat_linea': 'SELECT, INSERT', 'ims_nat_evento': 'SELECT, INSERT'}
 SERIES_TABLES = {'ims_nat_serie':'SELECT, INSERT', 'ims_nat_hallazgo':'SELECT, INSERT'}
+ERP_TABLES = {'ims_erp_inventario':'SELECT, INSERT', 'ims_erp_linea':'SELECT, INSERT'}
 COLUMNS = {'ims_op_inventario': ['estado'], 'ims_op_linea': ['version','conteo_1','conteo_2','conteo_final','observacion','nueva_posicion'],
  'ims_nat_inventario': ['version','borrador','fecha_entrega','mostrar_depot'], 'ims_nat_linea':['ajuste','motivo','justificacion']}
 
@@ -73,10 +74,12 @@ def triggers(repo, admin=p.admin_mysql, series=False):
             admin(f'USE `{DB}`;\nDELIMITER $$\nCREATE TRIGGER {nombre} {resto}$$\nDELIMITER ;\n')
 
 
-def grants(admin=p.admin_mysql, series=True, extras=None):
+def grants(admin=p.admin_mysql, series=True, extras=None, erp_extras=()):
     extras = set(SERIES_TABLES if series else ()) if extras is None else set(extras)
     p.exigir(extras <= set(SERIES_TABLES), 'Tablas adicionales incompatibles.')
-    tablas = {**TABLES, **{t: SERIES_TABLES[t] for t in extras}}
+    erp_extras = set(erp_extras)
+    p.exigir(erp_extras <= set(ERP_TABLES), 'Tablas ERP incompatibles.')
+    tablas = {**TABLES, **{t: SERIES_TABLES[t] for t in extras}, **{t: ERP_TABLES[t] for t in erp_extras}}
     tables = admin(f"SELECT TABLE_NAME,PRIVILEGE_TYPE FROM information_schema.TABLE_PRIVILEGES WHERE GRANTEE=CONCAT(CHAR(39),'{USER}',CHAR(39),'@',CHAR(39),'127.0.0.1',CHAR(39)) AND TABLE_SCHEMA='{DB}';")
     expected = {(t, g) for t, gs in tablas.items() for g in gs.split(', ')}
     p.exigir(set(map(tuple, tables)) == expected, 'Privilegios de tablas incompatibles.')

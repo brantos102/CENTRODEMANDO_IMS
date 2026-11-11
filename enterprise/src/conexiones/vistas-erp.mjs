@@ -78,6 +78,7 @@ export function crearGestorVistasERP({conexiones,fetchImpl=fetch,ahora=Date.now,
    return estado(j);
   },
   sede(actor,id){return buscar(actor,id).seleccion.sede;},
+  paraCrear(actor,id){const j=buscar(actor,id);exigir(j.estado==='LISTA'&&j.resultado?.filas.length>0,'ERP_SIN_STOCK','Revisa una consulta completa con stock antes de crear el inventario.',409);return {consultaId:j.id,sede:j.seleccion.sede,creadaEn:j.fecha,seleccion:j.seleccion,...j.resultado};},
   consultar(actor,id,desde=0){const j=buscar(actor,id);exigir(Number.isInteger(desde)&&desde>=0&&desde<=maxFilas);const r=estado(j);if(j.resultado){r.filas=j.resultado.filas.slice(desde,desde+50);r.siguiente=desde+50<j.resultado.filas.length?desde+50:null;}return r;}
  };
 }

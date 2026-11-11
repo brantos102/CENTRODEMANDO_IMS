@@ -1,0 +1,22 @@
+import {exigirOperacion as exigir} from '../dominio/operacion.mjs';
+const contrato={
+ ims_erp_inventario:{columnas:{inventario_id:'char(36)',actor_id:'char(36)',operacion_id:'char(36)',consulta_id:'char(36)',payload_sha256:'char(64)',contenido_sha256:'char(64)',consulta_en:'datetime(3)',filas:'int unsigned',unidades:'decimal(40,9)',seleccion:'longtext',cuentas:'longtext',creado_en:'timestamp(6)'},unicas:[['inventario_id'],['actor_id','operacion_id'],['actor_id','consulta_id']],foraneas:[[['inventario_id'],'ims_nat_inventario',['inventario_id']],[['actor_id','operacion_id'],'ims_nat_evento',['actor_id','operacion_id']]],checks:['JSON_VALID(seleccion) AND JSON_VALID(cuentas)','filas>0 AND filas<=100000 AND unidades>=0']},
+ ims_erp_linea:{columnas:{linea_id:'char(36)',inventario_id:'char(36)',referencia:'char(24)',etiqueta:'varchar(255)',codigo_cliente_erp:'varchar(255)',cliente_nombre:'varchar(255)'},unicas:[['linea_id']],foraneas:[[['linea_id','inventario_id'],'ims_op_linea',['id','inventario_id']],[['inventario_id'],'ims_erp_inventario',['inventario_id']]],checks:[]}
+};
+const normal=v=>String(v).toLowerCase().replace(/[`\s()]/g,'');
+const iguales=(a,b)=>JSON.stringify(a.map(v=>JSON.stringify(v)).sort())===JSON.stringify(b.map(v=>JSON.stringify(v)).sort());
+export async function validarEsquemaCreacionERP(pool){
+ for(const [tabla,spec] of Object.entries(contrato)){
+  const fail=()=>exigir(false,'ERP_ESQUEMA_INCOMPATIBLE','El esquema propio de creación ERP no coincide. No se modifica una tabla existente.');
+  const [[t]]=await pool.execute('SELECT ENGINE,TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?',[tabla]);if(t?.ENGINE!=='InnoDB'||t?.TABLE_COLLATION!=='utf8mb4_0900_bin')fail();
+  const [cols]=await pool.execute('SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLUMN_DEFAULT,CHARACTER_SET_NAME,COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',[tabla]);
+  if(JSON.stringify(cols.map(c=>c.COLUMN_NAME))!==JSON.stringify(Object.keys(spec.columnas)))fail();
+  for(const c of cols){const ascii=c.COLUMN_TYPE.startsWith('char('),unicode=/^(varchar|longtext)/.test(c.COLUMN_TYPE);if(c.COLUMN_TYPE!==spec.columnas[c.COLUMN_NAME]||c.IS_NULLABLE!=='NO'||(c.COLUMN_DEFAULT??null)!==(c.COLUMN_NAME==='creado_en'?'CURRENT_TIMESTAMP(6)':null)||(ascii&&(c.CHARACTER_SET_NAME!=='ascii'||c.COLLATION_NAME!=='ascii_bin'))||(unicode&&(c.CHARACTER_SET_NAME!=='utf8mb4'||c.COLLATION_NAME!=='utf8mb4_0900_bin')))fail();}
+  const [indices]=await pool.execute('SELECT INDEX_NAME,COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND NON_UNIQUE=0 ORDER BY INDEX_NAME,SEQ_IN_INDEX',[tabla]),grupos=new Map();for(const i of indices){if(!grupos.has(i.INDEX_NAME))grupos.set(i.INDEX_NAME,[]);grupos.get(i.INDEX_NAME).push(i.COLUMN_NAME);}if(!iguales([...grupos.values()],spec.unicas))fail();
+  const [fks]=await pool.execute('SELECT CONSTRAINT_NAME,COLUMN_NAME,REFERENCED_TABLE_SCHEMA,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY CONSTRAINT_NAME,ORDINAL_POSITION',[tabla]),fg=new Map();const [[db]]=await pool.query('SELECT DATABASE() AS db');
+  for(const f of fks){if(f.REFERENCED_TABLE_SCHEMA!==db.db)fail();if(!fg.has(f.CONSTRAINT_NAME))fg.set(f.CONSTRAINT_NAME,[[],f.REFERENCED_TABLE_NAME,[]]);const r=fg.get(f.CONSTRAINT_NAME);r[0].push(f.COLUMN_NAME);r[2].push(f.REFERENCED_COLUMN_NAME);}if(!iguales([...fg.values()],spec.foraneas))fail();
+  const [reglas]=await pool.execute('SELECT UPDATE_RULE,DELETE_RULE,MATCH_OPTION FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME=?',[tabla]);if(reglas.length!==spec.foraneas.length||reglas.some(r=>![r.UPDATE_RULE,r.DELETE_RULE].every(v=>['RESTRICT','NO ACTION'].includes(v))||r.MATCH_OPTION!=='NONE'))fail();
+  const [checks]=await pool.execute("SELECT cc.CHECK_CLAUSE,tc.ENFORCED FROM information_schema.TABLE_CONSTRAINTS tc JOIN information_schema.CHECK_CONSTRAINTS cc ON cc.CONSTRAINT_SCHEMA=tc.CONSTRAINT_SCHEMA AND cc.CONSTRAINT_NAME=tc.CONSTRAINT_NAME WHERE tc.TABLE_SCHEMA=DATABASE() AND tc.TABLE_NAME=? AND tc.CONSTRAINT_TYPE='CHECK'",[tabla]);if(checks.some(c=>c.ENFORCED!=='YES')||!iguales(checks.map(c=>normal(c.CHECK_CLAUSE)),spec.checks.map(normal)))fail();
+ }
+ return {ok:true,tablas_erp_verificadas:2};
+}

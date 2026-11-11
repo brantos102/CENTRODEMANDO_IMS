@@ -5,7 +5,7 @@ import uuid
 from publicar_piloto_https import exigir
 
 
-def comprobar(request, usuario, conteos, filas, erp_conexiones=None):
+def comprobar(request, usuario, conteos, filas, erp_conexiones=None, erp_creacion=False):
     cookie = csrf = None
 
     def consultar(method, path, body=None, auth=True):
@@ -34,6 +34,8 @@ def comprobar(request, usuario, conteos, filas, erp_conexiones=None):
             exigir(status == 200 and erp.get('soloPrevisualizacion') is True and set(erp.get('sedes',[])) == {'UIO','GYE'}
                    and len(erp.get('conexiones',[])) == erp_conexiones
                    and all(set(c) == {'referencia','sede','etiqueta','clienteId','clienteNombre','codigosCliente'} for c in erp['conexiones']), 'El catálogo ERP no coincide o expone campos privados.')
+        if erp_creacion:
+            exigir(s.get('erpCreacionDisponible') is True,'La creación ERP no está habilitada en la sesión.')
         lineas_nativas = sum(int(r['lineas']) for r in contexto['inventarios'])
         ids, historicos, cursor = set(), [], ''
         while True:
@@ -67,5 +69,5 @@ def comprobar(request, usuario, conteos, filas, erp_conexiones=None):
             exigir(status == 200 and r.get('ok') is True, 'No se confirmó el logout.')
     status, _, _ = consultar('GET', '/api/sesion')
     exigir(status == 401, 'La sesión continúa vigente tras salir.')
-    return {**({'erp_consulta':True,'conexiones_erp':erp_conexiones} if erp_conexiones is not None else {}),'login_https':True, 'logout_verificado':True, 'operacion_nativa':True, 'historico_protegido':True,
+    return {**({'erp_creacion':True} if erp_creacion else {}),**({'erp_consulta':True,'conexiones_erp':erp_conexiones} if erp_conexiones is not None else {}),'login_https':True, 'logout_verificado':True, 'operacion_nativa':True, 'historico_protegido':True,
             'conteos_historicos':conteos,'filas_historicas':filas,'conteos_nativos':len(natives),'publicacion_kpi':False}

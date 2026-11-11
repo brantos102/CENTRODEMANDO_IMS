@@ -1,7 +1,7 @@
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stock ERP · Centro de Mando</title><link rel="stylesheet" href="/assets/estilos.css"><script type="module" src="/assets/erp.mjs"></script></head><body class="operacion-nativa erp-consulta">
 <header class="cabecera"><div><strong>Centro de Mando · ITSANET IMS</strong><p>Consulta de stock ERP</p></div><a href="/operacion">Volver a operación</a></header>
 <main><h1>Stock por cuentas, productos o posiciones</h1><p id="erp-usuario"></p><p id="erp-aviso" role="status">Consultando acceso…</p>
-<section id="erp-contenido" hidden><p class="tarjeta">Solo consulta. Esta pantalla no crea inventarios ni modifica existencias. La operación vigente continúa en su sistema actual.</p>
+<section id="erp-contenido" hidden><p class="tarjeta" id="erp-alcance">Solo consulta. Esta pantalla no crea inventarios ni modifica existencias. La operación vigente continúa en su sistema actual.</p>
 <form id="erp-form" class="tarjeta"><fieldset id="erp-controles"><legend>Elegir stock para revisar</legend>
 <label for="erp-sede">Sede</label><select id="erp-sede" required></select>
 <label for="erp-modo">Criterio de conteo</label><select id="erp-modo"><option value="SKU">Por código de producto (SKU)</option><option value="POSICIONES">Por posiciones de la sede</option></select>
@@ -15,4 +15,13 @@
 <section id="erp-resultados" class="tarjeta" hidden><h2>Resultado de la consulta</h2><p id="erp-fecha"></p><p id="erp-totales"></p>
 <div class="tabla-scroll"><table><thead><tr><th>Cuenta y cliente</th><th>Filas recibidas</th><th>Filas seleccionadas</th><th>Líneas</th><th>Unidades</th></tr></thead><tbody id="erp-resumen"></tbody></table></div>
 <h3>Productos y ubicaciones</h3><div class="tabla-scroll"><table><thead><tr><th>Línea</th><th>Cliente / código ERP</th><th>SKU / descripción</th><th>Posición</th><th>Serie / lote</th><th>Unidades</th></tr></thead><tbody id="erp-filas"></tbody></table></div><button id="erp-mas" type="button" class="secundario" hidden>Ver más líneas</button></section>
+<section id="erp-creacion" class="tarjeta" hidden><h2>Crear inventario desde el stock revisado</h2><p>Se guardará esta extracción completa, con sus cuentas de origen, y se habilitará para conteo. La operación vigente continúa en su sistema actual.</p>
+<p id="erp-creacion-estado" role="status"></p><button id="erp-creacion-recuperar" type="button" class="secundario" hidden>Recuperar confirmación de creación</button>
+<form id="erp-crear" hidden><fieldset id="erp-crear-controles"><legend>Identificar el nuevo inventario</legend>
+<label for="erp-codigo">Código DDMMAA_CLIENTE</label><input id="erp-codigo" maxlength="255" required>
+<label for="erp-inicio">Fecha del inventario</label><input id="erp-inicio" type="date" required>
+<label for="erp-programada">Fecha programada · opcional</label><input id="erp-programada" type="date">
+<label for="erp-responsable">Responsable</label><input id="erp-responsable" maxlength="255">
+<button id="erp-crear-enviar" class="primario">Crear inventario y habilitar conteo</button></fieldset></form>
+<p><a id="erp-creado" hidden>Abrir el inventario creado</a></p></section>
 </section><p><a href="/">Inventarios e inicio de sesión</a></p></main></body></html>

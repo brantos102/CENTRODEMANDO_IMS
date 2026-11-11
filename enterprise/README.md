@@ -1,5 +1,7 @@
 # Preparación de la migración de Centro de Mando a MySQL
 
+Nueva entrega: [creación nativa desde consultas ERP](CREACION_DESDE_ERP.md), con stock completo revisado, varias cuentas/clientes, procedencia por línea y recuperación de confirmaciones. Requiere su preparación aditiva y activación propias; la consulta ERP ya verificada en el servidor continúa siendo la versión vigente hasta aplicar esta entrega.
+
 Actualización del 10 de noviembre: [consulta ERP integrada en la web candidata](ERP_CONSULTA_WEB.md), con cuentas múltiples, filtros SKU/variantes y posiciones de toda la sede. Reutiliza sesión y permisos nativos; mantiene la creación ERP deshabilitada y el histórico protegido. Su activación corporativa requiere el actualizador de esa entrega; preparar el registro de credenciales no activa la pantalla.
 
 Estado al 9 de noviembre de 2026: **piloto de consulta desplegado en el servidor empresarial**, no aplicación operativa terminada. El usuario confirmó el acceso HTTPS y login. La operación actual sigue en Apps Script. Este directorio está excluido por `.claspignore` y no se publica mediante clasp.

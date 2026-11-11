@@ -67,6 +67,7 @@ async function transaccion(pool,p,fn){
   }finally{if(destruir)c.destroy();else c.release();}
  }
 }
+export {transaccion as transaccionOperativa};
 const CAMPOS={
  crear:['sede','codigo','clientes','fechaInicio','fechaProgramada','responsable'],
  lineas:['inventarioId','versionEsperada','filas'],activar:['inventarioId','versionEsperada','filasEsperadas','depotEsperado'],

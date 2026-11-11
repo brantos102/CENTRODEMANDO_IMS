@@ -44,6 +44,9 @@ async function detalle(mas=false){
  const r=await api('/api/operacion/inventarios/'+id+(mas&&state.cursor?'?cursor='+state.cursor:''));
  if(ep!==state.epoch||$('op-inventario').value!==id)return;
  if(!r.inventario||!Array.isArray(r.lineas))throw Error('Detalle incompleto.');
+ const origen=state.sesion.erpCreacionDisponible&&r.lineas.length?await api('/api/erp/inventarios/'+id+'/origen?lineas='+r.lineas.map(l=>l.id).join(',')):{datos:[]};
+ if(!Array.isArray(origen.datos)||ep!==state.epoch||$('op-inventario').value!==id)return;
+ const procedencias=new Map(origen.datos.map(o=>[o.linea_id,o]));
  state.inv=r.inventario;state.cursor=r.siguiente;
  actualizarSeries();
  const n=state.inv,supervisor=n.perfiles.length&&n.perfiles.every(p=>p.rol==='SUPERVISOR');
@@ -54,7 +57,8 @@ async function detalle(mas=false){
  $('op-cliente-csv').replaceChildren(...clientes.map(o=>o.cloneNode(true)));$('op-cli-permiso').replaceChildren(...clientes);
  if(!mas){$('op-lineas').replaceChildren();$('op-kpis').replaceChildren();}
  for(const l of r.lineas){const tr=document.createElement('tr');
-  celda(tr,l.numero+' · '+l.sku+'\n'+l.id);celda(tr,l.cliente+' · '+(l.posicion||'—'));
+  const erp=procedencias.get(l.id);
+  celda(tr,l.numero+' · '+l.sku+'\n'+l.id);celda(tr,l.cliente+' · '+(l.posicion||'—')+(erp?'\nCuenta ERP: '+erp.etiqueta+' · '+erp.codigo_cliente_erp:''));
   celda(tr,[l.conteo_1,l.conteo_2,l.conteo_final].map(v=>v??'—').join(' / '));
   celda(tr,Object.hasOwn(l,'depot')?[l.depot,l.fisico,l.desfase].map(v=>v??'—').join(' / '):'Conteo ciego');celda(tr,l.version);$('op-lineas').append(tr);
  }
@@ -176,5 +180,6 @@ try{
  state.sesion=await api('/api/sesion');$('op-usuario').textContent=state.sesion.usuario.nombre+' · '+state.sesion.usuario.correo;
  if(state.sesion.operacionNativa!==true)throw Error('La operación nativa aún no está habilitada. El piloto de consulta sigue disponible.');
  $('op-fecha').value=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Guayaquil',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
- await contexto();$('op-contenido').hidden=false;controles();aviso('Sesión verificada. Selecciona o crea un inventario de ensayo.');
+ const seleccionado=new URL(location.href).searchParams.get('inventario')||'';
+ await contexto(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(seleccionado)?seleccionado:'');$('op-contenido').hidden=false;controles();aviso('Sesión verificada. Selecciona o crea un inventario de ensayo.');
 }catch(e){aviso(e.status===401?'Inicia sesión desde Inventarios y capturas, luego vuelve a Operación.':e.message,true);}

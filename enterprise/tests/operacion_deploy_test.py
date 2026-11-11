@@ -31,13 +31,13 @@ class OperacionDeployTests(unittest.TestCase):
   for s in calls:self.assertNotIn('DROP ',s);self.assertNotIn('ALTER ',s)
   def otro(sql):return [['BEFORE','UPDATE','otra_tabla','424547494e20454e44']]
   with self.assertRaises(Exception):op.triggers(repo,otro)
- def transporte(self,escribe=False,erp=False,privado=False):
+ def transporte(self,escribe=False,erp=False,privado=False,creacion=False):
   actor='11111111-1111-1111-1111-111111111111';inv='22222222-2222-2222-2222-222222222222';linea='33333333-3333-3333-3333-333333333333';calls=[]
   def request(method,path,body=None,headers=None):
    calls.append((method,path,body));status,h,data=200,{},{}
    if path=='/api/operacion' and not(headers or {}).get('Cookie'):status=401
    elif path=='/api/sesion' and method=='POST':
-    h={'set-cookie':'__Host-ims_cm_session='+'a'*43+'; Secure; HttpOnly; SameSite=Strict; Path=/'};data={'usuario':{'actorId':actor},'csrf':'b'*43,'operacionNativa':True,'soloLectura':False,'erpDisponible':erp}
+    h={'set-cookie':'__Host-ims_cm_session='+'a'*43+'; Secure; HttpOnly; SameSite=Strict; Path=/'};data={'usuario':{'actorId':actor},'csrf':'b'*43,'operacionNativa':True,'soloLectura':False,'erpDisponible':erp,'erpCreacionDisponible':creacion}
    elif path=='/api/erp/conexiones':data={'soloPrevisualizacion':True,'sedes':['UIO','GYE'],'conexiones':[{'referencia':'a'*24,'sede':'UIO','etiqueta':'BELIA','clienteId':None,'clienteNombre':'BELIA','codigosCliente':['BELIA'],**({'password':'NO_PUBLICAR'} if privado else {})}]}
    elif path=='/api/operacion':data={'ambitos':[{'sede':s,'rol':'ADMIN'} for s in ['UIO','GYE']],'inventarios':[]}
    elif path.startswith('/api/inventarios?'):data={'datos':[{'id':inv,'estado':'ENTREGADO'}],'siguiente':None}
@@ -63,6 +63,11 @@ class OperacionDeployTests(unittest.TestCase):
    request,calls,user=self.transporte(erp=habilitado,privado=privado)
    with self.assertRaises(Exception):comprobar(request,user,1,1,erp_conexiones=1)
    self.assertIn(('POST','/api/sesion/cerrar'),[(m,p) for m,p,_ in calls])
+ def test_https_creacion_erp_exige_flag_y_no_crea_inventarios_durante_despliegue(self):
+  request,calls,user=self.transporte(erp=True,creacion=True);r=comprobar(request,user,1,1,erp_conexiones=1,erp_creacion=True);self.assertTrue(r['erp_creacion'])
+  self.assertFalse(any(m=='POST' and p=='/api/erp/inventarios' for m,p,_ in calls))
+  request,_,user=self.transporte(erp=True)
+  with self.assertRaises(Exception):comprobar(request,user,1,1,erp_conexiones=1,erp_creacion=True)
 
 if __name__=='__main__':unittest.main()
 
