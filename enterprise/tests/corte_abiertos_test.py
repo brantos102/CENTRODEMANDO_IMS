@@ -45,6 +45,16 @@ class CorteAbiertosTests(unittest.TestCase):
     else:files.pop(idx)
     with self.assertRaises(ValueError):validar_zip(self.paquete(t,files))
 
+ def test_revision_explica_motivo_y_ubica_panel_sin_exponer_identidad_o_celdas(self):
+  for motivo in ('FUENTE_CAMBIO','LECTURA_O_LIMITE','SECRETO_NO_PUBLICAR'):
+   with self.subTest(motivo=motivo),tempfile.TemporaryDirectory() as t:
+    files=copy.deepcopy(self.archivos);pf=next(f for f in files if f['nombre']=='plan_abiertos_privado.json');p=json.loads(pf['content'])
+    fuente=next(f for f in p['fuentes'] if f['tipo']=='INVENTARIO');fuente['estado']='REVISION';fuente['motivo']=motivo;p['panel_cambio']=True
+    pf['content']=json.dumps(p,ensure_ascii=False,separators=(',',':'));archivo=self.paquete(t,files);antes=archivo.read_bytes();r,priv=validar_zip(archivo)
+    self.assertEqual(r['fuentes_revision'],1);self.assertFalse(r['lista_para_plan']);self.assertTrue(r['panel_cambio']);self.assertFalse(r['datos_importados']);self.assertFalse(r['base_de_datos_modificada']);self.assertEqual(archivo.read_bytes(),antes)
+    detalle=r['revision_fuentes'];self.assertEqual(len(detalle),1);self.assertEqual(detalle[0]['tipo'],'INVENTARIO');self.assertEqual(detalle[0]['filas_panel_corte'],[x['fila'] for x in fuente['panel']]);self.assertEqual(detalle[0]['motivo'],motivo if motivo!='SECRETO_NO_PUBLICAR' else 'NO_ESPECIFICADO');self.assertGreater(detalle[0]['filas_guardadas'],0)
+    publico=json.dumps(r);self.assertNotIn(fuente['id'],publico);self.assertNotIn('BELIA',publico);self.assertNotIn('SECRETO_NO_PUBLICAR',publico);self.assertNotIn('operador@sintetico.invalid',publico);self.assertEqual(priv['validacion'],r)
+
  def test_los_enlaces_ricos_del_panel_son_conciliados_tambien_en_servidor(self):
   with tempfile.TemporaryDirectory() as t:
    r,_=validar_zip(self.paquete(t,self.archivos_enlaces));self.assertEqual(r['inventarios_en_panel'],3);self.assertEqual(r['filas_panel_sin_archivo'],1);self.assertTrue(r['lista_para_plan'])

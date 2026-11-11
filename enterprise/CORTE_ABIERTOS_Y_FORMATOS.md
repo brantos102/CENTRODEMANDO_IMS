@@ -48,6 +48,16 @@ El script sube a la entrada privada existente, compara SHA-256, comprueba la rev
 
 El validador lee el ZIP sin extraer sus rutas. Rechaza enlaces, rutas escapadas, archivos ajenos, datos alterados, fragmentos ausentes/repetidos, huecos, fuentes de panel omitidas y columnas incompatibles. Informa estructura de campos y presencia de capturas, incluidos ceros, sin publicar valores de filas, credenciales o nombres de clientes. No interpreta comas como miles o decimales y no declara inválida una cantidad solo por su presentación. Los informes con `lista_para_plan: true` permiten preparar el plan; no autorizan ni ejecutan el corte.
 
+## Si la extracción terminó con fuentes en revisión o cambió el panel
+
+Con `fuentes_pendientes: 0` y `extraccion_terminada: true`, dejar de ejecutar Continuar. No ejecutar Preparar para ocultar el resultado ni borrar la carpeta. Descargar la carpeta completa como ZIP, actualizar la candidata de Windows y enviarlo con el mismo bloque PowerShell anterior. No se requiere volver a modificar el código de Apps Script ni actualizar el servicio web para revisar el corte.
+
+El nuevo resumen añade `revision_fuentes`: tipo de fuente, número dentro del corte, filas del panel original que la referencian, motivo registrado y cantidad de fragmentos/filas conservadas. No incluye nombres de clientes, ID de Drive o valores de celdas. `FUENTE_CAMBIO` significa que la versión, estructura o doble lectura no permaneció estable durante la captura. `LECTURA_O_LIMITE` agrupa otras excepciones de lectura o tamaño: por sí solo no identifica un problema de permisos, cuota o archivo vacío. `NO_ESPECIFICADO` conserva la incertidumbre si no existe una etiqueta conocida.
+
+`panel_cambio: true` indica que las columnas vigiladas del panel difieren de la lectura inicial; puede incluir resultados calculados. No identifica por sí mismo una edición manual ni pérdida de datos. La versión actual del exportador no guarda una segunda copia del panel, por lo que el ZIP no permite reconstruir ese cambio exacto. La revisión distingue las fuentes afectadas antes de decidir qué recapturar y cómo conciliar el panel. Las filas de `filas_panel_corte` se refieren al panel del corte, no garantizan la misma posición en un panel que haya sido reordenado después.
+
+Este envío preserva también los fragmentos de las fuentes en revisión; no las omite, importa o aprueba. Compartir solo el resumen nuevo. Mantener Google operativo mientras se prepara y concilia el traslado.
+
 La corrección visual y los recorridos de creación/conteo se probaron contra MySQL sintético y Chromium. La exportación se probó con servicios simulados y mediante ida y vuelta real Apps Script simulado → ZIP → validador Python. PowerShell se revisó y se comprobó sintaxis Bash de sus dos scripts remotos; su ejecución real Windows/SSH y el acceso de Google requieren la cuenta del usuario.
 
 La publicación completa sigue pendiente del traslado y conciliación de los abiertos, sus cuentas/permisos, maestros y flujos restantes de Centro de Mando. La copia del histórico y los originales de Drive continúan conservados. FINI sigue pendiente por HTTP 401; WTW permanece aplazado.

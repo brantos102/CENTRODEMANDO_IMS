@@ -1,0 +1,33 @@
+{
+  "fecha_operativa": "2026-11-11",
+  "alcance": "Diagnóstico sin valores de filas de fuentes retenidas para revisión en el corte de abiertos",
+  "evidencia_reportada_por_usuario": {
+    "fuentes": 16,
+    "fuentes_completas": 14,
+    "fuentes_revision": 2,
+    "fuentes_pendientes": 0,
+    "archivos_inventario": 13,
+    "fragmentos": 189,
+    "panel_cambio": true,
+    "corte_final_aprobado": false
+  },
+  "validacion_local": {
+    "python_pruebas": 83,
+    "correctas": 83,
+    "fallidas": 0,
+    "conserva_zip_sin_modificar": true,
+    "informa_motivo_controlado_tipo_y_filas_panel_del_corte": true,
+    "excluye_nombres_id_drive_valores_y_mensajes_de_excepcion": true,
+    "fuente_en_revision_o_panel_cambiado_no_se_declara_listo_para_plan": true
+  },
+  "limites": [
+    "El resumen del usuario no contiene el motivo de las dos fuentes en revisión",
+    "El cambio exacto del panel no se puede reconstruir a partir de un booleano",
+    "El ZIP privado completo permanece bajo control del usuario y se valida en su servidor",
+    "No se ha reejecutado Apps Script ni verificado este corte real desde el entorno de desarrollo"
+  ],
+  "importacion_sql": false,
+  "servicio_web_actualizado": false,
+  "puertos_o_apache_modificados": false,
+  "corte_a_produccion_realizado": false
+}

@@ -91,8 +91,8 @@ def validar_zip(archivo):
             if not re.fullmatch('[A-Za-z0-9_-]{20,120}',id):sin+=1;continue
             esperadas.setdefault(id,[]).append(row)
         exigir(p.get('referencias_discordantes',[])==discordantes,'Cambió el control de referencias de panel.')
-        especiales={'MAESTRO':MAESTRO,'PLANTILLA':PLANTILLA,'INTERFAZ':INTERFAZ};ids=set();tipos=set();usados=set();filas=0;fragmentos=0;completas=0;revision=0;hojas=0;estructuras={}
-        for f in p['fuentes']:
+        especiales={'MAESTRO':MAESTRO,'PLANTILLA':PLANTILLA,'INTERFAZ':INTERFAZ};ids=set();tipos=set();usados=set();filas=0;fragmentos=0;completas=0;revision=0;hojas=0;estructuras={};revision_fuentes=[]
+        for indice,f in enumerate(p['fuentes'],1):
             tipo=f.get('tipo');id=f.get('id');exigir(tipo in ('INVENTARIO',*especiales) and isinstance(id,str) and id not in ids,'Fuente duplicada o incompatible.');ids.add(id)
             if tipo=='INVENTARIO':exigir(id in esperadas and f.get('panel')==esperadas[id],'Referencias de panel incompletas.')
             else:exigir(id==especiales[tipo] and tipo not in tipos and f.get('panel')==[],'Fuente auxiliar incompatible.');tipos.add(tipo)
@@ -132,6 +132,15 @@ def validar_zip(archivo):
                                     if presente and c['tipo']=='s' and ',' in c['valor']:st['textos_con_coma_en_cantidades']+=1
                 cobertura[h['id']]+=len(rows);exigir(cobertura[h['id']]<=h['filas']+1,'Demasiadas filas.');filas+=len(rows);fragmentos+=1
             if estado=='COMPLETO':exigir(hs and all(cobertura[h['id']]==h['filas']+1 or h['columnas']==0 for h in hs),'Una fuente completa tiene hojas incompletas.')
+            if estado=='REVISION':
+                # Solo etiquetas controladas y posiciones del corte; nunca mensajes
+                # de excepción, nombres, enlaces, ID de Drive o valores de celdas.
+                motivo=f.get('motivo')
+                revision_fuentes.append({'fuente_en_corte':indice,'tipo':tipo,
+                    'motivo':motivo if motivo in ('FUENTE_CAMBIO','LECTURA_O_LIMITE') else 'NO_ESPECIFICADO',
+                    'filas_panel_corte':[r['fila'] for r in f['panel']],
+                    'hojas_identificadas':len(hs),'fragmentos_guardados':len(partes),
+                    'filas_guardadas':sum(cobertura[h['id']]-1 for h in hs)})
             for st in stock.values():
                 key=json.dumps(st['campos'],sort_keys=True,separators=(',',':'))
                 if key not in estructuras:estructuras[key]={'campos':st['campos'],'archivos':0,'archivos_completos':0,'filas_producto':0,'capturas_presentes':{'c1':0,'c2':0,'c3':0},'textos_con_coma_en_cantidades':0}
@@ -140,7 +149,7 @@ def validar_zip(archivo):
         exigir(tipos==set(especiales) and ids-set(especiales.values())==set(esperadas),'Faltan fuentes o archivos del panel.')
         extras=set(entradas)-usados-{'plan_abiertos_privado.json','resumen_abiertos_para_compartir.json'}
         exigir(all(re.fullmatch(r'fuente_[a-f0-9]{16}_\d+_\d+_'+UUID+r'\.json',name) for name in extras),'ZIP con archivos ajenos al corte.')
-        r={'ok':True,'formato':'ims-abiertos-validacion-v1','corte_id':p['corte_id'],'fuentes':len(p['fuentes']),'inventarios_en_panel':len(esperadas),'fuentes_completas':completas,'fuentes_revision':revision,'fuentes_pendientes':len(p['fuentes'])-completas-revision,'hojas':hojas,'filas':filas,'fragmentos':fragmentos,'fragmentos_no_referenciados':len(extras),'panel_cambio':bool(p.get('panel_cambio')),'filas_panel_sin_archivo':sin,'referencias_discordantes':len(discordantes),'estructuras_stock':list(estructuras.values()),'cantidades_interpretadas':False,'lista_para_plan':completas==len(p['fuentes']) and not p.get('panel_cambio') and not extras and not discordantes,'corte_final_aprobado':False,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False}
+        r={'ok':True,'formato':'ims-abiertos-validacion-v1','corte_id':p['corte_id'],'fuentes':len(p['fuentes']),'inventarios_en_panel':len(esperadas),'fuentes_completas':completas,'fuentes_revision':revision,'fuentes_pendientes':len(p['fuentes'])-completas-revision,'revision_fuentes':revision_fuentes,'hojas':hojas,'filas':filas,'fragmentos':fragmentos,'fragmentos_no_referenciados':len(extras),'panel_cambio':bool(p.get('panel_cambio')),'filas_panel_sin_archivo':sin,'referencias_discordantes':len(discordantes),'estructuras_stock':list(estructuras.values()),'cantidades_interpretadas':False,'lista_para_plan':completas==len(p['fuentes']) and not p.get('panel_cambio') and not extras and not discordantes,'corte_final_aprobado':False,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False}
         huella=hashlib.sha256()
         with archivo.open('rb') as stream:
             for bloque in iter(lambda:stream.read(1048576),b''):huella.update(bloque)
