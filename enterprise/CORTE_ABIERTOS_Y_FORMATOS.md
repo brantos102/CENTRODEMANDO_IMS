@@ -1,5 +1,7 @@
 # Cantidades y traslado de inventarios abiertos
 
+Para el corte ya terminado con fuentes en revisión y maestro de 385/384 columnas, seguir [Recuperar el corte terminado](RECUPERAR_ABIERTOS.md). Conserva el respaldo anterior y recaptura las fuentes necesarias con fragmentos pequeños.
+
 El usuario confirmó que la migración completa debe incluir inventarios abiertos y en validación. No se declaran trasladados a partir del consolidado: ese origen solo incluye Entregado. Esta entrega corrige la presentación de cantidades y prepara una copia privada verificable de los archivos hijos actuales, la plantilla, Interfaz y datos administrativos necesarios del maestro de producción.
 
 ## Cantidades exactas y actualización de la aplicación

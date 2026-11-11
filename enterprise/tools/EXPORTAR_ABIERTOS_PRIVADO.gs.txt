@@ -1,7 +1,9 @@
-// Archivo NUEVO en Centro de Mando. No reemplazar código ni publicar despliegues.
-// Ejecutar Preparar una vez y Continuar hasta terminar. Solo lee los originales.
+// Herramienta privada: copiar solo en IMS_Corte_Abiertos_Privado.
+// No reemplazar archivos de la aplicación ni publicar despliegues.
+// Un corte v1 terminado se recupera una vez con Recuperar y después Continuar.
 function IMSPrepararCorteAbiertos20261110() { return IMSAbiertosPrivado20261110_('preparar'); }
 function IMSContinuarCorteAbiertos20261110() { return IMSAbiertosPrivado20261110_('continuar'); }
+function IMSRecuperarCorteAbiertos20261111() { return IMSAbiertosPrivado20261110_('recuperar'); }
 function IMSAbiertosPrivado20261110_(accion) {
   var etapa='CUENTA', proyecto='1QPDNLYYqLXkOjNyWoL49JepzxW32XaTskLWfSYOfCdE10Dt62FAfhlsD';
   var maestro='1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk';
@@ -16,7 +18,10 @@ function IMSAbiertosPrivado20261110_(accion) {
   function unico(it) { exigir(it.hasNext(),'AUSENTE');var x=it.next();exigir(!it.hasNext(),'DUPLICADO');return x; }
   function leer(x) { return JSON.parse(privada(x).getBlob().getDataAsString('UTF-8')); }
   function escribir(carpeta,nombre,obj) {
-    privada(carpeta);var txt=JSON.stringify(obj);exigir(Utilities.newBlob(txt).getBytes().length<=8388608,'FRAGMENTO_GRANDE');
+    return escribirTexto(carpeta,nombre,JSON.stringify(obj));
+  }
+  function escribirTexto(carpeta,nombre,txt) {
+    privada(carpeta);exigir(Utilities.newBlob(txt).getBytes().length<=8388608,'FRAGMENTO_GRANDE');
     var f=carpeta.createFile(nombre,'{}',MimeType.PLAIN_TEXT);f.setSharing(DriveApp.Access.PRIVATE,DriveApp.Permission.VIEW);privada(f).setContent(txt);
     return {nombre:nombre,archivo_id:f.getId(),sha256:sha(txt),bytes:Utilities.newBlob(txt).getBytes().length};
   }
@@ -24,10 +29,17 @@ function IMSAbiertosPrivado20261110_(accion) {
   function idsEnlaces(textos) { var ids=[];textos.forEach(function(t){var re=/https:\/\/(?:docs\.google\.com\/spreadsheets\/d\/|drive\.google\.com\/file\/d\/)([A-Za-z0-9_-]{20,120})(?=[\/?#"'\s;)]|$)/g,m;while((m=re.exec(String(t||''))))if(ids.indexOf(m[1])<0)ids.push(m[1]);});return ids.sort(); }
   function panelActual(ss) {
     var s=ss.getSheetByName('PANEL DE CONTROL');exigir(s&&s.getLastRow()<=10001,'PANEL');
-    var n=s.getLastRow(),v=n?s.getRange(1,1,n,Math.max(9,s.getLastColumn())).getValues():[],rich=n?s.getRange(1,2,n,1).getRichTextValues():[],forms=n?s.getRange(1,2,n,1).getFormulas():[];
+    var n=s.getLastRow(),v=n?s.getRange(1,1,n,9).getValues():[],rich=n?s.getRange(1,2,n,1).getRichTextValues():[],forms=n?s.getRange(1,2,n,1).getFormulas():[];
     return v.map(function(r,i){var links=[r[1],forms[i][0]],rt=rich[i][0];if(rt){links.push(rt.getLinkUrl());rt.getRuns().forEach(function(run){links.push(run.getLinkUrl());});}return {fila:i+1,celdas:[1,2,3,4,6,7,9].map(function(c){var x=celda(r[c-1]);x.columna=c;return x;}),ids_archivo_b:idsEnlaces(links)};});
   }
   function dato(r,c) { var x=r.celdas.filter(function(x){return x.columna===c;})[0];return x&&x.valor!==null?String(x.valor):''; }
+  function seleccionar(pan) {
+    var fuentes=[{id:maestro,tipo:'MAESTRO',panel:[]},{id:'1Y2VZpr-fy6iuZyfX-96N1r9l3WdZOBfFnEV6Y2BHWog',tipo:'PLANTILLA',panel:[]},{id:'1DTNYkDGdkTbMsAyUa2xeaMeY3zgk77cgua0Gd7_rJSk',tipo:'INTERFAZ',panel:[]}],sin=[],discordantes=[];
+    pan.slice(1).forEach(function(r){if(!dato(r,1).trim()||dato(r,7).trim().toUpperCase()==='ENTREGADO')return;var id=dato(r,3).trim(),valid=/^[A-Za-z0-9_-]{20,120}$/.test(id);if(valid&&r.ids_archivo_b.some(function(x){return x!==id;}))discordantes.push(r.fila);if(!valid&&r.ids_archivo_b.length===1)id=r.ids_archivo_b[0];if(!/^[A-Za-z0-9_-]{20,120}$/.test(id)){sin.push(r);return;}exigir(id!==maestro&&id!==fuentes[1].id&&id!==fuentes[2].id,'PANEL_APUNTA_PLANTILLA');var f=fuentes.filter(function(f){return f.id===id;})[0];if(!f){f={id:id,tipo:'INVENTARIO',panel:[]};fuentes.push(f);}f.panel.push(r);});
+    fuentes.sort(function(a,b){var orden={INVENTARIO:0,MAESTRO:1,PLANTILLA:2,INTERFAZ:3};return orden[a.tipo]-orden[b.tipo];});
+    return {fuentes:fuentes,sin:sin,discordantes:discordantes};
+  }
+  function pendiente(f) { f.estado='PENDIENTE';f.hojas=null;f.hoja=0;f.fila=1;f.partes=[];return f; }
   function archivoPermitido(n) { return !/(CREDENCIAL|CREDENTIAL|CONTRASENA|PASSWORD|SECRET|TOKEN|PROPIEDAD|CONEXION|CONFIGURACION|CONFIG|^API$)/.test(normal(n)); }
   function hojasOrigen(ss,tipo) {
     return ss.getSheets().map(function(s){return {id:s.getSheetId(),nombre:s.getName(),filas:s.getLastRow(),columnas:s.getLastColumn()};}).filter(function(s){
@@ -47,7 +59,9 @@ function IMSAbiertosPrivado20261110_(accion) {
     var completos=p.fuentes.filter(function(f){return f.estado==='COMPLETO';}).length,err=p.fuentes.filter(function(f){return f.estado==='REVISION';}).length;
     var r={ok:true,formato:'ims-abiertos-resumen-v1',corte_id:p.corte_id,fuentes:p.fuentes.length,fuentes_completas:completos,fuentes_revision:err,fuentes_pendientes:p.fuentes.length-completos-err,
       archivos_inventario:p.fuentes.filter(function(f){return f.tipo==='INVENTARIO';}).length,filas_panel_sin_archivo:p.sin_archivo.length,fragmentos:p.fuentes.reduce(function(n,f){return n+f.partes.length;},0),
-      extraccion_terminada:completos+err===p.fuentes.length,lista_para_revision:completos===p.fuentes.length&&!p.panel_cambio&&!p.referencias_discordantes.length,referencias_discordantes:p.referencias_discordantes.length,panel_cambio:!!p.panel_cambio,fuentes_modificadas:false,estados_modificados:false,propiedades_leidas:false,credenciales_exportadas:false,corte_final_aprobado:false};
+      extraccion_terminada:completos+err===p.fuentes.length,lista_para_revision:completos===p.fuentes.length&&!p.panel_cambio&&!p.referencias_discordantes.length&&(!p.recuperacion||(!p.sin_archivo.length&&!p.recuperacion.fuentes_retiradas.length)),referencias_discordantes:p.referencias_discordantes.length,panel_cambio:!!p.panel_cambio,fuentes_modificadas:false,estados_modificados:false,propiedades_leidas:false,credenciales_exportadas:false,corte_final_aprobado:false};
+    r.revision_fuentes=[];p.fuentes.forEach(function(f,i){if(f.estado==='REVISION')r.revision_fuentes.push({fuente_en_corte:i+1,tipo:f.tipo,motivo:['FUENTE_CAMBIO','LECTURA_O_LIMITE'].indexOf(f.motivo)>=0?f.motivo:'NO_ESPECIFICADO',filas_panel_corte:f.panel.map(function(x){return x.fila;})});});
+    if(p.recuperacion){r.recuperacion=true;r.corte_anterior=p.recuperacion.corte_anterior;r.fuentes_reutilizadas=p.fuentes.filter(function(f){return !!f.reutilizada_de;}).length;r.fuentes_recapturadas=p.recuperacion.fuentes_recapturadas;r.fuentes_agregadas=p.recuperacion.fuentes_agregadas;r.fuentes_retiradas_panel_actual=p.recuperacion.fuentes_retiradas.length;r.fragmentos_conservados_revision=p.partes_conservadas_revision.length;r.panel_anterior_cambio=p.recuperacion.panel_anterior_cambio;}
     Logger.log(JSON.stringify(r));return r;
   }
   try {
@@ -57,17 +71,38 @@ function IMSAbiertosPrivado20261110_(accion) {
     etapa='PREPARACION';
     if(accion==='preparar') {
       if(control){var previo=leer(control);exigir(previo.proyecto===proyecto&&previo.propietario===activo,'CONTROL');var fp=privada(DriveApp.getFolderById(previo.carpeta));var pp=leer(unico(fp.getFilesByName('plan_abiertos_privado.json')));exigir(pp.fuentes.every(function(f){return f.estado==='COMPLETO'||f.estado==='REVISION';}),'CONTINUAR_ANTES');}
-      var ss=SpreadsheetApp.openById(maestro),pan=panelActual(ss),fuentes=[{id:maestro,tipo:'MAESTRO',panel:[]},{id:'1Y2VZpr-fy6iuZyfX-96N1r9l3WdZOBfFnEV6Y2BHWog',tipo:'PLANTILLA',panel:[]},{id:'1DTNYkDGdkTbMsAyUa2xeaMeY3zgk77cgua0Gd7_rJSk',tipo:'INTERFAZ',panel:[]}],sin=[],discordantes=[];
-      pan.slice(1).forEach(function(r){if(!dato(r,1).trim()||dato(r,7).trim().toUpperCase()==='ENTREGADO')return;var id=dato(r,3).trim(),valid=/^[A-Za-z0-9_-]{20,120}$/.test(id);if(valid&&r.ids_archivo_b.some(function(x){return x!==id;}))discordantes.push(r.fila);if(!valid&&r.ids_archivo_b.length===1)id=r.ids_archivo_b[0];if(!/^[A-Za-z0-9_-]{20,120}$/.test(id)){sin.push(r);return;}exigir(id!==maestro&&id!==fuentes[1].id&&id!==fuentes[2].id,'PANEL_APUNTA_PLANTILLA');var f=fuentes.filter(function(f){return f.id===id;})[0];if(!f){f={id:id,tipo:'INVENTARIO',panel:[]};fuentes.push(f);}f.panel.push(r);});
+      var ss=SpreadsheetApp.openById(maestro),pan=panelActual(ss),sel=seleccionar(pan),fuentes=sel.fuentes,sin=sel.sin,discordantes=sel.discordantes;
       var idCorte=Utilities.getUuid(),carpeta=DriveApp.createFolder('IMS_ABIERTOS_PRIVADO_'+idCorte);carpeta.setSharing(DriveApp.Access.PRIVATE,DriveApp.Permission.VIEW);privada(carpeta);
       fuentes.sort(function(a,b){var orden={INVENTARIO:0,MAESTRO:1,PLANTILLA:2,INTERFAZ:3};return orden[a.tipo]-orden[b.tipo];});
-      var plan={formato:'ims-abiertos-corte-v1',corte_id:idCorte,proyecto:proyecto,maestro:maestro,propietario:activo,creado_en:new Date().toISOString(),panel_sha256:sha(JSON.stringify(pan)),panel:pan,sin_archivo:sin,referencias_discordantes:discordantes,fuentes:fuentes.map(function(f){f.estado='PENDIENTE';f.hojas=null;f.hoja=0;f.fila=1;f.partes=[];return f;}),corte_final_aprobado:false};
+      var plan={formato:'ims-abiertos-corte-v1',corte_id:idCorte,proyecto:proyecto,maestro:maestro,propietario:activo,creado_en:new Date().toISOString(),panel_sha256:sha(JSON.stringify(pan)),panel:pan,sin_archivo:sin,referencias_discordantes:discordantes,fuentes:fuentes.map(pendiente),corte_final_aprobado:false};
       escribir(carpeta,'plan_abiertos_privado.json',plan);
       if(!control){control=DriveApp.createFile(controlNombre,'{}',MimeType.PLAIN_TEXT);control.setSharing(DriveApp.Access.PRIVATE,DriveApp.Permission.VIEW);privada(control);}
       privada(control).setContent(JSON.stringify({formato:'ims-abiertos-control-v1',proyecto:proyecto,propietario:activo,carpeta:carpeta.getId()}));
       Logger.log('CARPETA PRIVADA; NO ADJUNTAR AL CHAT: '+carpeta.getUrl());return resumen(plan);
     }
-    exigir(accion==='continuar'&&control,'PREPARAR_ANTES');var cfg=leer(control);exigir(cfg.proyecto===proyecto&&cfg.propietario===activo,'CONTROL');var folder=privada(DriveApp.getFolderById(cfg.carpeta));var pf=privada(unico(folder.getFilesByName('plan_abiertos_privado.json'))),p=leer(pf);exigir(p.formato==='ims-abiertos-corte-v1'&&p.proyecto===proyecto,'PLAN');
+    exigir((accion==='continuar'||accion==='recuperar')&&control,'PREPARAR_ANTES');var cfg=leer(control);exigir(cfg.proyecto===proyecto&&cfg.propietario===activo,'CONTROL');var folder=privada(DriveApp.getFolderById(cfg.carpeta));var pf=privada(unico(folder.getFilesByName('plan_abiertos_privado.json'))),p=leer(pf);exigir(['ims-abiertos-corte-v1','ims-abiertos-corte-v2'].indexOf(p.formato)>=0&&p.proyecto===proyecto,'PLAN');
+    if(accion==='recuperar') {
+      exigir(p.formato==='ims-abiertos-corte-v1'&&p.fuentes.every(function(f){return f.estado==='COMPLETO'||f.estado==='REVISION';}),'RECUPERACION_YA_INICIADA_O_CORTE_PENDIENTE');
+      var anteriorTexto=privada(pf).getBlob().getDataAsString('UTF-8'),anterior=JSON.parse(anteriorTexto),panNuevo=panelActual(SpreadsheetApp.openById(maestro)),seleccion=seleccionar(panNuevo),recapturas=0,agregadas=0;
+      var nuevas=seleccion.fuentes.map(function(f){
+        var antes=anterior.fuentes.filter(function(x){return x.id===f.id&&x.tipo===f.tipo;})[0],estable=false;
+        if(antes&&antes.estado==='COMPLETO'&&f.tipo!=='MAESTRO')try{estable=DriveApp.getFileById(f.id).getLastUpdated().getTime()===antes.version_origen;}catch(e){}
+        if(estable){var copia=JSON.parse(JSON.stringify(antes));copia.panel=f.panel;copia.reutilizada_de=anterior.corte_id;return copia;}
+        if(antes)recapturas++;else agregadas++;return pendiente(f);
+      });
+      var usados={};nuevas.forEach(function(f){f.partes.forEach(function(x){usados[x.nombre]=true;});});var conservadas=[];
+      anterior.fuentes.forEach(function(f){f.partes.forEach(function(x){if(!usados[x.nombre]){var copia=JSON.parse(JSON.stringify(x));copia.fuente_id=f.id;conservadas.push(copia);}});});
+      var retiradas=anterior.fuentes.filter(function(f){return f.tipo==='INVENTARIO'&&!nuevas.some(function(x){return x.id===f.id;});}).map(function(f){return f.id;});
+      var nuevo={formato:'ims-abiertos-corte-v2',corte_id:Utilities.getUuid(),proyecto:proyecto,maestro:maestro,propietario:activo,creado_en:new Date().toISOString(),limites:{filas:1000000,columnas:512,celdas_fragmento:10000},panel_sha256:sha(JSON.stringify(panNuevo)),panel:panNuevo,sin_archivo:seleccion.sin,referencias_discordantes:seleccion.discordantes,fuentes:nuevas,partes_conservadas_revision:conservadas,corte_final_aprobado:false,
+        recuperacion:{corte_anterior:anterior.corte_id,plan_anterior_sha256:sha(anteriorTexto),panel_anterior_sha256:anterior.panel_sha256,panel_anterior_cambio:sha(JSON.stringify(panNuevo))!==anterior.panel_sha256,fuentes_retiradas:retiradas,fuentes_recapturadas:recapturas,fuentes_agregadas:agregadas}};
+      exigir(Utilities.newBlob(JSON.stringify(nuevo)).getBytes().length<=8388608,'PLAN_GRANDE');
+      var respaldo=DriveApp.createFolder('IMS_RESPALDO_PLAN_ABIERTOS_'+anterior.corte_id+'_'+Utilities.getUuid());respaldo.setSharing(DriveApp.Access.PRIVATE,DriveApp.Permission.VIEW);privada(respaldo);
+      nuevo.recuperacion.respaldo_plan_archivo_id=escribirTexto(respaldo,'plan_abiertos_privado.json',anteriorTexto).archivo_id;
+      privada(pf).setContent(JSON.stringify(nuevo));var rr=resumen(nuevo),rit=folder.getFilesByName('resumen_abiertos_para_compartir.json');if(rit.hasNext())privada(unico(rit)).setContent(JSON.stringify(rr));else escribir(folder,'resumen_abiertos_para_compartir.json',rr);
+      Logger.log('CARPETA PRIVADA DEL CORTE RECUPERADO; NO ADJUNTAR AL CHAT: '+folder.getUrl());return rr;
+    }
+    var maxColumnas=p.formato==='ims-abiertos-corte-v2'?512:200;
+    if(p.formato==='ims-abiertos-corte-v2')exigir(p.limites&&p.limites.filas===1000000&&p.limites.columnas===512&&p.limites.celdas_fragmento===10000,'LIMITES');
     var inicioRun=Date.now();etapa='LECTURA';
     while(Date.now()-inicioRun<150000) {
       var f=p.fuentes.filter(function(f){return f.estado==='PENDIENTE';})[0];if(!f)break;
@@ -77,7 +112,7 @@ function IMSAbiertosPrivado20261110_(accion) {
         exigir(version===f.version_origen,'FUENTE_CAMBIO');
         var h=f.hojas[f.hoja];
         if(!h){f.estado='COMPLETO';f.verificado_en=new Date().toISOString();privada(pf).setContent(JSON.stringify(p));continue;}
-        exigir(h.columnas<=200&&h.filas<=1000000,'TAMANO_HOJA');
+        exigir(h.columnas<=maxColumnas&&h.filas<=1000000,'TAMANO_HOJA');
         var sh=book.getSheets().filter(function(s){return s.getSheetId()===h.id;})[0];exigir(sh&&sh.getName()===h.nombre&&sh.getLastRow()===h.filas&&sh.getLastColumn()===h.columnas,'FUENTE_CAMBIO');
         if(!h.filas||!h.columnas||f.fila>h.filas){f.hoja++;f.fila=1;privada(pf).setContent(JSON.stringify(p));continue;}
         var n=Math.min(250,Math.max(1,Math.floor(10000/h.columnas)),h.filas-f.fila+1),a=fragmento(sh,h,f.fila,n,f.tipo),b=fragmento(sh,h,f.fila,n,f.tipo),txt=JSON.stringify(a);
@@ -85,6 +120,7 @@ function IMSAbiertosPrivado20261110_(accion) {
         var nombre='fuente_'+sha(f.id).slice(0,16)+'_'+f.hoja+'_'+f.fila+'_'+Utilities.getUuid()+'.json',part=escribir(folder,nombre,a);part.hoja=h.nombre;part.hoja_id=h.id;part.inicio=f.fila;part.filas=n;f.partes.push(part);f.fila+=n;privada(pf).setContent(JSON.stringify(p));
       }catch(e){f.estado='REVISION';f.motivo=/FUENTE_CAMBIO/.test(String(e))?'FUENTE_CAMBIO':'LECTURA_O_LIMITE';privada(pf).setContent(JSON.stringify(p));}
     }
+    if(p.formato==='ims-abiertos-corte-v2')p.fuentes.forEach(function(f){if(f.estado==='COMPLETO')try{if(DriveApp.getFileById(f.id).getLastUpdated().getTime()!==f.version_origen){f.estado='REVISION';f.motivo='FUENTE_CAMBIO';}}catch(e){f.estado='REVISION';f.motivo='LECTURA_O_LIMITE';}});
     var actual=panelActual(SpreadsheetApp.openById(maestro));p.panel_cambio=sha(JSON.stringify(actual))!==p.panel_sha256;privada(pf).setContent(JSON.stringify(p));
     var r=resumen(p);r.panel_cambio=p.panel_cambio;var resumenIt=folder.getFilesByName('resumen_abiertos_para_compartir.json');if(resumenIt.hasNext())privada(unico(resumenIt)).setContent(JSON.stringify(r));else escribir(folder,'resumen_abiertos_para_compartir.json',r);
     Logger.log('CARPETA PRIVADA; NO ADJUNTAR AL CHAT: '+folder.getUrl());return r;

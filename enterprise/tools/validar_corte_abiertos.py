@@ -63,7 +63,7 @@ def verificar_celdas(celdas,columnas,permitidas=None):
 def panel_valor(row,col):
     return next((str(c['valor']) for c in row['celdas'] if c['columna']==col and c['valor'] is not None),'')
 
-def verificar_metadatos(h,meta,estado,fuente,tipo,indice):
+def verificar_metadatos(h,meta,estado,fuente,tipo,indice,max_columnas=200):
     """Una descripción de hoja no implica que su contenido haya sido capturado."""
     problemas=[];d=h if isinstance(h,dict) else {}
     if not isinstance(h,dict):problemas.append('FORMATO_NO_OBJETO')
@@ -75,12 +75,57 @@ def verificar_metadatos(h,meta,estado,fuente,tipo,indice):
         elif not 0<=d[campo]<=2147483647:problemas.append(campo.upper()+'_FUERA_RANGO')
     detalle={'fuente_en_corte':fuente,'tipo':tipo,'hoja_en_fuente':indice,'problemas':problemas}
     if problemas:raise CorteInvalido('Metadatos de hoja incompatibles.',detalle)
-    fuera=d['filas']>1000000 or d['columnas']>200
+    fuera=d['filas']>1000000 or d['columnas']>max_columnas
     if fuera and estado=='COMPLETO':
         detalle['problemas']=['DIMENSION_FUERA_LIMITE_DE_CAPTURA'];raise CorteInvalido('Una fuente completa describe una hoja fuera del límite de captura.',detalle)
     return fuera
 
-def validar_zip(archivo):
+def buscar_base(rec,directorio):
+    exigir(isinstance(rec,dict) and bool(re.fullmatch(UUID,rec.get('corte_anterior',''))) and bool(re.fullmatch('[a-f0-9]{64}',rec.get('plan_anterior_sha256',''))),'Linaje de recuperación incompatible.')
+    exigir(directorio is not None,'Para revisar la recuperación hace falta la carpeta privada con el ZIP anterior.')
+    raiz=Path(directorio).absolute();exigir(raiz.resolve()==raiz and raiz.is_dir(),'La carpeta privada de cortes anteriores debe ser regular y sin enlaces.')
+    candidatos=sorted(raiz.glob('ims-abiertos-*.zip'));exigir(len(candidatos)<=128,'Hay demasiados cortes candidatos; revisar la entrada privada.')
+    for candidato in candidatos:
+        if not re.fullmatch(r'ims-abiertos-[a-f0-9]{32}\.zip',candidato.name) or candidato.is_symlink() or not candidato.is_file() or candidato.stat().st_uid!=os.geteuid() or candidato.stat().st_size>536870912:continue
+        try:
+            with zipfile.ZipFile(candidato) as z:
+                planes=[i for i in z.infolist() if PurePosixPath(i.filename).name=='plan_abiertos_privado.json']
+                if len(planes)!=1 or planes[0].file_size>8388608:continue
+                raw=z.read(planes[0])
+                if hashlib.sha256(raw).hexdigest()!=rec['plan_anterior_sha256']:continue
+                base=cargar(raw)
+                if base.get('formato')!='ims-abiertos-corte-v1' or base.get('corte_id')!=rec['corte_anterior']:continue
+            validar_zip(candidato)
+            exigir(base.get('panel_sha256')==rec.get('panel_anterior_sha256') and all(f.get('estado') in ('COMPLETO','REVISION') for f in base['fuentes']),'El corte anterior no coincide o sigue pendiente.')
+            return base
+        except (ValueError,OSError,zipfile.BadZipFile,KeyError,TypeError):continue
+    raise CorteInvalido('No se encontró un ZIP anterior íntegro con el ID y la huella de plan esperados. Conserva los cortes privados anteriores.')
+
+def verificar_recuperacion(p,base,z,entradas,usados):
+    rec=p['recuperacion'];previas={f['id']:f for f in base['fuentes']};actuales={f['id']:f for f in p['fuentes']};anteriores={};activos={};archivos={}
+    exigir(type(rec.get('fuentes_recapturadas')) is int and type(rec.get('fuentes_agregadas')) is int and type(rec.get('panel_anterior_cambio')) is bool,'Tipos del resumen de recuperación incompatibles.')
+    campos=['sha256','bytes','hoja','hoja_id','inicio','filas']
+    for f in base['fuentes']:
+        for parte in f['partes']:
+            exigir(parte['nombre'] not in anteriores,'El corte anterior repite fragmentos.');anteriores[parte['nombre']]=(f['id'],parte)
+    for f in p['fuentes']:
+        for parte in f['partes']:activos[parte['nombre']]=(f['id'],parte)
+        if f.get('reutilizada_de') is not None:
+            antes=previas.get(f['id']);exigir(antes is not None and antes['estado']=='COMPLETO' and f['tipo']!='MAESTRO' and f['reutilizada_de']==base['corte_id'] and f.get('version_origen')==antes.get('version_origen') and f.get('hojas')==antes.get('hojas') and f['partes']==antes['partes'],'Una fuente reutilizada no coincide con su corte anterior.')
+    conservadas=p.get('partes_conservadas_revision');exigir(isinstance(conservadas,list),'Falta el inventario de fragmentos conservados para revisión.')
+    for parte in conservadas:
+        nombre=parte.get('nombre');anterior=anteriores.get(nombre);exigir(anterior is not None and nombre not in usados and nombre not in archivos and parte.get('fuente_id')==anterior[0] and all(parte.get(k)==anterior[1].get(k) for k in campos),'Fragmento conservado ajeno o alterado.')
+        exigir(nombre in entradas,'Falta un fragmento conservado del corte anterior.');raw=z.read(entradas[nombre]);exigir(len(raw)==parte['bytes'] and hashlib.sha256(raw).hexdigest()==parte['sha256'],'El contenido conservado del corte anterior fue alterado.');archivos[nombre]=True;usados.add(nombre)
+    for nombre,(fuente,parte) in anteriores.items():
+        if nombre in activos:
+            exigir(activos[nombre][0]==fuente and actuales[fuente].get('reutilizada_de')==base['corte_id'] and all(activos[nombre][1].get(k)==parte.get(k) for k in campos),'Un fragmento anterior se presenta como una captura nueva.')
+        else:exigir(nombre in archivos,'Se perdió un fragmento del corte anterior durante la recuperación.')
+    retiradas=[f['id'] for f in base['fuentes'] if f['tipo']=='INVENTARIO' and f['id'] not in actuales]
+    reutilizadas=sum(f.get('reutilizada_de') is not None for f in p['fuentes']);recapturadas=sum(f['id'] in previas and f.get('reutilizada_de') is None for f in p['fuentes']);agregadas=sum(f['id'] not in previas for f in p['fuentes'])
+    exigir(rec.get('fuentes_retiradas')==retiradas and rec.get('fuentes_recapturadas')==recapturadas and rec.get('fuentes_agregadas')==agregadas and rec.get('panel_anterior_cambio')==(p['panel_sha256']!=base['panel_sha256']),'El resumen de recuperación no concilia con ambos cortes.')
+    return {'corte_anterior':base['corte_id'],'linaje_respaldo_verificado':True,'fuentes_reutilizadas':reutilizadas,'fuentes_recapturadas':recapturadas,'fuentes_agregadas':agregadas,'fuentes_retiradas_panel_actual':len(retiradas),'fragmentos_conservados_revision':len(archivos),'panel_anterior_cambio':rec['panel_anterior_cambio']}
+
+def validar_zip(archivo,base_dir=None):
     archivo=Path(archivo).absolute();exigir(archivo.resolve()==archivo and archivo.is_file() and archivo.suffix.lower()=='.zip','Usa un ZIP local regular, sin enlaces.')
     exigir(archivo.stat().st_size<=536870912,'ZIP demasiado grande.')
     with zipfile.ZipFile(archivo) as z:
@@ -96,7 +141,10 @@ def validar_zip(archivo):
             total+=info.file_size;exigir(info.file_size<=8388608 and total<=536870912,'Contenido ZIP demasiado grande.');entradas[path.name]=info
         exigir('plan_abiertos_privado.json' in entradas,'Falta el plan privado.')
         p=cargar(z.read(entradas['plan_abiertos_privado.json']))
-        exigir(p.get('formato')=='ims-abiertos-corte-v1' and p.get('proyecto')==PROYECTO and p.get('maestro')==MAESTRO and p.get('propietario') in ('brantos102@gmail.com','bespinoza@itsanet.com') and re.fullmatch(UUID,p.get('corte_id','')),'Origen o formato de corte incompatible.')
+        exigir(p.get('formato') in ('ims-abiertos-corte-v1','ims-abiertos-corte-v2') and p.get('proyecto')==PROYECTO and p.get('maestro')==MAESTRO and p.get('propietario') in ('brantos102@gmail.com','bespinoza@itsanet.com') and re.fullmatch(UUID,p.get('corte_id','')),'Origen o formato de corte incompatible.')
+        v2=p['formato']=='ims-abiertos-corte-v2';base=None;max_columnas=512 if v2 else 200
+        if v2:
+            exigir(p.get('limites')=={'filas':1000000,'columnas':512,'celdas_fragmento':10000},'Límites de recuperación incompatibles.');base=buscar_base(p.get('recuperacion'),base_dir);exigir(base['corte_id']!=p['corte_id'],'La recuperación debe tener una identidad nueva.')
         exigir(p.get('corte_final_aprobado') is False and isinstance(p.get('fuentes'),list) and 3<=len(p['fuentes'])<=10000,'Plan incompatible.')
         panel=p.get('panel');exigir(isinstance(panel,list) and 1<=len(panel)<=10001,'Panel incompatible.')
         exigir(hashlib.sha256(json.dumps(panel,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()==p.get('panel_sha256'),'Panel alterado.')
@@ -121,8 +169,8 @@ def validar_zip(archivo):
             estado=f.get('estado');exigir(estado in ('PENDIENTE','REVISION','COMPLETO'),'Estado de exportación incompatible.');completas+=estado=='COMPLETO';revision+=estado=='REVISION'
             hs=f.get('hojas') or [];exigir(isinstance(hs,list) and len(hs)<=200,'Hojas incompatibles.');meta={};cobertura={};omisiones={};stock={}
             for nh,h in enumerate(hs,1):
-                fuera=verificar_metadatos(h,meta,estado,indice,tipo,nh)
-                if fuera:hojas_fuera_limite.append({'fuente_en_corte':indice,'tipo':tipo,'hoja_en_fuente':nh,'filas':h['filas'],'columnas':h['columnas'],'limite_filas_captura':1000000,'limite_columnas_captura':200,'contenido_capturado':False})
+                fuera=verificar_metadatos(h,meta,estado,indice,tipo,nh,max_columnas)
+                if fuera:hojas_fuera_limite.append({'fuente_en_corte':indice,'tipo':tipo,'hoja_en_fuente':nh,'filas':h['filas'],'columnas':h['columnas'],'limite_filas_captura':1000000,'limite_columnas_captura':max_columnas,'contenido_capturado':False})
                 nombre=normal(h['nombre']);exigir(not re.search('CREDENCIAL|CREDENTIAL|CONTRASENA|PASSWORD|SECRET|TOKEN|PROPIEDAD|CONEXION|CONFIG|^API$',nombre),'El corte incluye una hoja de configuración sensible.')
                 exigir(tipo=='MAESTRO' or nombre not in ('USUARIO','USUARIOS'),'El corte incluye usuarios del archivo hijo.')
                 meta[h['id']]=h;cobertura[h['id']]=1;hojas+=1
@@ -131,8 +179,9 @@ def validar_zip(archivo):
                 name=parte.get('nombre','');exigir(re.fullmatch('fuente_'+hashlib.sha256(id.encode()).hexdigest()[:16]+r'_\d+_\d+_'+UUID+r'\.json',name) and name in entradas and name not in usados,'Fragmento repetido, ausente o ajeno.');usados.add(name)
                 raw=z.read(entradas[name]);exigir(len(raw)==parte.get('bytes') and hashlib.sha256(raw).hexdigest()==parte.get('sha256'),'Contenido de fragmento alterado.')
                 d=cargar(raw);h=meta.get(d.get('hoja_id'));exigir(h is not None and d.get('formato')=='ims-abiertos-fragmento-v1' and d.get('hoja')==h['nombre'] and d.get('columnas')==h['columnas'] and parte.get('hoja')==h['nombre'] and parte.get('hoja_id')==h['id'],'Fragmento incompatible con su hoja.')
-                exigir(h['filas']<=1000000 and h['columnas']<=200,'Un fragmento describe contenido fuera del límite de captura.')
+                exigir(h['filas']<=1000000 and h['columnas']<=max_columnas,'Un fragmento describe contenido fuera del límite de captura.')
                 rows=d.get('filas');exigir(isinstance(rows,list) and 1<=len(rows)<=250 and len(rows)==parte.get('filas') and d.get('inicio')==parte.get('inicio')==cobertura[h['id']],'Fragmentos con huecos o solapamientos.')
+                exigir(len(rows)*h['columnas']<=10000,'El fragmento supera el límite de celdas de captura.')
                 omit=d.get('columnas_omitidas');exigir(isinstance(omit,list) and all(type(i) is int and 1<=i<=h['columnas'] for i in omit) and omit==sorted(set(omit)),'Omisiones incompatibles.')
                 if h['id'] in omisiones:exigir(omit==omisiones[h['id']],'Cambió la política de columnas entre fragmentos.')
                 omisiones[h['id']]=omit
@@ -171,18 +220,21 @@ def validar_zip(archivo):
                 grupo=estructuras[key];grupo['archivos']+=1;grupo['archivos_completos']+=estado=='COMPLETO';grupo['filas_producto']+=st['filas_producto'];grupo['textos_con_coma_en_cantidades']+=st['textos_con_coma_en_cantidades']
                 for c in ['c1','c2','c3']:grupo['capturas_presentes'][c]+=st['capturas_presentes'][c]
         exigir(tipos==set(especiales) and ids-set(especiales.values())==set(esperadas),'Faltan fuentes o archivos del panel.')
+        recuperacion=verificar_recuperacion(p,base,z,entradas,usados) if v2 else None
         extras=set(entradas)-usados-{'plan_abiertos_privado.json','resumen_abiertos_para_compartir.json'}
         exigir(all(re.fullmatch(r'fuente_[a-f0-9]{16}_\d+_\d+_'+UUID+r'\.json',name) for name in extras),'ZIP con archivos ajenos al corte.')
         r={'ok':True,'formato':'ims-abiertos-validacion-v1','corte_id':p['corte_id'],'fuentes':len(p['fuentes']),'inventarios_en_panel':len(esperadas),'fuentes_completas':completas,'fuentes_revision':revision,'fuentes_pendientes':len(p['fuentes'])-completas-revision,'revision_fuentes':revision_fuentes,'hojas_fuera_limite':hojas_fuera_limite,'hojas':hojas,'filas':filas,'fragmentos':fragmentos,'fragmentos_no_referenciados':len(extras),'panel_cambio':bool(p.get('panel_cambio')),'filas_panel_sin_archivo':sin,'referencias_discordantes':len(discordantes),'estructuras_stock':list(estructuras.values()),'cantidades_interpretadas':False,'lista_para_plan':completas==len(p['fuentes']) and not p.get('panel_cambio') and not extras and not discordantes,'corte_final_aprobado':False,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False}
+        if recuperacion:
+            r['recuperacion']=recuperacion;r['lista_para_plan']=r['lista_para_plan'] and not sin and not recuperacion['fuentes_retiradas_panel_actual']
         huella=hashlib.sha256()
         with archivo.open('rb') as stream:
             for bloque in iter(lambda:stream.read(1048576),b''):huella.update(bloque)
         return r,{'corte_id':p['corte_id'],'sha256_zip':huella.hexdigest(),'archivo_zip':str(archivo),'validacion':r}
 
 def main():
-    ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--zip',required=True);ap.add_argument('--salida',required=True);args=ap.parse_args();os.umask(0o077)
+    ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--zip',required=True);ap.add_argument('--salida',required=True);ap.add_argument('--base-dir');args=ap.parse_args();os.umask(0o077)
     out=Path(args.salida).absolute();exigir(out.resolve()==out and not out.exists() and not out.is_symlink(),'La carpeta de salida debe ser nueva y sin enlaces.')
-    r,privado=validar_zip(args.zip);out.mkdir(mode=0o700,parents=False)
+    r,privado=validar_zip(args.zip,args.base_dir);out.mkdir(mode=0o700,parents=False)
     for name,value in [('resumen_abiertos_para_compartir.json',r),('validacion_abiertos_NO_COMPARTIR.json',privado)]:
         with open(out/name,'x',encoding='utf-8') as f:os.chmod(f.name,0o600);json.dump(value,f,ensure_ascii=False,indent=2);f.write('\n')
     print(json.dumps(r,ensure_ascii=False))

@@ -1,0 +1,46 @@
+{
+  "fecha_operativa": "2026-11-11",
+  "evidencia_corporativa_reportada": {
+    "estructura_zip_validada": true,
+    "fuentes": 16,
+    "inventarios": 13,
+    "inventarios_completos": 12,
+    "inventario_retenido_por_cambio_fila_panel_anterior": 370,
+    "maestro_retenido_por_columnas": [385, 384],
+    "filas_producto_incluidas_en_copia_parcial": 12509,
+    "panel_cambio": true,
+    "datos_importados": false
+  },
+  "herramienta_preparada": {
+    "recuperacion_v2_desde_v1_terminado_una_sola_vez": true,
+    "respaldo_privado_del_plan_anterior_antes_de_actualizar_el_plan_activo": true,
+    "fuentes_completas_se_reutilizan_solo_con_version_igual": true,
+    "maestro_retenidas_nuevas_o_cambiadas_se_recapturan": true,
+    "maximo_columnas": 512,
+    "maximo_celdas_por_fragmento": 10000,
+    "maximo_filas_por_fragmento": 250,
+    "versiones_completadas_se_revisan_al_final_de_cada_continuacion": true,
+    "fragmentos_anteriores_conservados_sin_sumarlos_dos_veces": true,
+    "plan_y_fragmentos_del_zip_base_conciliados_por_sha256": true,
+    "archivos_fuera_de_seleccion_actual_se_conservan_y_bloquean_aprobacion": true,
+    "panel_actual_nuevo_y_panel_anterior_se_distinguen": true
+  },
+  "pruebas_locales": {
+    "node_version": "24.19.0",
+    "node_correctas": 164,
+    "node_fallidas": 0,
+    "python_correctas": 97,
+    "python_fallidas": 0,
+    "apps_script_simulado_y_zip_python_con_maestro_385_y_384_columnas": true,
+    "cero_contado_y_sku_con_ceros_conservados": true,
+    "respaldo_ausente_alterado_o_recaptura_falsa_rechazados": true,
+    "ejecucion_real_google_de_la_recuperacion": false,
+    "ejecucion_windows_de_la_version_nueva": false
+  },
+  "originales_google_modificados_por_la_herramienta": false,
+  "propiedades_o_despliegues_google_modificados": false,
+  "importacion_mysql": false,
+  "servicios_reiniciados": false,
+  "apache_o_puertos_modificados": false,
+  "corte_final_a_produccion_realizado": false
+}

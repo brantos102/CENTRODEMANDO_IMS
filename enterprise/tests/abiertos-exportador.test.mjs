@@ -24,3 +24,22 @@ test('una fuente que cambia queda retenida para revisión y no se anuncia lista 
 test('un cambio del panel se informa sin sobrescribir el corte ni declarar listo el conjunto',()=>{
  const f=simular();f.preparar();f.panel[1][6]='En validación';let r;for(let i=0;i<50;i++){r=f.continuar();if(r.extraccion_terminada)break;}assert.equal(r.panel_cambio,true);assert.equal(r.lista_para_revision,false);assert.equal(f.plan().panel[1].celdas.find(c=>c.columna===7).valor,'En Proceso');
 });
+function terminar(f){let r;for(let i=0;i<100;i++){r=f.continuar();if(r.extraccion_terminada)return r;}throw Error('No terminó el corte sintético.');}
+test('recuperación preserva plan y fragmentos anteriores, recaptura la fuente cambiada y el maestro ancho con fragmentos pequeños',()=>{
+ const f=simular({ancho:true});f.preparar();f.continuar();assert.ok(f.plan().fuentes.find(x=>x.id===ABIERTO).partes.length);f.cambiarOrigen(ABIERTO);const primero=terminar(f);assert.equal(primero.fuentes_revision,2);
+ const antes=f.archivosCorte(),planAntes=f.plan();f.panel[2][8]='Responsable actual';const nuevo=f.recuperar();assert.equal(nuevo.fuentes_recapturadas,2);assert.equal(nuevo.fuentes_reutilizadas,4);assert.equal(nuevo.panel_anterior_cambio,true);assert.notEqual(nuevo.corte_id,primero.corte_id);assert.throws(f.recuperar);
+ assert.ok(f.files.some(x=>x.nombre==='plan_abiertos_privado.json'&&x.content===antes.find(x=>x.nombre==='plan_abiertos_privado.json').content));const r=terminar(f);assert.equal(r.fuentes_revision,0);assert.equal(r.panel_cambio,false);assert.equal(r.corte_final_aprobado,false);assert.equal(r.fragmentos_conservados_revision,2);assert.equal(f.modificaciones(),0);
+ for(const x of antes.filter(x=>x.nombre.startsWith('fuente_')))assert.equal(f.files.find(y=>y.nombre===x.nombre).content,x.content);
+ const p=f.plan();assert.equal(p.formato,'ims-abiertos-corte-v2');assert.equal(p.recuperacion.plan_anterior_sha256,createHash('sha256').update(antes.find(x=>x.nombre==='plan_abiertos_privado.json').content).digest('hex'));
+ for(const src of p.fuentes)for(const part of src.partes){const texto=f.files.find(x=>x.nombre===part.nombre).content,d=JSON.parse(texto);assert.ok(d.filas.length*d.columnas<=10000);assert.equal(texto.includes(SECRET),false);}
+ const master=p.fuentes.find(x=>x.tipo==='MAESTRO');assert.ok(master.hojas.some(h=>h.columnas===385));assert.ok(master.hojas.some(h=>h.columnas===384));assert.equal(p.fuentes.find(x=>x.id===ABIERTO).partes.some(x=>planAntes.fuentes.find(x=>x.id===ABIERTO).partes.some(a=>a.nombre===x.nombre)),false);
+});
+test('recuperación no empieza mientras haya pendientes ni reinicia la copia ya recuperada',()=>{
+ const f=simular();f.preparar();const antes=JSON.stringify(f.archivosCorte());assert.throws(f.recuperar);assert.equal(JSON.stringify(f.archivosCorte()),antes);terminar(f);f.recuperar();const nuevo=JSON.stringify(f.archivosCorte());assert.throws(f.recuperar);assert.equal(JSON.stringify(f.archivosCorte()),nuevo);
+});
+test('cambio posterior de una fuente reutilizada queda en revisión con sus capturas conservadas',()=>{
+ const f=simular();f.preparar();terminar(f);f.recuperar();const p=f.plan(),src=p.fuentes.find(x=>x.id===ABIERTO);assert.ok(src.reutilizada_de);f.cambiarOrigen(ABIERTO);const r=terminar(f);assert.equal(r.fuentes_revision,1);assert.equal(r.lista_para_revision,false);assert.deepEqual(f.plan().fuentes.find(x=>x.id===ABIERTO).partes,src.partes);assert.equal(f.modificaciones(),0);
+});
+test('un inventario que pasó a Entregado no desaparece: conserva todos sus fragmentos y referencias en el respaldo',()=>{
+ const f=simular();f.preparar();terminar(f);const anterior=f.plan().fuentes.find(x=>x.id===ABIERTO);f.panel[1][6]='Entregado';f.panel[4][6]='Entregado';f.recuperar();const r=terminar(f),p=f.plan();assert.equal(r.fuentes_retiradas_panel_actual,1);assert.equal(r.lista_para_revision,false);assert.equal(p.fuentes.some(x=>x.id===ABIERTO),false);assert.deepEqual(p.partes_conservadas_revision.filter(x=>x.fuente_id===ABIERTO).map(x=>x.nombre),anterior.partes.map(x=>x.nombre));assert.equal(f.modificaciones(),0);
+});

@@ -117,7 +117,7 @@ if [ ! -e "$imsTrabajo" ]; then git worktree add --quiet --detach "$imsTrabajo" 
 test "$(git -C "$imsTrabajo" rev-parse HEAD)" = __REVISION__
 test -z "$(git -C "$imsTrabajo" status --porcelain)"
 imsEtapa='VALIDAR_ZIP'
-if python3 "$imsTrabajo/enterprise/tools/validar_corte_abiertos.py" --zip "$imsArchivo" --salida "$imsBase/REVISION_ABIERTOS___TOKEN__"; then :; else exit 1; fi
+if python3 "$imsTrabajo/enterprise/tools/validar_corte_abiertos.py" --zip "$imsArchivo" --base-dir "$imsBase/entrada" --salida "$imsBase/REVISION_ABIERTOS___TOKEN__"; then :; else exit 1; fi
 '@
     $imsCmd=$imsRemoto.Replace('__ARCHIVO__',$imsNombre).Replace('__SHA__',$imsSha).Replace('__REVISION__',$imsRevision).Replace('__TOKEN__',$imsToken).Replace("`r",'')
     $imsB64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($imsCmd))

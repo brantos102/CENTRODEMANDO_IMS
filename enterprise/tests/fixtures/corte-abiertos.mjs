@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 const codigo=await readFile(new URL('../../tools/EXPORTAR_ABIERTOS_PRIVADO.gs.txt',import.meta.url),'utf8');
 const PROY='1QPDNLYYqLXkOjNyWoL49JepzxW32XaTskLWfSYOfCdE10Dt62FAfhlsD',MASTER='1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk',ABIERTO='ARCHIVO_ABIERTO_SINTETICO_00001',VALIDACION='ARCHIVO_VALIDACION_SINTETICO_00002',NEGACION='ARCHIVO_NO_ENTREGADO_SINTETICO_00003',CERRADO='ARCHIVO_ENTREGADO_SINTETICO_00004',SECRET='NO_EXPORTAR_CLAVE_SINTETICA';
-export function simular({email='brantos102@gmail.com',efectivo=email,proyecto=PROY,privado=true,cambio=false,enlace=false}={}){
+export function simular({email='brantos102@gmail.com',efectivo=email,proyecto=PROY,privado=true,cambio=false,enlace=false,ancho=false}={}){
  const log=[],files=[],folders=[],books=new Map(),origenes=new Map();let reads=0,clock=Date.now(),modificaciones=0;
  const it=items=>{let n=0;return {hasNext:()=>n<items.length,next:()=>items[n++]};};
  const panel=[['CLIENTE','ARCHIVO','DRIVE','FECHA','','SEDE','ESTADO','','RESPONSABLE'],['BELIA','101126_BELIA',ABIERTO,'','','UIO','En Proceso','','Responsable'],['NOKIA','101126_NOKIA',VALIDACION,'','','GYE','En validación','',''],['OTRO','101126_OTRO',NEGACION,'','','UIO','No Entregado','',''],['BELIA','101126_BELIA',ABIERTO,'','','UIO','En Proceso','',''],['CERRADO','101126_CERRADO',CERRADO,'','','UIO',' Entregado ','',''],['PLANIFICADO','','','','','UIO','Pendiente','','']];
@@ -20,7 +20,9 @@ export function simular({email='brantos102@gmail.com',efectivo=email,proyecto=PR
   };}};return sh;
  }
  function origen(id,sheets){const source={version:1,getLastUpdated(){return new Date(source.version);},getName:()=>id,getId:()=>id,setContent(){modificaciones++;throw Error('PROHIBIDO');}};origenes.set(id,source);books.set(id,{getSpreadsheetTimeZone:()=> 'America/Guayaquil',getSheetByName:n=>sheets.find(s=>s.getName()===n),getSheets:()=>sheets});}
- origen(MASTER,[hoja('PANEL DE CONTROL',panel,1),hoja('USUARIOS',[['CORREO','NOMBRE','ROL','PASS','ACTIVO','','','ROL WMS','CLAVE'],['operador@sintetico.invalid','Nombre','Operador',SECRET,true,'','','OPERADOR',SECRET]],2),hoja('CREDENCIALES_API',[['USER','PASSWORD'],['SECRETO',SECRET]],3),hoja('CRONOGRAMA - 2026',[['FECHA','ESTADO'],['2026-11-10','En Proceso']],4)]);
+ const usuarios=[['CORREO','NOMBRE','ROL','PASS','ACTIVO','','','ROL WMS','CLAVE'],['operador@sintetico.invalid','Nombre','Operador',SECRET,true,'','','OPERADOR',SECRET]],crono=[['FECHA','ESTADO'],['2026-11-10','En Proceso']];
+ if(ancho){usuarios.forEach((r,i)=>{while(r.length<385)r.push('');r[384]=i?'Dato administrativo':'CAMPO ADMINISTRATIVO';});for(let i=0;i<65;i++){if(!crono[i])crono[i]=['2026-11-10','En Proceso'];while(crono[i].length<384)crono[i].push('');crono[i][383]=i?'Dato de cronograma':'CAMPO DE CRONOGRAMA';}}
+ origen(MASTER,[hoja('PANEL DE CONTROL',panel,1),hoja('USUARIOS',usuarios,2),hoja('CREDENCIALES_API',[['USER','PASSWORD'],['SECRETO',SECRET]],3),hoja('CRONOGRAMA - 2026',crono,4)]);
  for(const id of [ABIERTO,VALIDACION,NEGACION])origen(id,[hoja('PLANILLA DE CONTEO FISICO',[['SKU','C1','C2','PASSWORD'],['00001',0,'',SECRET]],1),hoja('REGISTRO',[['USUARIO','CANTIDAD'],['operador@sintetico.invalid',0]],2),hoja('USUARIOS',[['correo','pass'],['x',SECRET]],3)]);
  origen('1Y2VZpr-fy6iuZyfX-96N1r9l3WdZOBfFnEV6Y2BHWog',[hoja('MAESTRO EAN',[['SKU','EAN'],['0001','012345']],1)]);
  origen('1DTNYkDGdkTbMsAyUa2xeaMeY3zgk77cgua0Gd7_rJSk',[hoja('UBICACIONES',[['POSICION'],['A-01']],1)]);
@@ -31,8 +33,15 @@ export function simular({email='brantos102@gmail.com',efectivo=email,proyecto=PR
   Utilities:{getUuid:randomUUID,DigestAlgorithm:{SHA_256:'sha256'},Charset:{UTF_8:'utf8'},computeDigest:(_algo,text)=>[...createHash('sha256').update(text).digest()],newBlob:text=>({getBytes:()=>Buffer.from(text)})},MimeType:{PLAIN_TEXT:'text/plain'},
   DriveApp:{Access:{PRIVATE:'PRIVATE'},Permission:{VIEW:'VIEW'},getFileById:id=>{const f=origenes.get(id)||files.find(f=>f.id===id);if(!f)throw Error();return f;},getFolderById:id=>{const f=folders.find(f=>f.id===id);if(!f)throw Error();return f;},getFilesByName:n=>it(files.filter(f=>f.nombre===n)),createFolder:n=>{const f=recurso(n,true);folders.push(f);return f;},createFile:(n,text)=>{const f=recurso(n);f.content=text;files.push(f);return f;}}
  });vm.runInContext(codigo,ctx);
- const preparar=()=>ctx.IMSPrepararCorteAbiertos20261110(),continuar=()=>ctx.IMSContinuarCorteAbiertos20261110(),plan=()=>JSON.parse(files.find(f=>f.nombre==='plan_abiertos_privado.json').content);
- return {preparar,continuar,files,log,panel,plan,reads:()=>reads,modificaciones:()=>modificaciones};
+ const preparar=()=>ctx.IMSPrepararCorteAbiertos20261110(),continuar=()=>ctx.IMSContinuarCorteAbiertos20261110(),recuperar=()=>ctx.IMSRecuperarCorteAbiertos20261111(),plan=()=>JSON.parse(folders[0].children.find(f=>f.nombre==='plan_abiertos_privado.json').content);
+ return {preparar,continuar,recuperar,files,log,panel,plan,archivosCorte:()=>folders[0].children.map(f=>({nombre:f.nombre,content:f.content})),cambiarOrigen:(id)=>{origenes.get(id).version++;},reads:()=>reads,modificaciones:()=>modificaciones};
 }
 
 export {ABIERTO,CERRADO,SECRET};
+
+export function recuperacionDePrueba(retirar=false){
+ const f=simular({ancho:true}),fin=()=>{for(let i=0;i<100;i++)if(f.continuar().extraccion_terminada)return;throw Error('Corte sintético pendiente.');};
+ f.preparar();f.continuar();f.cambiarOrigen(ABIERTO);fin();const base=f.archivosCorte();
+ if(retirar){f.panel[1][6]='Entregado';f.panel[4][6]='Entregado';}else f.panel[2][8]='Responsable actual';
+ f.recuperar();fin();return {base,actual:f.archivosCorte()};
+}

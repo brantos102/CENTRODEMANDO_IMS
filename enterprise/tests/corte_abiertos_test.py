@@ -18,12 +18,12 @@ from validar_corte_abiertos import validar_zip
 class CorteAbiertosTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
-  code="import{simular}from'./tests/fixtures/corte-abiertos.mjs';function datos(opts){const f=simular(opts);f.preparar();for(let i=0;i<50;i++){if(f.continuar().extraccion_terminada)break;}return f.files.filter(x=>!x.nombre.startsWith('IMS_ABIERTOS_CONTROL_')).map(x=>({nombre:x.nombre,content:x.content}));}console.log(JSON.stringify({normal:datos({}),enlaces:datos({enlace:'rico'})}));"
+  code="import{simular,recuperacionDePrueba}from'./tests/fixtures/corte-abiertos.mjs';function datos(opts){const f=simular(opts);f.preparar();for(let i=0;i<50;i++){if(f.continuar().extraccion_terminada)break;}return f.files.filter(x=>!x.nombre.startsWith('IMS_ABIERTOS_CONTROL_')).map(x=>({nombre:x.nombre,content:x.content}));}console.log(JSON.stringify({normal:datos({}),enlaces:datos({enlace:'rico'}),recuperado:recuperacionDePrueba(),retirado:recuperacionDePrueba(true)}));"
   r=subprocess.run(['node','--input-type=module','-e',code],cwd=ENTERPRISE,capture_output=True,text=True,check=True)
-  datos=json.loads(r.stdout);cls.archivos=datos['normal'];cls.archivos_enlaces=datos['enlaces']
+  datos=json.loads(r.stdout);cls.archivos=datos['normal'];cls.archivos_enlaces=datos['enlaces'];cls.recuperado=datos['recuperado'];cls.retirado=datos['retirado']
 
- def paquete(self,base,archivos=None,extra=None):
-  p=Path(base)/'abiertos.zip'
+ def paquete(self,base,archivos=None,extra=None,nombre='abiertos.zip'):
+  p=Path(base)/nombre
   with zipfile.ZipFile(p,'w',zipfile.ZIP_DEFLATED) as z:
    for f in archivos or self.archivos:z.writestr('IMS_ABIERTOS_PRIVADO/'+f['nombre'],f['content'])
    if extra:
@@ -108,6 +108,35 @@ class CorteAbiertosTests(unittest.TestCase):
     else:fuente['hojas'].append(copy.deepcopy(fuente['hojas'][0]))
     pf['content']=json.dumps(p,ensure_ascii=False,separators=(',',':'));r,d=self.ejecutar_cli(self.paquete(t,files),Path(t)/'salida')
     self.assertEqual(r.returncode,1);self.assertEqual(d['codigo_error'],'CORTE_INVALIDO');self.assertEqual(d['detalle']['fuente_en_corte'],1);self.assertIn('FILAS_NO_ENTERO' if modo=='tipo' else 'ID_REPETIDO',d['detalle']['problemas']);self.assertNotIn('SECRETO_NO_COMPARTIR',r.stdout);self.assertNotIn(fuente['id'],r.stdout)
+
+ def test_recuperacion_concilia_ambos_zip_conserva_parciales_y_lee_maestro_385_columnas(self):
+  with tempfile.TemporaryDirectory() as t:
+   base=self.paquete(t,self.recuperado['base'],nombre='ims-abiertos-'+'a'*32+'.zip');actual=self.paquete(t,self.recuperado['actual']);antes_base=base.read_bytes();antes_actual=actual.read_bytes();r,_=validar_zip(actual,t)
+   self.assertTrue(r['ok']);self.assertEqual(r['fuentes_completas'],6);self.assertEqual(r['fuentes_revision'],0);self.assertEqual(r['hojas_fuera_limite'],[]);self.assertFalse(r['panel_cambio']);self.assertTrue(r['recuperacion']['panel_anterior_cambio']);self.assertTrue(r['recuperacion']['linaje_respaldo_verificado']);self.assertEqual(r['recuperacion']['fragmentos_conservados_revision'],2);self.assertEqual(r['recuperacion']['fuentes_recapturadas'],2);self.assertEqual(r['recuperacion']['fuentes_reutilizadas'],4);self.assertEqual(r['estructuras_stock'][0]['capturas_presentes']['c1'],3);self.assertEqual(base.read_bytes(),antes_base);self.assertEqual(actual.read_bytes(),antes_actual);self.assertFalse(r['corte_final_aprobado']);self.assertFalse(r['datos_importados'])
+
+ def test_recuperacion_sin_base_o_con_base_alterada_no_declara_linaje(self):
+  for modo in ('ausente','alterada'):
+   with self.subTest(modo=modo),tempfile.TemporaryDirectory() as t:
+    actual=self.paquete(t,self.recuperado['actual'])
+    if modo=='alterada':
+     files=copy.deepcopy(self.recuperado['base']);next(f for f in files if f['nombre']=='plan_abiertos_privado.json')['content']+=' ';self.paquete(t,files,nombre='ims-abiertos-'+'a'*32+'.zip')
+    with self.assertRaises(ValueError):validar_zip(actual,t)
+
+ def test_fragmentos_parciales_anteriores_no_pueden_perderse_alterarse_o_presentarse_como_nuevos(self):
+  for modo in ('ausente','alterado','recaptura_falsa','fuera_presupuesto'):
+   with self.subTest(modo=modo),tempfile.TemporaryDirectory() as t:
+    self.paquete(t,self.recuperado['base'],nombre='ims-abiertos-'+'a'*32+'.zip');files=copy.deepcopy(self.recuperado['actual']);pf=next(f for f in files if f['nombre']=='plan_abiertos_privado.json');p=json.loads(pf['content']);parte=p['partes_conservadas_revision'][0]
+    if modo=='ausente':files.pop(next(i for i,f in enumerate(files) if f['nombre']==parte['nombre']))
+    elif modo=='alterado':next(f for f in files if f['nombre']==parte['nombre'])['content']+=' '
+    elif modo=='recaptura_falsa':next(f for f in p['fuentes'] if f['tipo']=='INVENTARIO' and not f.get('reutilizada_de'))['reutilizada_de']=p['recuperacion']['corte_anterior']
+    else:p['limites']['columnas']=513
+    pf['content']=json.dumps(p,ensure_ascii=False,separators=(',',':'))
+    with self.assertRaises(ValueError):validar_zip(self.paquete(t,files),t)
+
+ def test_inventario_que_paso_a_entregado_permanece_archivado_y_requiere_conciliacion(self):
+  with tempfile.TemporaryDirectory() as t:
+   self.paquete(t,self.retirado['base'],nombre='ims-abiertos-'+'a'*32+'.zip');r,_=validar_zip(self.paquete(t,self.retirado['actual']),t)
+   self.assertEqual(r['inventarios_en_panel'],2);self.assertEqual(r['recuperacion']['fuentes_retiradas_panel_actual'],1);self.assertGreater(r['recuperacion']['fragmentos_conservados_revision'],0);self.assertFalse(r['lista_para_plan']);self.assertFalse(r['datos_importados'])
 
  def test_los_enlaces_ricos_del_panel_son_conciliados_tambien_en_servidor(self):
   with tempfile.TemporaryDirectory() as t:

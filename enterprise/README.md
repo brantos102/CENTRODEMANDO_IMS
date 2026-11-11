@@ -1,5 +1,7 @@
 # Preparación de la migración de Centro de Mando a MySQL
 
+Actualización del 11 de noviembre: [recuperar el corte de abiertos](RECUPERAR_ABIERTOS.md) conserva el plan y los fragmentos anteriores, recaptura fuentes que cambiaron y admite el maestro de 385/384 columnas con fragmentos pequeños. No activa servicios ni importa datos.
+
 Entrega siguiente: [cantidades legibles y corte privado de inventarios abiertos](CORTE_ABIERTOS_Y_FORMATOS.md). El formato elimina ceros de relleno y conserva decimales exactos; el actualizador concilia el stock persistido antes del cambio. El usuario eligió trasladar también los abiertos de Google: se incluye el exportador privado y envío/validación de su corte actual, sin declararlo importado ni cerrar todavía la migración completa.
 
 Nueva entrega: [creación nativa desde consultas ERP](CREACION_DESDE_ERP.md), con stock completo revisado, varias cuentas/clientes, procedencia por línea y recuperación de confirmaciones. Requiere su preparación aditiva y activación propias; la consulta ERP ya verificada en el servidor continúa siendo la versión vigente hasta aplicar esta entrega.

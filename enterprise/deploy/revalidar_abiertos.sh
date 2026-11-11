@@ -36,7 +36,7 @@ mkdir -- "$imsSalida"
 imsInforme="$imsSalida/resumen_revalidacion_para_compartir.json"
 imsEstado=0
 if python3 "$imsTrabajo/enterprise/tools/validar_corte_abiertos.py" \
-  --zip "$imsArchivo" --salida "$imsSalida/validacion" > "$imsInforme"; then
+  --zip "$imsArchivo" --base-dir "$imsDatos/entrada" --salida "$imsSalida/validacion" > "$imsInforme"; then
   :
 else
   imsEstado=$?
