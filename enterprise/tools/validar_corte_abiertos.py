@@ -23,8 +23,11 @@ ALIAS_STOCK={
  'abc':['ABC'], 'despacho':['NDESPACHO'], 'partida':['NPARTIDA'], 'categoria':['CATLOG','CATEGORIA'], 'estado_mercancia':['ESTMER'], 'numero':['NDELINEA','NUMERODELINEA']
 }
 
+class CorteInvalido(ValueError):
+    """Solo mensajes estáticos de validación, sin valores del ZIP."""
+
 def exigir(ok,msg):
-    if not ok:raise ValueError(msg)
+    if not ok:raise CorteInvalido(msg)
 
 def normal(s):
     import unicodedata
@@ -165,5 +168,10 @@ def main():
 
 if __name__=='__main__':
     try:main()
-    except Exception:
-        print('Validación detenida. Usa el ZIP privado completo y una salida nueva. No se extraen rutas ZIP ni se modifica MySQL.');raise SystemExit(1)
+    except Exception as error:
+        codigo='VALIDACION_NO_CONFIRMADA';motivo='No se pudo completar la validación; conserva el ZIP y los originales privados.'
+        if isinstance(error,CorteInvalido):codigo='CORTE_INVALIDO';motivo=str(error)
+        elif isinstance(error,zipfile.BadZipFile):codigo='ZIP_ILEGIBLE';motivo='El archivo no es un ZIP íntegro o compatible.'
+        elif isinstance(error,(json.JSONDecodeError,UnicodeDecodeError)):codigo='JSON_ILEGIBLE';motivo='Un documento del corte no contiene JSON UTF-8 compatible.'
+        elif isinstance(error,OSError):codigo='ACCESO_LOCAL';motivo='No se pudo leer el ZIP o crear el informe privado en el servidor.'
+        print(json.dumps({'ok':False,'codigo_error':codigo,'motivo':motivo,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False},ensure_ascii=False));raise SystemExit(1)

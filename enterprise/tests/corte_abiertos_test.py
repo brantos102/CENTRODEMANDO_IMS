@@ -45,6 +45,33 @@ class CorteAbiertosTests(unittest.TestCase):
     else:files.pop(idx)
     with self.assertRaises(ValueError):validar_zip(self.paquete(t,files))
 
+ def ejecutar_cli(self,archivo,salida):
+  r=subprocess.run([sys.executable,str(ENTERPRISE/'tools/validar_corte_abiertos.py'),'--zip',str(archivo),'--salida',str(salida)],capture_output=True,text=True)
+  self.assertNotIn('Traceback',r.stderr);return r,json.loads(r.stdout)
+
+ def test_cli_explicita_zip_solo_resumen_sin_revelar_contenido_o_crear_salida(self):
+  with tempfile.TemporaryDirectory() as t:
+   p=self.paquete(t,[{'nombre':'resumen_abiertos_para_compartir.json','content':'SECRETO_NO_COMPARTIR'}]);out=Path(t)/'salida';antes=p.read_bytes();r,d=self.ejecutar_cli(p,out)
+   self.assertEqual(r.returncode,1);self.assertEqual(d['codigo_error'],'CORTE_INVALIDO');self.assertEqual(d['motivo'],'Falta el plan privado.');self.assertFalse(d['datos_importados']);self.assertFalse(out.exists());self.assertNotIn('SECRETO_NO_COMPARTIR',r.stdout+r.stderr);self.assertEqual(p.read_bytes(),antes)
+
+ def test_cli_json_ilegible_y_fragmento_faltante_preservan_motivo_sin_valores(self):
+  for modo in ('json','fragmento'):
+   with self.subTest(modo=modo),tempfile.TemporaryDirectory() as t:
+    files=copy.deepcopy(self.archivos)
+    if modo=='json':next(f for f in files if f['nombre']=='plan_abiertos_privado.json')['content']='{"SECRETO_NO_COMPARTIR":'
+    else:files.pop(next(i for i,f in enumerate(files) if f['nombre'].startswith('fuente_')))
+    p=self.paquete(t,files);out=Path(t)/'salida';r,d=self.ejecutar_cli(p,out)
+    self.assertEqual(r.returncode,1);self.assertEqual(d['codigo_error'],'JSON_ILEGIBLE' if modo=='json' else 'CORTE_INVALIDO');self.assertFalse(d['base_de_datos_modificada']);self.assertFalse(out.exists());self.assertNotIn('SECRETO_NO_COMPARTIR',r.stdout+r.stderr)
+
+ def test_cli_zip_ilegible_y_salida_existente_no_se_confunden_con_revision(self):
+  for modo in ('zip','salida'):
+   with self.subTest(modo=modo),tempfile.TemporaryDirectory() as t:
+    p=self.paquete(t);out=Path(t)/'salida'
+    if modo=='zip':p.write_bytes(b'SECRETO_NO_COMPARTIR')
+    else:out.mkdir();(out/'conservar.txt').write_text('EXISTENTE')
+    r,d=self.ejecutar_cli(p,out);self.assertEqual(r.returncode,1);self.assertEqual(d['codigo_error'],'ZIP_ILEGIBLE' if modo=='zip' else 'CORTE_INVALIDO');self.assertFalse(d['servicios_reiniciados']);self.assertNotIn('SECRETO_NO_COMPARTIR',r.stdout+r.stderr)
+    if modo=='salida':self.assertEqual((out/'conservar.txt').read_text(),'EXISTENTE')
+
  def test_revision_explica_motivo_y_ubica_panel_sin_exponer_identidad_o_celdas(self):
   for motivo in ('FUENTE_CAMBIO','LECTURA_O_LIMITE','SECRETO_NO_PUBLICAR'):
    with self.subTest(motivo=motivo),tempfile.TemporaryDirectory() as t:

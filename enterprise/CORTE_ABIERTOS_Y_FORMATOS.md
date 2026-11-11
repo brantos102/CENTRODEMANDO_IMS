@@ -58,6 +58,14 @@ El nuevo resumen añade `revision_fuentes`: tipo de fuente, número dentro del c
 
 Este envío preserva también los fragmentos de las fuentes en revisión; no las omite, importa o aprueba. Compartir solo el resumen nuevo. Mantener Google operativo mientras se prepara y concilia el traslado.
 
+## Si el envío termina en «Validación detenida»
+
+El mensaje de la versión anterior no distinguía un ZIP incompleto de un fallo de preparación remota. La candidata actual añade `zip_previo` al resumen de Windows: cuenta documentos, planes y fragmentos sin extraer ni mostrar nombres. Rechaza antes de enviar un ZIP ilegible, sin `plan_abiertos_privado.json` o sin archivos `fuente_…json`. Un ZIP con solo `resumen_abiertos_para_compartir.json` no es el corte completo. El tamaño pequeño es una pista, no una prueba de la causa.
+
+Para descargar el corte completo, ir a la carpeta que contiene **IMS_ABIERTOS_PRIVADO_…**, seleccionar esa carpeta y usar **Descargar** desde su menú contextual. Esperar a que Drive termine de preparar y descargar el ZIP. Revisar en el Explorador que incluya el plan y los fragmentos; no cambiar, editar o recomprimir su contenido. No se necesita volver a ejecutar Apps Script para descargar el mismo corte terminado.
+
+Actualizar la candidata de Windows y ejecutar el bloque PowerShell de envío anterior. En caso de fallo, el script guarda el diagnóstico estructurado disponible en `resumen_envio_abiertos_para_compartir.json` y abre su carpeta. `diagnostico_remoto` distingue la etapa de Git, integridad del ZIP, worktree o validación. El validador informa sus motivos estáticos sin volcar valores JSON, rutas internas del ZIP o excepciones con contenido privado. Un fallo SSH sin respuesta conserva esa incertidumbre. No se importa SQL, cambia el servicio ni elimina la copia ya enviada.
+
 La corrección visual y los recorridos de creación/conteo se probaron contra MySQL sintético y Chromium. La exportación se probó con servicios simulados y mediante ida y vuelta real Apps Script simulado → ZIP → validador Python. PowerShell se revisó y se comprobó sintaxis Bash de sus dos scripts remotos; su ejecución real Windows/SSH y el acceso de Google requieren la cuenta del usuario.
 
 La publicación completa sigue pendiente del traslado y conciliación de los abiertos, sus cuentas/permisos, maestros y flujos restantes de Centro de Mando. La copia del histórico y los originales de Drive continúan conservados. FINI sigue pendiente por HTTP 401; WTW permanece aplazado.

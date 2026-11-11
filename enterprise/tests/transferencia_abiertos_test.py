@@ -1,11 +1,27 @@
 import re
+import json
+import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
 BASE=Path(__file__).resolve().parents[1]
 
 class TransferenciaAbiertosTests(unittest.TestCase):
+ def test_fallo_del_bash_remoto_identifica_etapa_sin_acceder_a_rutas_corporativas(self):
+  texto=(BASE/'tools/enviar-abiertos-servidor.ps1').read_text();remoto=re.findall(r"@'\n(.*?)\n'@",texto,re.S)[1]
+  with tempfile.TemporaryDirectory() as t:
+   host=Path(t)/'hostname';host.write_text('#!/bin/sh\nprintf "otro-host\\n"\n');host.chmod(0o700)
+   r=subprocess.run(['bash'],input=remoto,text=True,capture_output=True,env={**os.environ,'PATH':t+os.pathsep+os.environ['PATH']})
+  self.assertNotEqual(r.returncode,0);d=json.loads(r.stdout);self.assertEqual(d['codigo_error'],'ETAPA_REMOTA');self.assertEqual(d['etapa'],'VERIFICAR_HOST');self.assertFalse(d['datos_importados']);self.assertFalse(d['servicios_reiniciados']);self.assertNotIn('/home/',r.stdout)
+
+ def test_zip_se_inspecciona_antes_de_enviar_y_fallo_remoto_se_conserva_en_resumen(self):
+  texto=(BASE/'tools/enviar-abiertos-servidor.ps1').read_text()
+  self.assertLess(texto.index('[IO.Compression.ZipFile]::OpenRead'),texto.index('& $imsScp'))
+  for guard in ['ZIP_INCOMPLETO_O_ILEGIBLE','plan_abiertos_privado.json','imsFragmentos -lt 1',"$imsResumen['diagnostico_remoto']=$imsDiagnostico; Save-ImsInforme"]:self.assertIn(guard,texto)
+  self.assertNotIn('ExtractToDirectory',texto)
+
  def test_bash_remoto_se_limita_a_entrada_y_preparacion_propias_sin_sql_o_servicios(self):
   texto=(BASE/'tools/enviar-abiertos-servidor.ps1').read_text();bloques=re.findall(r"@'\n(.*?)\n'@",texto,re.S);self.assertEqual(len(bloques),2)
   for b in bloques:

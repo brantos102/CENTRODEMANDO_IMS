@@ -1,0 +1,27 @@
+{
+  "fecha_operativa": "2026-11-11",
+  "problema": "El envío de Windows mostraba un error genérico y ocultaba el motivo de la validación remota",
+  "cambio": {
+    "precomprobacion_windows_cuenta_plan_y_fragmentos_sin_extraer": true,
+    "zip_sin_plan_o_fragmentos_se_detiene_antes_de_enviar": true,
+    "fallo_remoto_conserva_codigo_motivo_estatico_o_etapa_en_resumen": true,
+    "no_infiere_la_causa_solo_por_tamano_del_zip": true,
+    "no_imprime_contenido_del_zip_o_excepciones_con_datos": true
+  },
+  "pruebas": {
+    "python_correctas": 88,
+    "python_fallidas": 0,
+    "cli_zip_solo_resumen_reproduce_falta_de_plan": true,
+    "cli_json_ilegible_y_fragmento_faltante": true,
+    "cli_zip_ilegible_y_salida_existente": true,
+    "fallo_real_bash_antes_de_rutas_corporativas_informa_etapa": true,
+    "sintaxis_bash_remoto_verificada": true,
+    "powershell_ejecutado_en_windows": false
+  },
+  "causa_del_zip_real_del_usuario_confirmada": false,
+  "zip_privado_real_inspeccionado_en_desarrollo": false,
+  "requiere_nueva_extraccion_apps_script": false,
+  "datos_importados": false,
+  "servicios_reiniciados": false,
+  "apache_o_puertos_modificados": false
+}
