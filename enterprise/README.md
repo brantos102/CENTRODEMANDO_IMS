@@ -1,5 +1,7 @@
 # Preparación de la migración de Centro de Mando a MySQL
 
+Entrega siguiente: [cantidades legibles y corte privado de inventarios abiertos](CORTE_ABIERTOS_Y_FORMATOS.md). El formato elimina ceros de relleno y conserva decimales exactos; el actualizador concilia el stock persistido antes del cambio. El usuario eligió trasladar también los abiertos de Google: se incluye el exportador privado y envío/validación de su corte actual, sin declararlo importado ni cerrar todavía la migración completa.
+
 Nueva entrega: [creación nativa desde consultas ERP](CREACION_DESDE_ERP.md), con stock completo revisado, varias cuentas/clientes, procedencia por línea y recuperación de confirmaciones. Requiere su preparación aditiva y activación propias; la consulta ERP ya verificada en el servidor continúa siendo la versión vigente hasta aplicar esta entrega.
 
 Actualización del 10 de noviembre: [consulta ERP integrada en la web candidata](ERP_CONSULTA_WEB.md), con cuentas múltiples, filtros SKU/variantes y posiciones de toda la sede. Reutiliza sesión y permisos nativos; mantiene la creación ERP deshabilitada y el histórico protegido. Su activación corporativa requiere el actualizador de esa entrega; preparar el registro de credenciales no activa la pantalla.

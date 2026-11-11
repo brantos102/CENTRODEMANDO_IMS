@@ -1,5 +1,6 @@
 import {iniciarCamara} from './camara.mjs';
 import {prepararCsv,sumaStock} from './stock-csv.mjs';
+import {formatearCantidad} from './cantidades.mjs';
 const $=id=>document.getElementById(id),state={sesion:null,contexto:null,inv:null,cursor:null,ocupado:false,epoch:0};
 let consultaSerie=null,cursorHistorial=null,historialScope='';
 function outbox(){return 'ims_operacion_pendiente_v1_'+state.sesion.usuario.actorId;}
@@ -59,8 +60,8 @@ async function detalle(mas=false){
  for(const l of r.lineas){const tr=document.createElement('tr');
   const erp=procedencias.get(l.id);
   celda(tr,l.numero+' · '+l.sku+'\n'+l.id);celda(tr,l.cliente+' · '+(l.posicion||'—')+(erp?'\nCuenta ERP: '+erp.etiqueta+' · '+erp.codigo_cliente_erp:''));
-  celda(tr,[l.conteo_1,l.conteo_2,l.conteo_final].map(v=>v??'—').join(' / '));
-  celda(tr,Object.hasOwn(l,'depot')?[l.depot,l.fisico,l.desfase].map(v=>v??'—').join(' / '):'Conteo ciego');celda(tr,l.version);$('op-lineas').append(tr);
+  celda(tr,[l.conteo_1,l.conteo_2,l.conteo_final].map(formatearCantidad).join(' / '));
+  celda(tr,Object.hasOwn(l,'depot')?[l.depot,l.fisico,l.desfase].map(formatearCantidad).join(' / '):'Conteo ciego');celda(tr,l.version);$('op-lineas').append(tr);
  }
  $('op-mas').hidden=!state.cursor;
 }
@@ -102,7 +103,7 @@ formulario('op-usuario-crear',async()=>{
 $('op-depot-guardar').addEventListener('click',()=>tarea(async()=>{await mutar('depot',{...solicitud(),visible:$('op-depot').checked});await detalle();}));
 $('op-analisis').addEventListener('click',()=>tarea(async()=>{const id=state.inv?.id;if(!id)throw Error('Selecciona un inventario.');const r=await api('/api/operacion/inventarios/'+id+'/analisis');
  if(state.inv?.id!==id)return;if(r.referencia!=='ITSANET_IMS_WMS_V124'||!r.kpis||!r.avance)throw Error('Análisis incompleto.');
- $('op-kpis').textContent='Exactitud WMS: unidades '+r.kpis.efectividadUnidades+'% · referencias '+r.kpis.efectividadRef+'% · posiciones '+r.kpis.efectividadPos+'% · avance '+r.avance.contadas+'/'+r.avance.lineas+' líneas ('+r.avance.porcentaje+'%).';
+ $('op-kpis').textContent='Exactitud WMS: unidades '+formatearCantidad(r.kpis.efectividadUnidades)+'% · referencias '+formatearCantidad(r.kpis.efectividadRef)+'% · posiciones '+formatearCantidad(r.kpis.efectividadPos)+'% · avance '+r.avance.contadas+'/'+r.avance.lineas+' líneas ('+r.avance.porcentaje+'%).';
 }));
 $('op-actualizar').addEventListener('click',()=>tarea(()=>contexto()));$('op-inventario').addEventListener('change',()=>tarea(()=>detalle()));$('op-mas').addEventListener('click',()=>tarea(()=>detalle(true)));
 $('op-reintentar').addEventListener('click',()=>tarea(async()=>{const p=pendiente();if(!p)return;if(p.requiereClave){p.body.contrasena=$('op-clave-nueva').value;$('op-clave-nueva').value='';if(!p.body.contrasena)throw Error('Escribe otra vez la misma contraseña nueva para recuperar la cuenta.');}const r=await ejecutar(p);await contexto(r.inventarioId||$('op-inventario').value);}));
@@ -142,7 +143,7 @@ formulario('op-serie-consultar',async()=>{
  $('op-serie-posicion').value=r.coincidencias.length===1?(r.coincidencias[0]?.posicion||''):'';$('op-serie-nueva').value='';$('op-serie-nueva-panel').hidden=!r.coincidencias.length;
  $('op-serie-conocida').hidden=!r.coincidencias.length;$('op-serie-hallazgo').hidden=!!r.coincidencias.length;
  $('op-serie-similar-panel').hidden=!r.parecidas.length;
- $('op-serie-linea').replaceChildren(...(r.coincidencias.length>1?[new Option('Selecciona la línea y ubicación exactas','')]:[]),...r.coincidencias.map(l=>new Option(l.sku+' · '+(l.posicion||'Sin posición')+' · C1/C2/C3: '+[l.conteo_1,l.conteo_2,l.conteo_final].map(v=>v??'—').join(' / '),l.id)));
+ $('op-serie-linea').replaceChildren(...(r.coincidencias.length>1?[new Option('Selecciona la línea y ubicación exactas','')]:[]),...r.coincidencias.map(l=>new Option(l.sku+' · '+(l.posicion||'Sin posición')+' · C1/C2/C3: '+[l.conteo_1,l.conteo_2,l.conteo_final].map(formatearCantidad).join(' / '),l.id)));
 });
 formulario('op-serie-guardar',async()=>{
  const q=consultaSerie;if(!q||q.inventarioId!==state.inv?.id||q.clienteId!==$('op-series-cliente').value||q.serie!==$('op-serie').value.trim().toUpperCase())throw Error('Vuelve a consultar la serie.');
@@ -172,7 +173,7 @@ async function cargarHistorial(mas=false){
  if(id!==state.inv?.id||clienteId!==$('op-series-cliente').value||tipo!==$('op-historial-tipo').value)return;
  if(!Array.isArray(r.datos)||!(r.siguiente===null||typeof r.siguiente==='string')||r.datos.some(f=>!f||typeof f.id!=='string'||f.inventario_id!==id||f.cliente_id!==clienteId||typeof f.creado_en!=='string'||typeof f.sku!=='string'))throw Error('Historial incompleto.');
  if(!mas||scope!==historialScope)$('op-historial-filas').replaceChildren();
- for(const f of r.datos){const tr=document.createElement('tr');celda(tr,fechaCaptura(f.creado_en));celda(tr,(f.serie||'Sin serie')+' · '+f.sku);celda(tr,(f.posicion||'—')+' · '+(f.cantidad??'1.000000000'));celda(tr,(f.observacion||f.descripcion||'')+' · '+(f.usuario||f.actor_id));$('op-historial-filas').append(tr);}
+ for(const f of r.datos){const tr=document.createElement('tr');celda(tr,fechaCaptura(f.creado_en));celda(tr,(f.serie||'Sin serie')+' · '+f.sku);celda(tr,(f.posicion||'—')+' · '+formatearCantidad(f.cantidad??'1'));celda(tr,(f.observacion||f.descripcion||'')+' · '+(f.usuario||f.actor_id));$('op-historial-filas').append(tr);}
  historialScope=scope;cursorHistorial=r.siguiente;$('op-historial-mas').hidden=!r.siguiente;$('op-historial-estado').textContent=$('op-historial-filas').rows.length+' captura(s) consultada(s).';
 }
 $('op-historial').addEventListener('click',()=>tarea(()=>cargarHistorial(false)));$('op-historial-mas').addEventListener('click',()=>tarea(()=>cargarHistorial(true)));$('op-historial-tipo').addEventListener('change',()=>{cursorHistorial=null;$('op-historial-filas').replaceChildren();$('op-historial-mas').hidden=true;});

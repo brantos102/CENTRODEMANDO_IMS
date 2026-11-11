@@ -1,6 +1,7 @@
 import {readFile} from 'node:fs/promises';
 const ROOT=new URL('../../public/',import.meta.url);
 const FILES={
+  '/assets/cantidades.mjs':['cantidades.mjs','text/javascript; charset=utf-8'],
   '/erp':['erp.html','text/html; charset=utf-8'],
   '/assets/erp.mjs':['erp.mjs','text/javascript; charset=utf-8'],
   '/operacion':['operacion.html','text/html; charset=utf-8'],

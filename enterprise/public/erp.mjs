@@ -1,6 +1,6 @@
+import {formatearCantidad as decimal} from './cantidades.mjs';
 const $=id=>document.getElementById(id),state={sesion:null,conexiones:[],consulta:null,resultado:null,siguiente:null,ocupado:false,epoch:0,pendiente:null,almacen:false,creadoConsulta:null,codigoSugerido:''};
 function aviso(t,error=false){$('erp-aviso').textContent=t;$('erp-aviso').className=error?'error':'nota';}
-function decimal(v){const [n,d='']=String(v).split('.');return n.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+(d.replace(/0+$/,'')?','+d.replace(/0+$/,''):'');}
 function limpiar(){state.resultado=null;state.siguiente=null;$('erp-resultados').hidden=true;$('erp-filas').replaceChildren();$('erp-resumen').replaceChildren();$('erp-creado').hidden=true;sincronizarCreacion();}
 async function api(path,body){
  const response=await fetch(path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(20000),headers:body?{'Content-Type':'application/json','X-IMS-CSRF':state.sesion.csrf}:{},body:body?JSON.stringify(body):undefined});

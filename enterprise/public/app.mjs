@@ -1,4 +1,5 @@
-import {cantidadNormalizada,mostrarCantidad,siguienteEtapa,acuseValido,validarPagina,validarResumen,mostrarEntero} from './modelo.mjs';
+import {cantidadNormalizada,siguienteEtapa,acuseValido,validarPagina,validarResumen,mostrarEntero} from './modelo.mjs';
+import {formatearCantidad as mostrarCantidad} from './cantidades.mjs';
 import {listarPendientes,guardarPendiente,confirmarPendiente} from './pendientes.mjs';
 const $=id=>document.getElementById(id);
 const state={usuario:null,csrf:null,epoch:0,inventarios:[],lineas:[],inv:null,pendientes:[],almacen:false,sync:false,formulario:false,cursorInv:null,cursorLineas:null};
@@ -86,7 +87,7 @@ async function actualizarPendientes(){
 function pintarPendientes(){
   $('pendientes-panel').hidden=!state.pendientes.length;
   $('pendientes-titulo').textContent=state.pendientes.length+' captura(s) por confirmar';
-  $('lista-pendientes').replaceChildren(...state.pendientes.map(p=>el('li',p.codigo+' · '+p.sku+' · etapa '+p.solicitud.etapa+' · cantidad '+p.solicitud.cantidad)));
+  $('lista-pendientes').replaceChildren(...state.pendientes.map(p=>el('li',p.codigo+' · '+p.sku+' · etapa '+p.solicitud.etapa+' · cantidad '+mostrarCantidad(p.solicitud.cantidad))));
   $('sincronizar').disabled=state.sync;
 }
 function pintarInventarios(){

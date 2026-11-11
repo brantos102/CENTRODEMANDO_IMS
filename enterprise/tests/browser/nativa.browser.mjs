@@ -19,9 +19,9 @@ async function fixture(t,{camara=false}={}){
  await pool.execute('INSERT INTO ims_op_cliente VALUES (?,?)',[cliente,'CLIENTE BROWSER '+cliente]);
  const server=crearApi({pool,publicUrl:ORIGIN,operacionNativa:true});await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const context=await browser.newContext({viewport:{width:1280,height:950}}),page=await context.newPage();
- const red={perderSerie:false};
+ const red={perderSerie:false},pendientes=new Set();let cerrando=false;
  const base='http://127.0.0.1:'+server.address().port,errors=[];page.on('pageerror',e=>errors.push(e.message));
- await context.route('**/*',async route=>{
+ await context.route('**/*',route=>{const trabajo=(async()=>{try{
   const r=route.request(),url=new URL(r.url());if(url.origin!==ORIGIN)return route.abort();
   const headers={...await r.allHeaders()};for(const k of ['host','connection','content-length','accept-encoding'])delete headers[k];
   const response=await fetch(base+url.pathname+url.search,{method:r.method(),headers,body:['GET','HEAD'].includes(r.method())?undefined:r.postDataBuffer()});
@@ -29,8 +29,8 @@ async function fixture(t,{camara=false}={}){
   const body=Buffer.from(await response.arrayBuffer());
   if(red.perderSerie&&url.pathname==='/api/operacion/serie'&&r.method()==='POST'){red.perderSerie=false;return route.abort('failed');}
   await route.fulfill({status:response.status,headers:h,body});
- });
- t.after(async()=>{await context.close();server.closeAllConnections();await new Promise(r=>server.close(r));assert.deepEqual(errors,[]);});
+ }catch(e){if(!cerrando&&!route.request().failure())errors.push(e.message);await route.abort().catch(()=>{});}})();pendientes.add(trabajo);void trabajo.finally(()=>pendientes.delete(trabajo));return trabajo;});
+ t.after(async()=>{cerrando=true;await context.close();await Promise.allSettled([...pendientes]);server.closeAllConnections();await new Promise(r=>server.close(r));assert.deepEqual(errors,[]);});
  if(camara)await context.addInitScript(()=>{
   window.__camaraDetenida=0;window.__codigoCamara='SN-00001234';
   Object.defineProperty(HTMLMediaElement.prototype,'readyState',{get:()=>2});HTMLMediaElement.prototype.play=async()=>{};
@@ -102,4 +102,17 @@ test('navegador: dos coincidencias no preseleccionan una línea; el operador eli
  const [[destino]]=await pool.execute("SELECT l.id FROM ims_op_linea l JOIN ims_op_detalle_linea d ON d.linea_id=l.id WHERE l.inventario_id=? AND d.posicion='B'",[inv]);
  await p.locator('#op-serie-linea').selectOption(destino.id);await p.locator('#op-serie-guardar button').click();await p.waitForFunction(()=>document.querySelector('#op-serie').value==='');
  const [rows]=await pool.execute('SELECT l.id,l.conteo_1 FROM ims_op_linea l WHERE l.inventario_id=?',[inv]);assert.equal(rows.filter(r=>r.conteo_1!==null).length,1);assert.equal(rows.find(r=>r.id===destino.id).conteo_1,'1.000000000');
+});
+test('navegador: stock grande, fracción real, cero contado y diferencia negativa se muestran sin redondeo',async t=>{
+ const f=await fixture(t),p=f.page;
+ const id=await p.evaluate(async cliente=>{
+  const s=await(await fetch('/api/sesion')).json(),post=async(tipo,body)=>{const r=await fetch('/api/operacion/'+tipo,{method:'POST',headers:{'Content-Type':'application/json','X-IMS-CSRF':s.csrf},body:JSON.stringify({operacionId:crypto.randomUUID(),...body})});const v=await r.json();if(!r.ok)throw Error(v.mensaje);return v;};
+  const n=await post('crear',{sede:'UIO',codigo:'101126_PRECISION',clientes:[cliente],fechaInicio:'2026-11-10'}),l=await post('lineas',{inventarioId:n.inventarioId,versionEsperada:n.version,filas:[{numero:1,clienteId:cliente,sku:'0001',depot:'9007199254740993.123456789',posicion:'A'}]});
+  await post('activar',{inventarioId:n.inventarioId,versionEsperada:l.version,filasEsperadas:1,depotEsperado:'9007199254740993.123456789'});
+  const detail=await(await fetch('/api/operacion/inventarios/'+n.inventarioId)).json(),line=detail.lineas[0];const r=await fetch('/api/conteos',{method:'POST',headers:{'Content-Type':'application/json','X-IMS-CSRF':s.csrf},body:JSON.stringify({operacionId:crypto.randomUUID(),inventarioId:n.inventarioId,lineaId:line.id,versionEsperada:'0',etapa:1,cantidad:'0'})});if(!r.ok)throw Error('Conteo no confirmado');return n.inventarioId;
+ },f.cliente);
+ await p.locator('#op-actualizar').click();await p.locator('#op-inventario option[value="'+id+'"]').waitFor({state:'attached'});await p.locator('#op-inventario').selectOption(id);await p.waitForFunction(()=>document.querySelector('#op-lineas').rows.length===1);
+ assert.equal(await p.locator('#op-lineas tr td:nth-child(3)').textContent(),'0 / — / —');
+ assert.equal(await p.locator('#op-lineas tr td:nth-child(4)').textContent(),'9.007.199.254.740.993,123456789 / 0 / -9.007.199.254.740.993,123456789');
+ const [[r]]=await pool.execute('SELECT x.depot,l.conteo_1 FROM ims_nat_linea x JOIN ims_op_linea l ON l.id=x.linea_id WHERE x.inventario_id=?',[id]);assert.equal(r.depot,'9007199254740993.123456789');assert.equal(r.conteo_1,'0.000000000');
 });

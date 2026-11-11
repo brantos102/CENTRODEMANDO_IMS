@@ -7,17 +7,18 @@ import {randomUUID} from 'node:crypto';
 if(process.env.IMS_MYSQL_PRUEBAS!=='1'||!/^centromando_ims_pruebas(?:_[a-z0-9]+)?$/.test(process.env.MYSQL_DATABASE||''))throw Error('Solo base de pruebas.');
 let pool,browser;before(async()=>{pool=await crearPoolConteos(process.env);await esquemaERP(pool);browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});});after(async()=>{await browser?.close();await pool?.end();});
 async function fixture(t,{creacion=false}={}){
- const f=await fixtureERP(pool,t,{creacion}),context=await browser.newContext({viewport:{width:1280,height:950}}),page=await context.newPage(),errors=[],red={perderCreacion:false};
+ const limpiar=[],pendientes=new Set();let cerrando=false;
+ const f=await fixtureERP(pool,{after:fn=>limpiar.push(fn)},{creacion}),context=await browser.newContext({viewport:{width:1280,height:950}}),page=await context.newPage(),errors=[],red={perderCreacion:false};
  page.on('pageerror',e=>errors.push(e.message));
- await context.route('**/*',async route=>{
+ await context.route('**/*',route=>{const trabajo=(async()=>{try{
   const r=route.request(),u=new URL(r.url());if(u.origin!==ERP_ORIGIN)return route.abort();
   const h={...await r.allHeaders()};for(const k of ['host','connection','content-length','accept-encoding'])delete h[k];
   const response=await fetch(f.base+u.pathname+u.search,{method:r.method(),headers:h,body:['GET','HEAD'].includes(r.method())?undefined:r.postDataBuffer()});
   if(red.perderCreacion&&r.method()==='POST'&&u.pathname==='/api/erp/inventarios'){red.perderCreacion=false;return route.abort('failed');}
   const headers=Object.fromEntries(response.headers);for(const k of ['connection','content-length','transfer-encoding','keep-alive'])delete headers[k];
-  return route.fulfill({status:response.status,headers,body:Buffer.from(await response.arrayBuffer())});
- });
- t.after(async()=>{await context.close();assert.deepEqual(errors,[]);});
+  return await route.fulfill({status:response.status,headers,body:Buffer.from(await response.arrayBuffer())});
+ }catch(e){if(!cerrando&&!route.request().failure())errors.push(e.message);await route.abort().catch(()=>{});}})();pendientes.add(trabajo);void trabajo.finally(()=>pendientes.delete(trabajo));return trabajo;});
+ t.after(async()=>{cerrando=true;await context.close();await Promise.allSettled([...pendientes]);for(const fn of limpiar)await fn();assert.deepEqual(errors,[]);});
  await page.goto(ERP_ORIGIN);await page.locator('#correo').fill(f.correo);await page.locator('#contrasena').fill(ERP_PASSWORD);await page.locator('#entrar').click();await page.locator('#operacion').waitFor({state:'visible'});
  await page.goto(ERP_ORIGIN+'/operacion');await page.locator('#op-erp').waitFor({state:'visible'});await page.locator('#op-erp').click();await page.locator('#erp-contenido').waitFor({state:'visible'});
  return {...f,page,interceptar:red};
@@ -44,6 +45,7 @@ async function prepararCreacion(t){
 test('navegador: crear desde ALU y ALU SWAP abre el inventario nativo con sus códigos de origen',async t=>{
  const f=await prepararCreacion(t),p=f.page;await p.locator('#erp-crear-enviar').click();await p.locator('#erp-creado').waitFor({state:'visible'});assert.match(await p.locator('#erp-creacion-estado').textContent(),/3 líneas · 1,3 unidades/);
  const href=await p.locator('#erp-creado').getAttribute('href'),id=new URL(href,ERP_ORIGIN).searchParams.get('inventario');await p.locator('#erp-creado').click();await p.locator('#op-lineas tr').first().waitFor();assert.equal(await p.locator('#op-inventario').inputValue(),id);assert.match(await p.locator('#op-lineas').textContent(),/Cuenta ERP: ALU SWAP · ALUSWAP/);assert.match(await p.locator('#op-lineas').textContent(),/Cuenta ERP: ALU · ALU/);
+ const cantidades=await p.locator('#op-lineas tr td:nth-child(4)').allTextContents();assert.ok(cantidades.includes('0,1 / — / —'));assert.ok(cantidades.includes('1 / — / —'));assert.ok(cantidades.every(v=>!v.includes('.000000000')));
  const [[n]]=await pool.execute('SELECT COUNT(*) AS n FROM ims_erp_linea WHERE inventario_id=?',[id]);assert.equal(Number(n.n),3);
 });
 test('navegador: respuesta de creación perdida y recarga recuperan el mismo inventario sin otra extracción',async t=>{

@@ -1,0 +1,38 @@
+{
+  "fecha_operativa": "2026-11-10",
+  "alcance": "Presentación exacta de cantidades y preparación del corte privado de inventarios abiertos y en validación",
+  "validacion_local": {
+    "node_22_23_3": { "pruebas": 160, "correctas": 160, "fallidas": 0 },
+    "python": { "pruebas": 82, "correctas": 82, "fallidas": 0 },
+    "chromium_mysql_8_0_46": { "pruebas": 22, "correctas": 22, "fallidas": 0 },
+    "conciliacion_select_erp_mysql_sintetico": true,
+    "cantidades_grandes_y_nueve_decimales_sin_redondeo": true,
+    "cero_contado_distinto_de_ausencia": true,
+    "exportador_apps_script_simulado": true,
+    "exportador_zip_validador_ida_y_vuelta": true,
+    "scripts_bash_sintaxis_verificada": true,
+    "powershell_ejecutado_en_windows": false,
+    "exportador_ejecutado_en_google_real": false
+  },
+  "comportamiento": {
+    "formato_compartido_erp_operacion_capturas_historial": true,
+    "parser_de_entrada_y_acuses_conservados": true,
+    "cantidades_guardadas_reescritas": false,
+    "actualizacion_concilia_stock_erp_antes_de_cambiar_version": true,
+    "exportacion_lee_originales_sin_cambiar_hojas_estados_o_propiedades": true,
+    "corte_privado_conserva_tipos_formatos_formulas_notas_y_posiciones": true,
+    "transporte_y_validador_sin_importacion_sql": true
+  },
+  "pendientes_reales": [
+    "Aplicación de esta revisión y conciliación de cantidades en el servidor corporativo",
+    "Ejecución del exportador con la cuenta de Google autorizada y validación del ZIP privado",
+    "Plan e importador de inventarios abiertos, capturas, permisos y maestros según el corte recibido",
+    "Conciliación del delta y ventana coordinada del corte definitivo",
+    "Paridad de flujos restantes de Centro de Mando y verificación antes de producción completa",
+    "FINI: autenticación HTTP 401; WTW: migración aplazada"
+  ],
+  "inventarios_abiertos_ya_migrados": false,
+  "corte_a_produccion_realizado": false,
+  "puertos_corporativos_modificados_desde_esta_validacion": false,
+  "datos_corporativos_usados_en_pruebas": false
+}
