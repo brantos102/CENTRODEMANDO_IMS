@@ -82,6 +82,33 @@ class CorteAbiertosTests(unittest.TestCase):
     detalle=r['revision_fuentes'];self.assertEqual(len(detalle),1);self.assertEqual(detalle[0]['tipo'],'INVENTARIO');self.assertEqual(detalle[0]['filas_panel_corte'],[x['fila'] for x in fuente['panel']]);self.assertEqual(detalle[0]['motivo'],motivo if motivo!='SECRETO_NO_PUBLICAR' else 'NO_ESPECIFICADO');self.assertGreater(detalle[0]['filas_guardadas'],0)
     publico=json.dumps(r);self.assertNotIn(fuente['id'],publico);self.assertNotIn('BELIA',publico);self.assertNotIn('SECRETO_NO_PUBLICAR',publico);self.assertNotIn('operador@sintetico.invalid',publico);self.assertEqual(priv['validacion'],r)
 
+ def test_metadatos_fuera_limite_en_fuente_retenida_no_se_confunden_con_datos_capturados(self):
+  for filas,columnas in [(12,201),(1000001,2)]:
+   with self.subTest(filas=filas,columnas=columnas),tempfile.TemporaryDirectory() as t:
+    files=copy.deepcopy(self.archivos);pf=next(f for f in files if f['nombre']=='plan_abiertos_privado.json');p=json.loads(pf['content']);fuente=p['fuentes'][0]
+    fuente['estado']='REVISION';fuente['motivo']='LECTURA_O_LIMITE';fuente['hojas'].append({'id':999,'nombre':'NOMBRE_NO_PUBLICAR','filas':filas,'columnas':columnas})
+    pf['content']=json.dumps(p,ensure_ascii=False,separators=(',',':'));archivo=self.paquete(t,files);antes=archivo.read_bytes();r,_=validar_zip(archivo)
+    self.assertFalse(r['lista_para_plan']);self.assertFalse(r['datos_importados']);self.assertEqual(r['fuentes_revision'],1);self.assertEqual(archivo.read_bytes(),antes)
+    self.assertEqual(len(r['hojas_fuera_limite']),1);detalle=r['hojas_fuera_limite'][0];self.assertEqual(detalle['filas'],filas);self.assertEqual(detalle['columnas'],columnas);self.assertFalse(detalle['contenido_capturado']);self.assertNotIn('NOMBRE_NO_PUBLICAR',json.dumps(r));self.assertEqual(r['revision_fuentes'][0]['motivo'],'LECTURA_O_LIMITE')
+
+ def test_hoja_fuera_limite_no_se_acepta_como_completa_o_con_fragmentos(self):
+  for modo in ('completa','fragmento'):
+   with self.subTest(modo=modo),tempfile.TemporaryDirectory() as t:
+    files=copy.deepcopy(self.archivos);pf=next(f for f in files if f['nombre']=='plan_abiertos_privado.json');p=json.loads(pf['content']);fuente=p['fuentes'][0];hoja=fuente['hojas'][0];hoja['columnas']=201
+    if modo=='fragmento':
+     fuente['estado']='REVISION';fuente['motivo']='LECTURA_O_LIMITE';parte=fuente['partes'][0];f=next(f for f in files if f['nombre']==parte['nombre']);d=json.loads(f['content']);d['columnas']=201;f['content']=json.dumps(d,ensure_ascii=False,separators=(',',':'));parte['bytes']=len(f['content'].encode());parte['sha256']=hashlib.sha256(f['content'].encode()).hexdigest()
+    pf['content']=json.dumps(p,ensure_ascii=False,separators=(',',':'))
+    with self.assertRaises(ValueError):validar_zip(self.paquete(t,files))
+
+ def test_error_metadatos_ubica_fuente_y_hoja_sin_mostrar_nombres_ids_o_valores(self):
+  for modo in ('tipo','duplicado'):
+   with self.subTest(modo=modo),tempfile.TemporaryDirectory() as t:
+    files=copy.deepcopy(self.archivos);pf=next(f for f in files if f['nombre']=='plan_abiertos_privado.json');p=json.loads(pf['content']);fuente=p['fuentes'][0]
+    if modo=='tipo':fuente['hojas'][0]['filas']='SECRETO_NO_COMPARTIR'
+    else:fuente['hojas'].append(copy.deepcopy(fuente['hojas'][0]))
+    pf['content']=json.dumps(p,ensure_ascii=False,separators=(',',':'));r,d=self.ejecutar_cli(self.paquete(t,files),Path(t)/'salida')
+    self.assertEqual(r.returncode,1);self.assertEqual(d['codigo_error'],'CORTE_INVALIDO');self.assertEqual(d['detalle']['fuente_en_corte'],1);self.assertIn('FILAS_NO_ENTERO' if modo=='tipo' else 'ID_REPETIDO',d['detalle']['problemas']);self.assertNotIn('SECRETO_NO_COMPARTIR',r.stdout);self.assertNotIn(fuente['id'],r.stdout)
+
  def test_los_enlaces_ricos_del_panel_son_conciliados_tambien_en_servidor(self):
   with tempfile.TemporaryDirectory() as t:
    r,_=validar_zip(self.paquete(t,self.archivos_enlaces));self.assertEqual(r['inventarios_en_panel'],3);self.assertEqual(r['filas_panel_sin_archivo'],1);self.assertTrue(r['lista_para_plan'])

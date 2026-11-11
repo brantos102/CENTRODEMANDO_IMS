@@ -25,6 +25,8 @@ ALIAS_STOCK={
 
 class CorteInvalido(ValueError):
     """Solo mensajes estáticos de validación, sin valores del ZIP."""
+    def __init__(self,mensaje,detalle=None):
+        super().__init__(mensaje);self.detalle=detalle
 
 def exigir(ok,msg):
     if not ok:raise CorteInvalido(msg)
@@ -61,6 +63,23 @@ def verificar_celdas(celdas,columnas,permitidas=None):
 def panel_valor(row,col):
     return next((str(c['valor']) for c in row['celdas'] if c['columna']==col and c['valor'] is not None),'')
 
+def verificar_metadatos(h,meta,estado,fuente,tipo,indice):
+    """Una descripción de hoja no implica que su contenido haya sido capturado."""
+    problemas=[];d=h if isinstance(h,dict) else {}
+    if not isinstance(h,dict):problemas.append('FORMATO_NO_OBJETO')
+    if type(d.get('id')) is not int:problemas.append('ID_NO_ENTERO')
+    elif d['id'] in meta:problemas.append('ID_REPETIDO')
+    if not isinstance(d.get('nombre'),str):problemas.append('NOMBRE_NO_TEXTO')
+    for campo in ('filas','columnas'):
+        if type(d.get(campo)) is not int:problemas.append(campo.upper()+'_NO_ENTERO')
+        elif not 0<=d[campo]<=2147483647:problemas.append(campo.upper()+'_FUERA_RANGO')
+    detalle={'fuente_en_corte':fuente,'tipo':tipo,'hoja_en_fuente':indice,'problemas':problemas}
+    if problemas:raise CorteInvalido('Metadatos de hoja incompatibles.',detalle)
+    fuera=d['filas']>1000000 or d['columnas']>200
+    if fuera and estado=='COMPLETO':
+        detalle['problemas']=['DIMENSION_FUERA_LIMITE_DE_CAPTURA'];raise CorteInvalido('Una fuente completa describe una hoja fuera del límite de captura.',detalle)
+    return fuera
+
 def validar_zip(archivo):
     archivo=Path(archivo).absolute();exigir(archivo.resolve()==archivo and archivo.is_file() and archivo.suffix.lower()=='.zip','Usa un ZIP local regular, sin enlaces.')
     exigir(archivo.stat().st_size<=536870912,'ZIP demasiado grande.')
@@ -94,15 +113,16 @@ def validar_zip(archivo):
             if not re.fullmatch('[A-Za-z0-9_-]{20,120}',id):sin+=1;continue
             esperadas.setdefault(id,[]).append(row)
         exigir(p.get('referencias_discordantes',[])==discordantes,'Cambió el control de referencias de panel.')
-        especiales={'MAESTRO':MAESTRO,'PLANTILLA':PLANTILLA,'INTERFAZ':INTERFAZ};ids=set();tipos=set();usados=set();filas=0;fragmentos=0;completas=0;revision=0;hojas=0;estructuras={};revision_fuentes=[]
+        especiales={'MAESTRO':MAESTRO,'PLANTILLA':PLANTILLA,'INTERFAZ':INTERFAZ};ids=set();tipos=set();usados=set();filas=0;fragmentos=0;completas=0;revision=0;hojas=0;estructuras={};revision_fuentes=[];hojas_fuera_limite=[]
         for indice,f in enumerate(p['fuentes'],1):
             tipo=f.get('tipo');id=f.get('id');exigir(tipo in ('INVENTARIO',*especiales) and isinstance(id,str) and id not in ids,'Fuente duplicada o incompatible.');ids.add(id)
             if tipo=='INVENTARIO':exigir(id in esperadas and f.get('panel')==esperadas[id],'Referencias de panel incompletas.')
             else:exigir(id==especiales[tipo] and tipo not in tipos and f.get('panel')==[],'Fuente auxiliar incompatible.');tipos.add(tipo)
             estado=f.get('estado');exigir(estado in ('PENDIENTE','REVISION','COMPLETO'),'Estado de exportación incompatible.');completas+=estado=='COMPLETO';revision+=estado=='REVISION'
             hs=f.get('hojas') or [];exigir(isinstance(hs,list) and len(hs)<=200,'Hojas incompatibles.');meta={};cobertura={};omisiones={};stock={}
-            for h in hs:
-                exigir(type(h.get('id')) is int and h['id'] not in meta and isinstance(h.get('nombre'),str) and type(h.get('filas')) is int and 0<=h['filas']<=1000000 and type(h.get('columnas')) is int and 0<=h['columnas']<=200,'Metadatos de hoja incompatibles.')
+            for nh,h in enumerate(hs,1):
+                fuera=verificar_metadatos(h,meta,estado,indice,tipo,nh)
+                if fuera:hojas_fuera_limite.append({'fuente_en_corte':indice,'tipo':tipo,'hoja_en_fuente':nh,'filas':h['filas'],'columnas':h['columnas'],'limite_filas_captura':1000000,'limite_columnas_captura':200,'contenido_capturado':False})
                 nombre=normal(h['nombre']);exigir(not re.search('CREDENCIAL|CREDENTIAL|CONTRASENA|PASSWORD|SECRET|TOKEN|PROPIEDAD|CONEXION|CONFIG|^API$',nombre),'El corte incluye una hoja de configuración sensible.')
                 exigir(tipo=='MAESTRO' or nombre not in ('USUARIO','USUARIOS'),'El corte incluye usuarios del archivo hijo.')
                 meta[h['id']]=h;cobertura[h['id']]=1;hojas+=1
@@ -111,6 +131,7 @@ def validar_zip(archivo):
                 name=parte.get('nombre','');exigir(re.fullmatch('fuente_'+hashlib.sha256(id.encode()).hexdigest()[:16]+r'_\d+_\d+_'+UUID+r'\.json',name) and name in entradas and name not in usados,'Fragmento repetido, ausente o ajeno.');usados.add(name)
                 raw=z.read(entradas[name]);exigir(len(raw)==parte.get('bytes') and hashlib.sha256(raw).hexdigest()==parte.get('sha256'),'Contenido de fragmento alterado.')
                 d=cargar(raw);h=meta.get(d.get('hoja_id'));exigir(h is not None and d.get('formato')=='ims-abiertos-fragmento-v1' and d.get('hoja')==h['nombre'] and d.get('columnas')==h['columnas'] and parte.get('hoja')==h['nombre'] and parte.get('hoja_id')==h['id'],'Fragmento incompatible con su hoja.')
+                exigir(h['filas']<=1000000 and h['columnas']<=200,'Un fragmento describe contenido fuera del límite de captura.')
                 rows=d.get('filas');exigir(isinstance(rows,list) and 1<=len(rows)<=250 and len(rows)==parte.get('filas') and d.get('inicio')==parte.get('inicio')==cobertura[h['id']],'Fragmentos con huecos o solapamientos.')
                 omit=d.get('columnas_omitidas');exigir(isinstance(omit,list) and all(type(i) is int and 1<=i<=h['columnas'] for i in omit) and omit==sorted(set(omit)),'Omisiones incompatibles.')
                 if h['id'] in omisiones:exigir(omit==omisiones[h['id']],'Cambió la política de columnas entre fragmentos.')
@@ -152,7 +173,7 @@ def validar_zip(archivo):
         exigir(tipos==set(especiales) and ids-set(especiales.values())==set(esperadas),'Faltan fuentes o archivos del panel.')
         extras=set(entradas)-usados-{'plan_abiertos_privado.json','resumen_abiertos_para_compartir.json'}
         exigir(all(re.fullmatch(r'fuente_[a-f0-9]{16}_\d+_\d+_'+UUID+r'\.json',name) for name in extras),'ZIP con archivos ajenos al corte.')
-        r={'ok':True,'formato':'ims-abiertos-validacion-v1','corte_id':p['corte_id'],'fuentes':len(p['fuentes']),'inventarios_en_panel':len(esperadas),'fuentes_completas':completas,'fuentes_revision':revision,'fuentes_pendientes':len(p['fuentes'])-completas-revision,'revision_fuentes':revision_fuentes,'hojas':hojas,'filas':filas,'fragmentos':fragmentos,'fragmentos_no_referenciados':len(extras),'panel_cambio':bool(p.get('panel_cambio')),'filas_panel_sin_archivo':sin,'referencias_discordantes':len(discordantes),'estructuras_stock':list(estructuras.values()),'cantidades_interpretadas':False,'lista_para_plan':completas==len(p['fuentes']) and not p.get('panel_cambio') and not extras and not discordantes,'corte_final_aprobado':False,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False}
+        r={'ok':True,'formato':'ims-abiertos-validacion-v1','corte_id':p['corte_id'],'fuentes':len(p['fuentes']),'inventarios_en_panel':len(esperadas),'fuentes_completas':completas,'fuentes_revision':revision,'fuentes_pendientes':len(p['fuentes'])-completas-revision,'revision_fuentes':revision_fuentes,'hojas_fuera_limite':hojas_fuera_limite,'hojas':hojas,'filas':filas,'fragmentos':fragmentos,'fragmentos_no_referenciados':len(extras),'panel_cambio':bool(p.get('panel_cambio')),'filas_panel_sin_archivo':sin,'referencias_discordantes':len(discordantes),'estructuras_stock':list(estructuras.values()),'cantidades_interpretadas':False,'lista_para_plan':completas==len(p['fuentes']) and not p.get('panel_cambio') and not extras and not discordantes,'corte_final_aprobado':False,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False}
         huella=hashlib.sha256()
         with archivo.open('rb') as stream:
             for bloque in iter(lambda:stream.read(1048576),b''):huella.update(bloque)
@@ -174,4 +195,6 @@ if __name__=='__main__':
         elif isinstance(error,zipfile.BadZipFile):codigo='ZIP_ILEGIBLE';motivo='El archivo no es un ZIP íntegro o compatible.'
         elif isinstance(error,(json.JSONDecodeError,UnicodeDecodeError)):codigo='JSON_ILEGIBLE';motivo='Un documento del corte no contiene JSON UTF-8 compatible.'
         elif isinstance(error,OSError):codigo='ACCESO_LOCAL';motivo='No se pudo leer el ZIP o crear el informe privado en el servidor.'
-        print(json.dumps({'ok':False,'codigo_error':codigo,'motivo':motivo,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False},ensure_ascii=False));raise SystemExit(1)
+        informe={'ok':False,'codigo_error':codigo,'motivo':motivo,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False}
+        if isinstance(error,CorteInvalido) and error.detalle is not None:informe['detalle']=error.detalle
+        print(json.dumps(informe,ensure_ascii=False));raise SystemExit(1)

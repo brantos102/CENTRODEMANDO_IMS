@@ -1,0 +1,35 @@
+{
+  "fecha_operativa": "2026-11-11",
+  "evidencia_reportada_por_usuario": {
+    "archivo_enviado": true,
+    "bytes": 2664109,
+    "entradas_zip": 191,
+    "planes": 1,
+    "fragmentos": 189,
+    "resumenes": 1,
+    "error": "Metadatos de hoja incompatibles.",
+    "datos_importados": false
+  },
+  "incompatibilidad_reproducida": "Una fuente retenida puede describir una hoja que supera los límites de captura; el validador rechazaba esos metadatos antes de poder informar la revisión",
+  "correccion": {
+    "admite_solo_descripcion_acotada_de_hoja_fuera_limite_en_fuentes_no_completadas": true,
+    "fragmentos_fuera_limite_siguen_rechazados": true,
+    "fuentes_completas_fuera_limite_siguen_rechazadas": true,
+    "metadatos_invalidos_informan_indices_y_codigos_sin_identidad_o_valores": true,
+    "lanzador_reutiliza_zip_existente_y_conserva_informe_en_exito_o_fallo": true,
+    "no_aprueba_fuentes_en_revision_o_panel_cambiado": true
+  },
+  "pruebas_locales": {
+    "python_correctas": 93,
+    "python_fallidas": 0,
+    "regresion_reproducida_antes_de_la_correccion": true,
+    "prueba_real_lanzador_con_git_zip_y_error_python_en_entorno_sintetico": true,
+    "archivo_zip_y_checkout_original_conservados": true
+  },
+  "limite": "El ZIP privado real no se ha inspeccionado en desarrollo; el caso reproducido no confirma por sí solo la causa exacta de sus metadatos",
+  "requiere_descargar_o_enviar_de_nuevo_el_zip": false,
+  "importacion_sql": false,
+  "servicios_reiniciados": false,
+  "apache_o_puertos_modificados": false,
+  "corte_a_produccion_realizado": false
+}
