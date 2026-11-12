@@ -115,3 +115,24 @@ export async function copiarPreparacionAbiertos({pool,directorio,onProgress=()=>
  finally{if(bloqueada)try{await c.execute('SELECT RELEASE_LOCK(?)',[lock]);}catch{}c.release();}
 }
 function resultado(p,repetida){return {ok:true,copia_revision_mysql:true,copia_id:p.copiaId,corte_id:p.manifest.corte_id,ya_copiada:repetida,productos:p.cantidades[0],filas_auxiliares:p.cantidades[1],ambitos:p.ambitos,tablas_destino:Object.keys(contrato),integridad_sql_verificada:true,datos_operativos_importados:false,inventarios_activados:false,permisos_creados:false,publicacion_kpi:false,operacion_nativa_modificada:false,requiere_delta_final:true,servicios_reiniciados:false,apache_modificado:false,puertos_abiertos:[]};}
+
+// Contrato privado para planificar: ninguna DDL, inserción o reparación implícita.
+export async function leerContextoCopiaAbiertos({pool,directorio,copiaId}){
+ const p=await validarPaqueteAbiertos(directorio);exigir(p.copiaId===copiaId,'COPIA_DIFERENTE');
+ const origenes=new Set();for await(const {row} of records(path.join(p.dir,ARCHIVOS[0])))origenes.add(row.origen.origen_drive);
+ exigir(origenes.size<=1000,'DEMASIADAS_FUENTES');
+ const c=await pool.getConnection();let abierta=false;
+ try{
+  await destino(c);await c.query('SET TRANSACTION READ ONLY');await c.beginTransaction();abierta=true;
+  await verificarCopia(c,p);await comprobarArchivos(p);
+  const [clientes]=await c.query('SELECT id,nombre FROM ims_op_cliente ORDER BY id LIMIT 10001');exigir(clientes.length<=10000,'CATALOGO_EXCESIVO');
+  const existentes=[];const ids=[...origenes];
+  for(let i=0;i<ids.length;i+=50){
+   const lote=ids.slice(i,i+50),[rows]=await c.execute('SELECT DISTINCT l.origen_drive,l.inventario_id,i.codigo_operativo,i.estado,i.sede FROM ims_op_linea l JOIN ims_op_inventario i ON i.id=l.inventario_id WHERE l.origen_drive IN ('+lote.map(()=>'?').join(',')+') ORDER BY l.origen_drive,l.inventario_id LIMIT 10001',lote);
+   exigir(rows.length<=10000,'ORIGENES_EXCESIVOS');existentes.push(...rows);
+  }
+  await c.commit();abierta=false;
+  return {formato:'ims-abiertos-contexto-sql-v1',copia_id:p.copiaId,corte_id:p.manifest.corte_id,integridad_sql_verificada:true,clientes,existentes,productos:p.cantidades[0],auxiliares:p.cantidades[1]};
+ }catch(error){if(abierta)try{await c.rollback();}catch{}if(error instanceof ErrorCopiaAbiertos)throw error;const fallo=new ErrorCopiaAbiertos('CONTEXTO_SQL_NO_CONFIRMADO');fallo.codigoMysql=codigoMysqlSeguro(error);throw fallo;}
+ finally{c.release();}
+}

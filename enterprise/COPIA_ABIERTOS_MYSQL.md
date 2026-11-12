@@ -1,5 +1,7 @@
 # Cargar la preparación de abiertos en MySQL para revisión
 
+Cuando la copia SQL esté confirmada, continuar con [la proyección al núcleo operativo](PLAN_OPERATIVO_ABIERTOS.md), que reutiliza el mismo ZIP y la copia existente sin repetir la carga.
+
 El análisis del corte `99d4b7ff-2f53-4f25-b740-23bf1f371c29` confirmó 12.362 líneas de los 12 inventarios seleccionados y 147 líneas conservadas del inventario que pasó a Entregado. Las cantidades de las planillas seleccionadas caben exactamente en la precisión prevista. Se conservan cuatro filas con C3 sin C2, un archivo con 12 códigos operativos y otro con 630 líneas sin código. También se conservan 984 filas auxiliares sin convertirlas en existencias. Estos casos no se corrigen inventando datos.
 
 ## Alcance de esta carga

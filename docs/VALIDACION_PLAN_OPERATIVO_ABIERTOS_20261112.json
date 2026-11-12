@@ -1,0 +1,52 @@
+{
+  "fecha_operativa": "2026-11-12",
+  "copia_mysql_confirmada_por_usuario": {
+    "copia_id": "430b63caa019504ba42aa4fed841b8c7b19e0b5f94d124810ed770bd893851c7",
+    "corte_id": "99d4b7ff-2f53-4f25-b740-23bf1f371c29",
+    "productos": 12509,
+    "auxiliares": 984,
+    "integridad_sql_verificada": true,
+    "inventarios_activados": false
+  },
+  "planificador": {
+    "verifica_copia_sql_existente_y_hashes_privados": true,
+    "transaccion_sql_solo_lectura": true,
+    "catalogo_cliente_exacto_desde_panel": true,
+    "detecta_origenes_ya_presentes_sin_duplicarlos": true,
+    "proyecta_todos_los_productos_incluidos_retenidos": true,
+    "reinterpreta_cantidades_desde_celdas_originales": true,
+    "no_completa_etapas_ausentes": true,
+    "fecha_desde_valor_y_zona_original_no_desde_nomenclatura": true,
+    "auxiliares_conservados_en_copia_sql": true,
+    "codigos_multiples_o_ausentes_requieren_mapeo": true,
+    "informe_compartible_sin_datos_de_celdas_o_identificadores_drive": true,
+    "requiere_delta_final": true,
+    "activa_inventarios": false,
+    "modifica_base_de_datos": false,
+    "modifica_apache_servicios_o_puertos": false
+  },
+  "pruebas": {
+    "node_version": "22.23.3",
+    "node_unitarias_correctas": 168,
+    "node_unitarias_fallidas": 0,
+    "python_correctas": 117,
+    "python_fallidas": 0,
+    "python_focalizadas_plan_operativo_correctas": 9,
+    "mysql_version": "8.0.46",
+    "mysql_integracion_correctas": 12,
+    "mysql_integracion_fallidas": 0,
+    "mysql_sintetico_sin_puertos_publicados": true,
+    "consulta_sql_no_ejecuta_ddl_o_mutaciones": true,
+    "copia_ajena_ausente_o_alterada_no_se_planifica": true,
+    "recorrido_zip_preparacion_copia_sql_cli_contexto_y_plan_python_verificado": true,
+    "productos_recorrido_completo": 6,
+    "auxiliares_recorrido_completo": 1,
+    "archivo_estructuralmente_valido_con_delta_pendiente_verificado": true,
+    "casos_codigos_vacios_mezclados_catalogo_ambiguo_y_origen_existente_verificados": true,
+    "datos_operativos_existentes_conservados": true
+  },
+  "planificador_ejecutado_en_servidor_corporativo": false,
+  "credenciales_corporativas_leidas": false,
+  "fuentes_google_modificadas": false,
+  "corte_final_a_produccion_realizado": false
+}

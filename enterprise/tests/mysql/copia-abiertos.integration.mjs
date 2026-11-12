@@ -5,7 +5,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import mysql from 'mysql2/promise';
 import {databaseConfig} from '../../tools/importar-snapshot.mjs';
-import {copiarPreparacionAbiertos} from '../../src/migracion/copia-abiertos.mjs';
+import {copiarPreparacionAbiertos,leerContextoCopiaAbiertos} from '../../src/migracion/copia-abiertos.mjs';
 import {paqueteCopia} from '../fixtures/paquete-copia-abiertos.mjs';
 import {esquemaERP} from '../fixtures/erp-api.mjs';
 if(process.env.IMS_MYSQL_PRUEBAS!=='1'||!/^centromando_ims_pruebas(?:_[a-z0-9]+)?$/.test(process.env.MYSQL_DATABASE||''))throw Error('Solo MySQL sintético propio.');
@@ -54,4 +54,15 @@ test('paquete producido por el preparador Python real se copia sin activar las f
 });
 test('carga y lectura paginadas conservan 1700 SKU repetidos y 257 filas auxiliares sin otra copia',async t=>{
  const f=await paqueteCopia(t,{productos:1700,auxiliares:257});const r=await copiarPreparacionAbiertos({pool,directorio:f.dir});assert.equal(r.productos,1700);assert.equal(r.filas_auxiliares,257);assert.equal(r.integridad_sql_verificada,true);const [[n]]=await pool.execute('SELECT COUNT(*) AS n,COUNT(DISTINCT referencia_copia) AS referencias FROM ims_abiertos_copia_fila WHERE copia_id=?',[r.copia_id]);assert.equal(Number(n.n),1957);assert.equal(Number(n.referencias),1957);assert.equal((await copiarPreparacionAbiertos({pool,directorio:f.dir})).ya_copiada,true);assert.deepEqual(await estadoNativo(),baseline);
+});
+test('contexto del plan lee y verifica todas las filas en transacción de solo lectura, sin DDL o escrituras',async t=>{
+ const f=await paqueteCopia(t);await copiarPreparacionAbiertos({pool,directorio:f.dir});const sentencias=[];
+ const lectura=proxied({query:async(c,sql,...params)=>{sentencias.push(sql);assert.ok(/^(SELECT |SET TRANSACTION READ ONLY$)/.test(sql));return c.query(sql,...params);},execute:async(c,sql,...params)=>{sentencias.push(sql);assert.ok(sql.startsWith('SELECT '));return c.execute(sql,...params);}});
+ const r=await leerContextoCopiaAbiertos({pool:lectura,directorio:f.dir,copiaId:f.copiaId});assert.equal(r.integridad_sql_verificada,true);assert.equal(r.productos,3);assert.equal(r.auxiliares,1);assert.ok(r.clientes.some(c=>c.nombre==='CLIENTE_NATIVO_SINTETICO'));assert.ok(sentencias.includes('SET TRANSACTION READ ONLY'));assert.deepEqual(await estadoNativo(),baseline);
+});
+test('contexto ajeno no adquiere conexión y copia SQL ausente o alterada no se usa para planificar',async t=>{
+ const f=await paqueteCopia(t);let conexiones=0;
+ await assert.rejects(leerContextoCopiaAbiertos({pool:{getConnection(){conexiones++;throw Error('No conectar');}},directorio:f.dir,copiaId:'0'.repeat(64)}),e=>e.codigo==='COPIA_DIFERENTE');assert.equal(conexiones,0);
+ await assert.rejects(leerContextoCopiaAbiertos({pool,directorio:f.dir,copiaId:f.copiaId}),e=>e.codigo==='COPIA_SQL_DIFERENTE');
+ await copiarPreparacionAbiertos({pool,directorio:f.dir});await pool.execute("UPDATE ims_abiertos_copia_fila SET contenido=REPLACE(contenido,'00001','CAMBIADO') WHERE copia_id=? AND tipo_registro='PRODUCTO' AND numero_fila=1",[f.copiaId]);await assert.rejects(leerContextoCopiaAbiertos({pool,directorio:f.dir,copiaId:f.copiaId}),e=>e.codigo==='COPIA_SQL_DIFERENTE');assert.deepEqual(await estadoNativo(),baseline);
 });

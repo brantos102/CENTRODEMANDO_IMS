@@ -1,6 +1,6 @@
 # Preparación de la migración de Centro de Mando a MySQL
 
-Siguiente etapa: [copia de revisión de abiertos en MySQL](COPIA_ABIERTOS_MYSQL.md). Carga el paquete preparado en dos tablas aisladas, verifica cada fila y conserva las observaciones sin activar inventarios, modificar el histórico o reiniciar servicios. La importación operativa y el delta final siguen pendientes.
+Siguiente etapa tras confirmar la copia SQL: [proyectar los abiertos a las columnas operativas](PLAN_OPERATIVO_ABIERTOS.md). Revisa el catálogo y los orígenes existentes con SQL de solo lectura, conserva todas las líneas y enumera los conflictos pendientes antes de la activación. La [copia de revisión en MySQL](COPIA_ABIERTOS_MYSQL.md) se conserva; no se repite la carga. La importación operativa y el delta final siguen pendientes.
 
 Actualización del 12 de noviembre: [preparar el traslado con Google en operación](PREPARAR_TRASLADO_ABIERTOS.md) revisa líneas, cantidades y estructuras sobre el ZIP privado ya recibido, conserva las fuentes cambiadas y prepara candidatos sin importar datos. Horarios confirmados: fin de capturas 17:30 y consolidación `dash_consolidarAuditoria` a las 18:30, hora de Ecuador; el delta final debe obtenerse después de confirmar su ejecución correcta.
 
