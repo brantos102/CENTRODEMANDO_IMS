@@ -1,0 +1,25 @@
+{
+  "fecha_operativa": "2026-11-12",
+  "error_reportado": {
+    "etapa": "PREPARACION",
+    "codigo_especifico_disponible_en_captura": false,
+    "causa_corporativa_no_confirmada": true
+  },
+  "correcciones": {
+    "permite_nuevo_completo_desde_legado_pendiente": true,
+    "conserva_plan_y_fragmentos_anteriores": true,
+    "no_reinicia_corte_completo_pendiente": true,
+    "control_nuevo_solo_despues_de_guardar_plan": true,
+    "diagnostico_con_codigos_internos_exactos_sin_excepcion_google": true
+  },
+  "pruebas": {
+    "node_version": "22.23.3",
+    "exportador_correctas": 16,
+    "python_captura_completa_correctas": 5,
+    "fallidas": 0
+  },
+  "ejecucion_corporativa_del_auxiliar_corregido_pendiente": true,
+  "fuentes_google_modificadas": false,
+  "base_de_datos_corporativa_modificada": false,
+  "servicios_apache_o_puertos_modificados": false
+}

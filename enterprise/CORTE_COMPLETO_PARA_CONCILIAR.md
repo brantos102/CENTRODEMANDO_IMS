@@ -21,6 +21,8 @@ Los operadores terminan a las **17:30, hora de Ecuador**. `dash_consolidarAudito
 
 La herramienta no suspende Google ni declara aprobado el corte. Si un origen o el panel cambia durante la captura, queda señalado para revisión. Mantener la operación vigente mientras se concilian las copias; la habilitación de los inventarios migrados requiere el paso operativo posterior.
 
+Puede ejecutarse antes de la consolidación como revisión previa. Que no se hayan creado archivos hoy no confirma que las capturas de los archivos existentes y el consolidado estén al día; esa revisión no sustituye la conciliación del corte final.
+
 ## 1. Actualizar el auxiliar desde Windows
 
 En **PowerShell del PC**, usar la candidata existente:
@@ -51,6 +53,12 @@ El código público del auxiliar queda copiado al portapapeles. En [el proyecto 
 5. Descargar **una sola vez la carpeta nueva completa** desde el enlace que muestra el registro. Esperar a que Drive termine de formar el ZIP. Conservar todos los ZIP anteriores.
 
 El resumen del maestro comprueba por separado Panel, Usuarios, INVENTARIOS y REGISTRO. Un maestro que omite alguna de esas hojas no se acepta como completo.
+
+### Si Preparar informa «PREPARACION»
+
+La versión corregida permite pasar de un corte legado pendiente al modo completo en una carpeta nueva, conservando sin cambios el plan y todos los fragmentos anteriores. Si ya hay un corte **completo** pendiente, exige usar Continuar; repetir Preparar no lo reinicia. El archivo privado de control apunta a la nueva carpeta solo después de guardar su plan correctamente.
+
+Los errores muestran un JSON `ims-abiertos-error-v1` con `etapa`, `paso` y `codigo_error`, sin el mensaje original de Google ni valores privados. Compartir solo ese JSON si vuelve a fallar. `CONTINUAR_ANTES` indica un corte completo pendiente; `PRIVACIDAD`, `PROPIETARIO` o `CUENTA` requieren revisar la cuenta y el acceso, sin compartir la carpeta. `SERVICIO_O_FORMATO` identifica un error de Google o formato no clasificado: su `paso` permite localizar dónde ocurrió sin exponer su contenido. El mensaje genérico de la versión anterior no demuestra cuál de estas condiciones falló.
 
 `fuentes` es el total de orígenes de la captura, no la cantidad procesada en esa ejecución. El maestro completo puede requerir varias continuaciones aunque los archivos hijos ya hayan terminado; `fragmentos` muestra el progreso acumulado.
 

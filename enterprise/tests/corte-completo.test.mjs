@@ -20,6 +20,21 @@ test('preparar un corte completo crea otra carpeta y conserva el corte terminado
  f.prepararCompleto();terminar(f);assert.deepEqual(f.archivosCorte(),prev);assert.notEqual(f.planActual().corte_id,id);assert.equal(f.planActual().corte_anterior_conservado,id);
  const nuevos=f.archivosCorteActual();assert.throws(()=>f.recuperar(),/Corte privado detenido/);assert.deepEqual(f.archivosCorteActual(),nuevos);
 });
+test('nuevo corte completo conserva también un corte legado parcialmente leído sin exigir completarlo',()=>{
+ const f=completoDePrueba();f.preparar();f.continuar();
+ const anteriores=f.archivosCorte(),p=f.plan();assert.ok(p.fuentes.some(x=>x.estado==='PENDIENTE'));assert.ok(p.fuentes.some(x=>x.partes.length));
+ f.prepararCompleto();assert.deepEqual(f.archivosCorte(),anteriores);assert.equal(f.planActual().corte_anterior_conservado,p.corte_id);
+ const nuevos=f.archivosCorteActual();assert.throws(()=>f.prepararCompleto(),/CONTINUAR_ANTES/);assert.deepEqual(f.archivosCorteActual(),nuevos);
+ const error=JSON.parse(f.log.findLast(x=>x.startsWith('{')&&JSON.parse(x).formato==='ims-abiertos-error-v1'));
+ assert.equal(error.paso,'REVISAR_CORTE_ANTERIOR');assert.equal(error.codigo_error,'CONTINUAR_ANTES');assert.equal(error.fuentes_modificadas,false);
+ assert.equal(terminar(f).maestro_completo,true);assert.equal(f.modificaciones(),0);
+});
+test('diagnóstico de preparación identifica la condición sin exponer excepciones ni valores de Google',()=>{
+ const f=completoDePrueba();f.panel[1][1]={toString(){throw Error(SECRET+' https://drive.google.com/dato-privado');}};
+ assert.throws(()=>f.prepararCompleto(),e=>e.message.includes('LEER_PANEL; SERVICIO_O_FORMATO')&&!e.message.includes(SECRET));
+ const r=JSON.parse(f.log.at(-1));assert.equal(r.formato,'ims-abiertos-error-v1');assert.equal(r.etapa,'PREPARACION');assert.equal(r.codigo_error,'SERVICIO_O_FORMATO');
+ assert.ok(!f.log.join('').includes(SECRET));assert.ok(!f.log.join('').includes('dato-privado'));assert.equal(f.files.length,0);assert.equal(f.modificaciones(),0);
+});
 test('captura completa preserva archivos con cliente vacío sin inferir su nombre ni cambiar el panel',()=>{
  const f=completoDePrueba();f.panel[1][0]='';f.panel[4][0]='';f.prepararCompleto();const r=terminar(f),p=f.planActual();
  assert.equal(r.fuentes_revision,0);const origen=p.fuentes.find(x=>x.id===ABIERTO);assert.ok(origen);assert.equal(origen.panel.length,2);assert.ok(origen.panel.every(r=>r.celdas.find(c=>c.columna===1).valor===null));assert.equal(f.modificaciones(),0);

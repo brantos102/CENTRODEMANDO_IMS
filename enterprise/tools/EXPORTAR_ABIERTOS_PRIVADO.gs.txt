@@ -6,7 +6,7 @@ function IMSPrepararCorteCompleto20261112() { return IMSAbiertosPrivado20261110_
 function IMSContinuarCorteAbiertos20261110() { return IMSAbiertosPrivado20261110_('continuar'); }
 function IMSRecuperarCorteAbiertos20261111() { return IMSAbiertosPrivado20261110_('recuperar'); }
 function IMSAbiertosPrivado20261110_(accion) {
-  var etapa='CUENTA', proyecto='1QPDNLYYqLXkOjNyWoL49JepzxW32XaTskLWfSYOfCdE10Dt62FAfhlsD';
+  var etapa='CUENTA', paso='VALIDAR_CUENTA', proyecto='1QPDNLYYqLXkOjNyWoL49JepzxW32XaTskLWfSYOfCdE10Dt62FAfhlsD';
   var maestro='1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk';
   var activo=String(Session.getActiveUser().getEmail()||'').toLowerCase();
   function exigir(v,c) { if(!v) throw new Error(c||'CONTROL'); }
@@ -69,16 +69,21 @@ function IMSAbiertosPrivado20261110_(accion) {
   try {
     exigir(ScriptApp.getScriptId()===proyecto,'PROYECTO');
     exigir(activo&&activo===String(Session.getEffectiveUser().getEmail()||'').toLowerCase()&&['brantos102@gmail.com','bespinoza@itsanet.com'].indexOf(activo)>=0,'CUENTA');
+    paso='LEER_CONTROL';
     var controlNombre='IMS_ABIERTOS_CONTROL_20261110_'+sha(proyecto).slice(0,16)+'.json',it=DriveApp.getFilesByName(controlNombre),control=it.hasNext()?privada(unico(it)):null;
     etapa='PREPARACION';
     if(accion==='preparar'||accion==='preparar_completo') {
-      if(control){var previo=leer(control);exigir(previo.proyecto===proyecto&&previo.propietario===activo,'CONTROL');var fp=privada(DriveApp.getFolderById(previo.carpeta));var pp=leer(unico(fp.getFilesByName('plan_abiertos_privado.json')));exigir(pp.fuentes.every(function(f){return f.estado==='COMPLETO'||f.estado==='REVISION';}),'CONTINUAR_ANTES');}
-      var ss=SpreadsheetApp.openById(maestro),pan=panelActual(ss),sel=seleccionar(pan,accion==='preparar_completo'),fuentes=sel.fuentes,sin=sel.sin,discordantes=sel.discordantes;
+      paso='REVISAR_CORTE_ANTERIOR';
+      if(control){var previo=leer(control);exigir(previo.proyecto===proyecto&&previo.propietario===activo,'CONTROL');var fp=privada(DriveApp.getFolderById(previo.carpeta));var pp=leer(unico(fp.getFilesByName('plan_abiertos_privado.json')));exigir(['ims-abiertos-corte-v1','ims-abiertos-corte-v2'].indexOf(pp.formato)>=0&&pp.proyecto===proyecto&&pp.propietario===activo&&Array.isArray(pp.fuentes)&&pp.fuentes.length&&pp.fuentes.every(function(f){return ['PENDIENTE','COMPLETO','REVISION'].indexOf(f.estado)>=0;}),'PLAN_ANTERIOR');if(accion!=='preparar_completo'||pp.modo_captura)exigir(pp.fuentes.every(function(f){return f.estado==='COMPLETO'||f.estado==='REVISION';}),'CONTINUAR_ANTES');}
+      paso='LEER_PANEL';var ss=SpreadsheetApp.openById(maestro),pan=panelActual(ss);
+      paso='SELECCIONAR_FUENTES';var sel=seleccionar(pan,accion==='preparar_completo'),fuentes=sel.fuentes,sin=sel.sin,discordantes=sel.discordantes;
+      paso='CREAR_CARPETA_PRIVADA';
       var idCorte=Utilities.getUuid(),carpeta=DriveApp.createFolder('IMS_ABIERTOS_PRIVADO_'+idCorte);carpeta.setSharing(DriveApp.Access.PRIVATE,DriveApp.Permission.VIEW);privada(carpeta);
       fuentes.sort(function(a,b){var orden={INVENTARIO:0,MAESTRO:1,PLANTILLA:2,INTERFAZ:3};return orden[a.tipo]-orden[b.tipo];});
       var plan={formato:'ims-abiertos-corte-v1',corte_id:idCorte,proyecto:proyecto,maestro:maestro,propietario:activo,creado_en:new Date().toISOString(),panel_sha256:sha(JSON.stringify(pan)),panel:pan,sin_archivo:sin,referencias_discordantes:discordantes,fuentes:fuentes.map(pendiente),corte_final_aprobado:false};
       if(accion==='preparar_completo'){plan.modo_captura='ABIERTO_Y_CONSOLIDADO_V1';plan.limites={filas:1000000,columnas:512,celdas_fragmento:10000};if(control)plan.corte_anterior_conservado=pp.corte_id;}
-      escribir(carpeta,'plan_abiertos_privado.json',plan);
+      paso='GUARDAR_PLAN_NUEVO';escribir(carpeta,'plan_abiertos_privado.json',plan);
+      paso='ACTUALIZAR_CONTROL';
       if(!control){control=DriveApp.createFile(controlNombre,'{}',MimeType.PLAIN_TEXT);control.setSharing(DriveApp.Access.PRIVATE,DriveApp.Permission.VIEW);privada(control);}
       privada(control).setContent(JSON.stringify({formato:'ims-abiertos-control-v1',proyecto:proyecto,propietario:activo,carpeta:carpeta.getId()}));
       Logger.log('CARPETA PRIVADA; NO ADJUNTAR AL CHAT: '+carpeta.getUrl());return resumen(plan);
@@ -128,5 +133,12 @@ function IMSAbiertosPrivado20261110_(accion) {
     var actual=panelActual(SpreadsheetApp.openById(maestro));p.panel_cambio=sha(JSON.stringify(actual))!==p.panel_sha256;privada(pf).setContent(JSON.stringify(p));
     var r=resumen(p);r.panel_cambio=p.panel_cambio;var resumenIt=folder.getFilesByName('resumen_abiertos_para_compartir.json');if(resumenIt.hasNext())privada(unico(resumenIt)).setContent(JSON.stringify(r));else escribir(folder,'resumen_abiertos_para_compartir.json',r);
     Logger.log('CARPETA PRIVADA; NO ADJUNTAR AL CHAT: '+folder.getUrl());return r;
-  } catch(e) { throw new Error('Corte privado detenido ('+etapa+'). Conserva los originales y no compartas el corte ni credenciales. No se modifican hojas, estados, propiedades o despliegues.'); }
+  } catch(e) {
+    // Solo códigos internos exactos: nunca registrar la excepción de Google,
+    // que puede incluir contenido de celdas, correos, URLs o identificadores.
+    var permitidos=['CONTROL','PROYECTO','CUENTA','PRIVACIDAD','PROPIETARIO','AUSENTE','DUPLICADO','FRAGMENTO_GRANDE','NUMERO','PANEL','PANEL_APUNTA_PLANTILLA','CONTINUAR_ANTES','PLAN_ANTERIOR','PREPARAR_ANTES','PLAN','RECUPERACION_YA_INICIADA_O_CORTE_PENDIENTE','PLAN_GRANDE','LIMITES'];
+    var mensaje=String(e&&e.message||''),codigo=permitidos.indexOf(mensaje)>=0?mensaje:'SERVICIO_O_FORMATO';
+    Logger.log(JSON.stringify({ok:false,formato:'ims-abiertos-error-v1',etapa:etapa,paso:paso,codigo_error:codigo,fuentes_modificadas:false,estados_modificados:false,propiedades_leidas:false,credenciales_exportadas:false}));
+    throw new Error('Corte privado detenido ('+etapa+'; '+paso+'; '+codigo+'). Conserva los originales y comparte solo el JSON de diagnostico del registro. No se modifican hojas, estados, propiedades o despliegues.');
+  }
 }
