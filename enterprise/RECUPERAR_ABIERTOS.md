@@ -1,5 +1,7 @@
 # Recuperar el corte terminado sin perder el anterior
 
+Si la extracción ya terminó y las fuentes vuelven a cambiar porque la operación continúa, seguir [Preparar el traslado con Google en operación](PREPARAR_TRASLADO_ABIERTOS.md). Se puede revisar la copia existente para preparar datos sin exigir una nueva extracción inmóvil durante la jornada; el delta final se concilia después de la consolidación de las 18:30.
+
 El informe recibido identifica un inventario en revisión por cambio de fuente (referenciado en la fila 370 del panel del corte) y el maestro en revisión por hojas de 385 y 384 columnas. Las filas de referencia pertenecen al panel anterior; si se reordenó, pueden haber cambiado de posición. No recortar hojas ni modificar estados o cantidades para superar el diagnóstico.
 
 ## En Apps Script

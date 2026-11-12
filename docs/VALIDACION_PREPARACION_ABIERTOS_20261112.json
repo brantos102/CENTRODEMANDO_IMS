@@ -1,0 +1,45 @@
+{
+  "fecha_operativa": "2026-11-12",
+  "contexto_confirmado_por_usuario": {
+    "google_sigue_recibiendo_inventarios": true,
+    "fin_capturas_hora_ecuador": "17:30",
+    "trigger_diario": "dash_consolidarAuditoria",
+    "inicio_trigger_hora_ecuador": "18:30",
+    "fecha_de_activacion_acordada": false
+  },
+  "evidencia_del_ultimo_resumen": {
+    "fuentes_completas": 13,
+    "fuentes_revision": 2,
+    "fuentes_pendientes": 0,
+    "panel_cambio": false,
+    "revision_inventario_fila_panel": 2,
+    "revision_maestro": true,
+    "fila_370_entregado_en_panel_recuperado": true,
+    "captura_anterior_fila_370_en_revision": true,
+    "linaje_respaldo_verificado": true
+  },
+  "herramienta": {
+    "prepara_datos_sobre_zip_existente_sin_exigir_fuentes_inmoviles_para_el_analisis": true,
+    "mantiene_marcas_de_fuentes_en_revision_y_exige_delta_final": true,
+    "conserva_producto_ubicacion_etapas_notas_formatos_fechas_y_procedencia": true,
+    "sku_repetido_no_es_identidad_unica": true,
+    "cero_y_ausencia_permanecen_distintos": true,
+    "cantidades_exactas_decimal_30_9_sin_redondeo": true,
+    "textos_con_separadores_requieren_regla_explicita": true,
+    "retirados_se_preparan_aparte_sin_sumarse_a_los_abiertos": true,
+    "informe_compartible_no_contiene_nombres_id_drive_sku_o_valores_de_filas": true
+  },
+  "pruebas": {
+    "python_correctas": 104,
+    "python_fallidas": 0,
+    "apps_script_simulado_pruebas_focalizadas_correctas": 10,
+    "lanzador_preparacion_ejecutado_con_git_zip_y_permisos_reales_en_entorno_sintetico": true,
+    "herramienta_nueva_ejecutada_en_corporativo": false
+  },
+  "importacion_mysql": false,
+  "credenciales_mysql_o_erp_leidas": false,
+  "originales_google_modificados": false,
+  "servicios_reiniciados": false,
+  "apache_o_puertos_modificados": false,
+  "corte_final_a_produccion_realizado": false
+}

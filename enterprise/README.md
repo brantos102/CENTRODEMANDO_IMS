@@ -1,5 +1,7 @@
 # Preparación de la migración de Centro de Mando a MySQL
 
+Actualización del 12 de noviembre: [preparar el traslado con Google en operación](PREPARAR_TRASLADO_ABIERTOS.md) revisa líneas, cantidades y estructuras sobre el ZIP privado ya recibido, conserva las fuentes cambiadas y prepara candidatos sin importar datos. Horarios confirmados: fin de capturas 17:30 y consolidación `dash_consolidarAuditoria` a las 18:30, hora de Ecuador; el delta final debe obtenerse después de confirmar su ejecución correcta.
+
 Actualización del 11 de noviembre: [recuperar el corte de abiertos](RECUPERAR_ABIERTOS.md) conserva el plan y los fragmentos anteriores, recaptura fuentes que cambiaron y admite el maestro de 385/384 columnas con fragmentos pequeños. No activa servicios ni importa datos.
 
 Entrega siguiente: [cantidades legibles y corte privado de inventarios abiertos](CORTE_ABIERTOS_Y_FORMATOS.md). El formato elimina ceros de relleno y conserva decimales exactos; el actualizador concilia el stock persistido antes del cambio. El usuario eligió trasladar también los abiertos de Google: se incluye el exportador privado y envío/validación de su corte actual, sin declararlo importado ni cerrar todavía la migración completa.

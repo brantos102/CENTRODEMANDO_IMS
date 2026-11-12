@@ -34,7 +34,7 @@ export function simular({email='brantos102@gmail.com',efectivo=email,proyecto=PR
   DriveApp:{Access:{PRIVATE:'PRIVATE'},Permission:{VIEW:'VIEW'},getFileById:id=>{const f=origenes.get(id)||files.find(f=>f.id===id);if(!f)throw Error();return f;},getFolderById:id=>{const f=folders.find(f=>f.id===id);if(!f)throw Error();return f;},getFilesByName:n=>it(files.filter(f=>f.nombre===n)),createFolder:n=>{const f=recurso(n,true);folders.push(f);return f;},createFile:(n,text)=>{const f=recurso(n);f.content=text;files.push(f);return f;}}
  });vm.runInContext(codigo,ctx);
  const preparar=()=>ctx.IMSPrepararCorteAbiertos20261110(),continuar=()=>ctx.IMSContinuarCorteAbiertos20261110(),recuperar=()=>ctx.IMSRecuperarCorteAbiertos20261111(),plan=()=>JSON.parse(folders[0].children.find(f=>f.nombre==='plan_abiertos_privado.json').content);
- return {preparar,continuar,recuperar,files,log,panel,plan,archivosCorte:()=>folders[0].children.map(f=>({nombre:f.nombre,content:f.content})),cambiarOrigen:(id)=>{origenes.get(id).version++;},reads:()=>reads,modificaciones:()=>modificaciones};
+ return {preparar,continuar,recuperar,files,log,panel,plan,archivosCorte:()=>folders[0].children.map(f=>({nombre:f.nombre,content:f.content})),cambiarOrigen:(id)=>{origenes.get(id).version++;},reemplazarPlanilla:(id,rows)=>{const sh=books.get(id).getSheetByName('PLANILLA DE CONTEO FISICO');sh.data.splice(0,sh.data.length,...rows);origenes.get(id).version++;},reads:()=>reads,modificaciones:()=>modificaciones};
 }
 
 export {ABIERTO,CERRADO,SECRET};
