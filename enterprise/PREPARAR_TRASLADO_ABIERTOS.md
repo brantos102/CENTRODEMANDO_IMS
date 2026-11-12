@@ -1,5 +1,7 @@
 # Preparación de abiertos mientras Google sigue operando
 
+Una vez revisado el resumen de preparación, continuar con [la copia de revisión en MySQL](COPIA_ABIERTOS_MYSQL.md), sin repetir la extracción ni subir otro ZIP. Esa carga conserva los candidatos y sus observaciones; no los activa como inventarios operativos.
+
 El usuario confirmó que los operadores continúan registrando inventarios. Su jornada termina a las **17:30, hora de Ecuador**, y el trigger **`dash_consolidarAuditoria`** se ejecuta diariamente a las **18:30**. Un cambio de versión durante las copias es esperable en ese contexto. No debe eliminarse la verificación ni declararse estable una fuente que cambió, pero se puede preparar y revisar la migración con la copia ya recibida, sin esperar una nueva extracción perfecta durante la jornada.
 
 ## Qué hace este paso
