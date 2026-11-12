@@ -136,7 +136,7 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
         if existentes[f['id']]:bloqueos['ORIGEN_YA_PRESENTE_REQUIERE_DELTA']=1
         if not filas:bloqueos['ARCHIVO_SIN_PRODUCTOS']=1
         codigos=set();fechas=set();hojas=set();series=defaultdict(list);lineas=[]
-        perfiles_fecha={k:Counter() for k in ('fecha_inicio','fecha_fin')};muestras_fecha=[]
+        perfiles_fecha={k:Counter() for k in ('fecha_inicio','fecha_fin')};origen_dia={k:Counter() for k in perfiles_fecha};zonas_fecha=Counter();muestras_fecha=[]
         for numero,row in enumerate(filas,1):
             o=row['origen'];hojas.add(o['hoja_id'])
             ss=[s for s in esquemas if s['ambito']==ambito and s['origen_drive']==f['id'] and s['hoja_id']==o['hoja_id'] and s['clase']=='PLANILLA_CONTEO']
@@ -145,11 +145,13 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
             for campo,detalle in linea['interpretacion_fechas'].items():
                 etiqueta=detalle['perfil']+':'+detalle['estado']+(':'+detalle['motivo'] if detalle['motivo'] else '')
                 perfiles_fecha[campo][etiqueta]+=1
-                if detalle['estado']=='REQUIERE_REGLA' and len(muestras_fecha)<6:muestras_fecha.append({'hoja_en_fuente':ss[0]['hoja_en_fuente'],'fila_planilla':o['fila'],'campo':campo,'perfil':detalle['perfil'],'motivo':detalle['motivo']})
+                if detalle.get('origen_dia'):origen_dia[campo][detalle['origen_dia']]+=1
+                if detalle.get('zona_fuente_estado'):zonas_fecha[detalle['zona_fuente_estado']]+=1
+                if detalle['estado']=='REQUIERE_REGLA' and len(muestras_fecha)<6:muestras_fecha.append({'hoja_en_fuente':ss[0]['hoja_en_fuente'],'fila_planilla':o['fila'],'campo':campo,'perfil':detalle['perfil'],'motivo':detalle['motivo'],**{k:detalle[k] for k in ('zona_fuente_estado','visible_formato','visible_presente') if k in detalle}})
             if linea['codigo_original']:codigos.add(linea['codigo_original'])
             if linea['fecha_inicio']:fechas.add(linea['fecha_inicio'])
             serie=linea['serie'].strip()
-            if serie.upper() not in ('','0','N/A'):series[(linea['codigo_original'],linea['fecha_inicio'],serie) if separar else serie].append((linea,ss[0]['hoja_en_fuente']))
+            if serie.upper() not in ('','0','N/A'):series[(linea['codigo_original'],linea['fecha_inicio'],serie.upper()) if separar else serie.upper()].append((linea,ss[0]['hoja_en_fuente']))
             lineas.append(linea)
         if len(codigos)>1 and not separar:bloqueos['ARCHIVO_CON_VARIOS_CODIGOS_REQUIERE_MAPEO']=1
         if len(fechas)>1 and not separar:bloqueos['ARCHIVO_CON_VARIAS_FECHAS_INICIO']=1
@@ -161,7 +163,9 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
                 l['bloqueos']=[e for e in l['bloqueos'] if e not in ('CODIGO_OPERATIVO_NO_DEFINIDO','FECHA_INICIO_NO_DEFINIDA')]
         if len(hojas)>1:bloqueos['VARIAS_PLANILLAS_REQUIEREN_MAPEO']=1
         repetidas=[grupo for grupo in series.values() if len(grupo)>1]
-        if repetidas:bloqueos['SERIE_REPETIDA_REQUIERE_REVISION']=sum(len(g)-1 for g in repetidas)
+        # Es stock teórico, no PLANILLA DE SERIES FISICAS: el WMS permite
+        # conservar esas líneas. La captura física mantiene su unicidad.
+        if repetidas:avisos['SERIE_TEORICA_REPETIDA_REQUIERE_SELECCION_DE_LINEA']=sum(len(g)-1 for g in repetidas)
         muestras_series=[{'filas':[{'hoja_en_fuente':hoja,'fila_planilla':l['origen']['fila']} for l,hoja in g[:20]],
             'lineas_en_grupo':len(g),'mismo_sku':len({l['sku'] for l,_ in g})==1,
             'misma_posicion':len({l['posicion'] for l,_ in g})==1,'mismo_lote':len({l['lote'] for l,_ in g})==1} for g in repetidas[:20]]
@@ -188,7 +192,8 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
             'sin_bloqueos_estructurales':not bool(bloqueos) and not pendiente,'bloqueos':dict(sorted(bloqueos.items())),
             'regla_operativa':modo,'pendiente_de_iniciar':pendiente,'conteos_planificados':len(conteos),'conteos':conteos,
             'perfiles_fecha':{k:dict(sorted(v.items())) for k,v in perfiles_fecha.items()},'muestras_fechas_revision':muestras_fecha,
-            'series_repetidas':{'grupos':len(repetidas),'lineas':sum(len(g) for g in repetidas),'muestras':muestras_series},
+            'origen_dia_fecha':{k:dict(sorted(v.items())) for k,v in origen_dia.items()},'zonas_fuente_fecha':dict(sorted(zonas_fecha.items())),
+            'series_repetidas':{'tipo':'STOCK_TEORICO','bloquea_importacion_stock':False,'grupos':len(repetidas),'lineas':sum(len(g) for g in repetidas),'muestras':muestras_series},
             'avisos':dict(sorted(avisos.items())),'capturas_presentes':{k:sum(l[k] is not None for l in lineas) for k in ('conteo_1','conteo_2','conteo_final')},
             'ceros_contados':{k:sum(l[k]=='0.000000000' for l in lineas) for k in ('conteo_1','conteo_2','conteo_final')},
             'requiere_delta_final':True,'listo_para_activar':False}

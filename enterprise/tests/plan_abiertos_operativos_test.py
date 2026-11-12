@@ -153,3 +153,24 @@ class PlanAbiertosOperativosTests(unittest.TestCase):
   self.assertEqual(resolver_reglas({'copia_id':'0'*64},fuentes,filas),{})
   filas[('SELECCION_ACTUAL',corte,a)].pop()
   with self.assertRaises(ValueError):resolver_reglas({'copia_id':REGLAS_CONFIRMADAS['copia_id']},fuentes,filas)
+
+ def test_dia_visible_resuelve_proyeccion_sin_zona_y_sin_cambiar_instantes_o_cantidades_originales(self):
+  with tempfile.TemporaryDirectory() as t:
+   p,c=self.paquete(t);rows=self.filas(p);propias=[r for r in rows if r['codigo_operativo_original']=='121126_BELIA']
+   for x in propias:
+    x['origen']['zona_horaria']=None
+    for col in (1,2):next(k for k in x['fila_original']['celdas'] if k['columna']==col).update(tipo='d',valor='2026-11-12T02:30:00.000Z',visible='11/11/26 21:30:00',formato='dd/MM/yy HH:mm:ss')
+   self.resellar(p,rows,c);out=Path(t)/'plan';r=planificar(p,c,out,t);f=next(f for f in r['fuentes'] if f['productos']==4)
+   self.assertNotIn('FECHA_INICIO_REQUIERE_REGLA',f['bloqueos']);self.assertNotIn('FECHA_FIN_REQUIERE_REGLA',f['bloqueos']);self.assertEqual(f['origen_dia_fecha']['fecha_inicio'],{'DIA_VISIBLE_DE_SHEETS':4});self.assertEqual(f['zonas_fuente_fecha'],{'AUSENTE':8})
+   lineas=[json.loads(s) for s in (out/'lineas_operativas_NO_ACTIVAR.jsonl').read_text().splitlines() if json.loads(s)['origen']['origen_drive']==propias[0]['origen']['origen_drive']];self.assertEqual(len(lineas),4);self.assertTrue(all(l['fecha_inicio']=='2026-11-11' for l in lineas));self.assertEqual(lineas[0]['conteo_1'],'0.000000000')
+   self.assertTrue(all(next(k for k in x['fila_original']['celdas'] if k['columna']==1)['valor']=='2026-11-12T02:30:00.000Z' for x in propias))
+
+ def test_serie_teorica_repetida_es_aviso_conserva_ambas_lineas_y_no_bloquea_importacion_del_stock(self):
+  with tempfile.TemporaryDirectory() as t:
+   p,c=self.paquete(t);rows=self.filas(p);propias=[r for r in rows if r['codigo_operativo_original']=='121126_BELIA']
+   for i,x in enumerate(propias):
+    cell=next(k for k in x['fila_original']['celdas'] if k['columna']==17);cell.update(tipo='n',valor='1');x['cantidades']['depot']=cantidad(cell)
+    cell=next(k for k in x['fila_original']['celdas'] if k['columna']==22);cell.update(tipo='n',valor='0');x['cantidades']['c1']=cantidad(cell)
+    if i<2:next(k for k in x['fila_original']['celdas'] if k['columna']==9).update(tipo='s',valor='sn-repetida' if i==0 else 'SN-REPETIDA')
+   self.resellar(p,rows,c);out=Path(t)/'plan';r=planificar(p,c,out,t);f=next(f for f in r['fuentes'] if f['productos']==4)
+   self.assertTrue(f['sin_bloqueos_estructurales']);self.assertFalse(f['series_repetidas']['bloquea_importacion_stock']);self.assertEqual(f['series_repetidas']['grupos'],1);self.assertIn('SERIE_TEORICA_REPETIDA_REQUIERE_SELECCION_DE_LINEA',f['avisos']);self.assertEqual(f['productos'],4);self.assertFalse(f['listo_para_activar'])

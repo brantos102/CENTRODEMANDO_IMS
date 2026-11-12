@@ -9,7 +9,7 @@ if(process.env.IMS_MYSQL_PRUEBAS!=='1'||!/^centromando_ims_pruebas(?:_[a-z0-9]+)
 let pool;
 before(async()=>{pool=await crearPoolConteos(process.env);for(const name of ['002_conteo_operativo.sql','003_autenticacion.sql','004_detalle_linea.sql','007_operacion_nativa.sql','009_series_hallazgos.sql'])for(const sql of (await readFile(new URL('../../sql/'+name,import.meta.url),'utf8')).replace(/^--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean))await pool.query(sql);});
 after(async()=>{await pool?.end();});
-async function fixture({ambigua=false}={}){
+async function fixture({ambigua=false,skuAmbigua='0001'}={}){
  const f={actor:randomUUID(),otroActor:randomUUID(),cliente:randomUUID(),otroCliente:randomUUID()};
  const password=await crearHashPassword('Clave_sintetica_de_series!');
  for(const id of [f.actor,f.otroActor]){
@@ -24,7 +24,7 @@ async function fixture({ambigua=false}={}){
  const filas=[{numero:1,clienteId:f.cliente,sku:'0001',serie:'SN-00001234',depot:'1',posicion:'A'},
   {numero:2,clienteId:f.otroCliente,sku:'0001',serie:'SN-00001234',depot:'1',posicion:'B'},
   {numero:3,clienteId:f.cliente,sku:'0002',serie:'SN-99999999',depot:'1',posicion:'C'}];
- if(ambigua)filas.push({...filas[0],numero:4,posicion:'DUPLICADA'});
+ if(ambigua)filas.push({...filas[0],numero:4,sku:skuAmbigua,posicion:'DUPLICADA'});
  const carga=await f.mutar('lineas',{filas});f.linea=carga.lineas[0];f.otraLinea=carga.lineas[1];
  await f.mutar('activar',{filasEsperadas:filas.length,depotEsperado:String(filas.length)});
  await f.mutar('asignar',{actorId:f.otroActor,clienteId:f.cliente,rol:'OPERADOR'});
@@ -112,6 +112,15 @@ test('coincidencia ambigua requiere la línea exacta; no cuenta otra ubicación 
  await assert.rejects(f.capturar({lineaId:undefined}),e=>e.codigo==='SOLICITUD_INVALIDA');
  const destino=p.coincidencias.find(l=>l.posicion==='DUPLICADA');await f.capturar({lineaId:destino.id,versionLinea:destino.version});
  assert.equal((await valor(f.linea)).conteo_1,null);assert.equal((await valor(destino.id)).conteo_1,'1.000000000');
+});
+test('serie teórica compartida por SKU distintos conserva ambas líneas y permite una sola captura física explícita',async()=>{
+ const f=await fixture({ambigua:true,skuAmbigua:'0003'}),p=await f.preview();assert.equal(p.coincidencias.length,2);
+ assert.deepEqual(new Set(p.coincidencias.map(l=>l.sku)),new Set(['0001','0003']));
+ const destino=p.coincidencias.find(l=>l.sku==='0003');await f.capturar({lineaId:destino.id,versionLinea:destino.version});
+ assert.equal((await valor(f.linea)).conteo_1,null);assert.equal((await valor(destino.id)).conteo_1,'1.000000000');
+ await assert.rejects(f.capturar({operacionId:randomUUID()}),e=>e.codigo==='SERIE_DUPLICADA');
+ assert.equal((await valor(f.linea)).conteo_1,null);assert.equal((await f.hist()).datos.length,1);
+ const [[n]]=await pool.execute('SELECT COUNT(*) AS n FROM ims_op_linea WHERE inventario_id=?',[f.inv]);assert.equal(Number(n.n),4);
 });
 test('puede_contar revocado bloquea serie y previsualización aunque el perfil todavía diga OPERADOR',async()=>{
  const f=await fixture();await pool.execute('UPDATE ims_op_permiso SET puede_contar=0 WHERE actor_id=?',[f.otroActor]);
