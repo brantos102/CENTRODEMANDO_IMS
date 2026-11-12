@@ -35,4 +35,5 @@ cd "$imsTrabajo/enterprise"
 npm ci --omit=dev --ignore-scripts --no-audit --no-fund --cache "$imsDatos/cache/npm"
 node --test tests/copia-abiertos.test.mjs
 python3 -m unittest discover -s tests -p 'plan_abiertos_operativos_test.py'
+python3 -m unittest discover -s tests -p 'fechas_abiertos_test.py'
 python3 deploy/planificar_abiertos_operativos.py --zip "$imsArchivo" --copia-id "$imsCopia"

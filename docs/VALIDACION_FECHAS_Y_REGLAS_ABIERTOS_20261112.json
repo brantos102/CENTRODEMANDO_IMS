@@ -1,0 +1,61 @@
+{
+  "fecha_operativa": "2026-11-12",
+  "evidencia_recibida": {
+    "copia_id": "430b63caa019504ba42aa4fed841b8c7b19e0b5f94d124810ed770bd893851c7",
+    "plan_anterior": "d8817bf100c6de2cd5ee38a44a50bd2a7388102d6d3557dd8a7fd0755efb67cd",
+    "productos_conservados": 12509,
+    "filas_auxiliares": 984,
+    "archivos_sin_bloqueos_en_plan_anterior": 5,
+    "archivos_con_bloqueos_en_plan_anterior": 8,
+    "filas_con_fecha_no_interpretada_en_plan_anterior": 8682,
+    "error_de_cantidades_reportado": false,
+    "serie_repetida_fila_panel": 178,
+    "maestro_completo": false
+  },
+  "correcciones": {
+    "regla_fechas": "itsanet-dma-2000-2099-v1",
+    "formatos_del_legado_contrastados_con_codigo_original": [
+      "COD_INVENTARIOS: marcarInicioInventario_ y verificarYActualizarColumnaB: dd/MM/yy HH:mm:ss",
+      "WMS V124: finalizarInventarioWMS: dd/MM/yyyy",
+      "Cronograma_Recordatorios: dd/MM/yyyy y dd/MM/yyyy HH:mm:ss"
+    ],
+    "zonas_iana_y_desplazamientos_explicitos_gmt_utc_admitidos": true,
+    "serial_de_sheets_exige_formato_fecha_y_no_redondea_el_dia": true,
+    "fecha_presente_no_interpretada_no_se_declara_ademas_ausente": true,
+    "clasificacion_de_formatos_y_ubicaciones_sin_publicar_valores": true,
+    "serie_repetida_se_ubica_sin_eliminar_filas": true,
+    "fecha_fin_original_no_autoriza_entrega_nativa": true
+  },
+  "decisiones_confirmadas_por_usuario": {
+    "fila_317": {
+      "productos": 44,
+      "codigos": 12,
+      "regla": "un_conteo_por_codigo_y_dia_de_inicio_vinculado_al_mismo_origen"
+    },
+    "fila_334": {
+      "productos": 630,
+      "regla": "pendiente_de_iniciar_sin_inventar_codigo_fecha_o_capturas"
+    },
+    "reglas_limitadas_a_la_copia_confirmada": true,
+    "se_comprueban_multiplicidad_lineas_y_codigos_antes_de_aplicar": true,
+    "un_cero_contado_impide_tratar_la_fuente_como_pendiente_sin_inicio": true
+  },
+  "pruebas": {
+    "python_correctas": 127,
+    "python_fallidas": 0,
+    "plan_operativo_focalizadas_correctas": 14,
+    "fechas_focalizadas_correctas": 5,
+    "proyeccion_completa_de_fechas_dma_con_hora_y_anos_dos_y_cuatro_digitos": true,
+    "separacion_codigo_fecha_conserva_cada_linea_y_cuenta_series_por_conteo": true,
+    "pendiente_conserva_null_y_no_crea_identidad_de_inventario_nativo": true,
+    "reglas_de_otra_copia_y_conteos_incompatibles_rechazados": true,
+    "plan_v2_generado_desde_preparacion_y_contexto_sql_sinteticos_verificados": true,
+    "sql_y_backend_sin_cambios_en_esta_revision": true
+  },
+  "resultado_corregido_en_servidor_corporativo_pendiente": true,
+  "base_de_datos_modificada": false,
+  "fuentes_google_modificadas": false,
+  "servicios_apache_o_puertos_modificados": false,
+  "inventarios_activados": false,
+  "corte_final_a_produccion_realizado": false
+}
