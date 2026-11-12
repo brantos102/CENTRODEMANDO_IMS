@@ -114,6 +114,14 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
         for linea in f:
             r=json.loads(linea);o=r['origen'];por_fuente[(r['ambito'],o['corte_id'],o['origen_drive'])].append(r)
     exigir(sum(map(len,por_fuente.values()))==contexto['productos'],'Número de productos incompatible.')
+    cabeceras_inicio={}
+    # A2/C2 son la cabecera de arranque del legado. Puede ser una fila sin
+    # producto: no se descarta por estar conservada como auxiliar.
+    for nombre in ('lineas_candidatas_NO_IMPORTAR.jsonl','filas_auxiliares_NO_IMPORTAR.jsonl'):
+        with (prep/nombre).open(encoding='utf-8') as entrada:
+            for rawlinea in entrada:
+                r=json.loads(rawlinea);o=r['origen']
+                if o['fila']==2:cabeceras_inicio[(r['ambito'],o['corte_id'],o['origen_drive'],o['hoja_id'])]=r
     modos=resolver_reglas(contexto,fuentes,por_fuente,reglas)
     catalogo=defaultdict(list)
     for c in contexto['clientes']:catalogo[c['nombre']].append(c['id'])
@@ -153,8 +161,21 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
             serie=linea['serie'].strip()
             if serie.upper() not in ('','0','N/A'):series[(linea['codigo_original'],linea['fecha_inicio'],serie.upper()) if separar else serie.upper()].append((linea,ss[0]['hoja_en_fuente']))
             lineas.append(linea)
+        inicio_inventario=next(iter(fechas)) if len(fechas)==1 else None
+        criterio_inicio='POR_CODIGO_FECHA_CONFIRMADO' if separar else 'PENDIENTE_DE_INICIAR' if pendiente else 'FECHA_UNICA_EN_LINEAS' if inicio_inventario else 'REQUIERE_REVISION'
         if len(codigos)>1 and not separar:bloqueos['ARCHIVO_CON_VARIOS_CODIGOS_REQUIERE_MAPEO']=1
-        if len(fechas)>1 and not separar:bloqueos['ARCHIVO_CON_VARIAS_FECHAS_INICIO']=1
+        if len(fechas)>1 and not separar:
+            stocks=[s for s in esquemas if s['ambito']==ambito and s['origen_drive']==f['id'] and s['clase']=='PLANILLA_CONTEO']
+            cab=cabeceras_inicio.get((*clave,stocks[0]['hoja_id'])) if len(stocks)==1 else None
+            fecha_cab=None;codigo_cab=None
+            if cab and len(stocks[0]['campos'].get('fecha_inicio',[]))==len(stocks[0]['campos'].get('codigo',[]))==1:
+                cells={c['columna']:c for c in cab['fila_original']['celdas']}
+                fecha_cab=analizar_fecha(cells.get(stocks[0]['campos']['fecha_inicio'][0]),cab['origen'].get('zona_horaria'))
+                codigo_cab=identificador(cells.get(stocks[0]['campos']['codigo'][0]))
+            if len(codigos)==1 and codigo_cab in codigos and fecha_cab and fecha_cab['estado']=='INTERPRETADA':
+                inicio_inventario=fecha_cab['fecha'];criterio_inicio='CABECERA_A2_LEGADO'
+                avisos['FECHAS_POR_LINEA_DISTINTAS_DE_CABECERA_CONSERVADAS']=sum(l['fecha_inicio']!=inicio_inventario for l in lineas)
+            else:bloqueos['ARCHIVO_CON_VARIAS_FECHAS_INICIO']=1
         if pendiente:
             exigir(lineas and all(l['codigo_original'] is None and l['interpretacion_fechas']['fecha_inicio']['estado']=='VACIA' and all(l[k] is None for k in ('conteo_1','conteo_2','conteo_final')) for l in lineas),'El pendiente contiene código, inicio o capturas; requiere conciliación.')
             for razon in ('CODIGO_OPERATIVO_NO_DEFINIDO','FECHA_INICIO_NO_DEFINIDA'):bloqueos.pop(razon,None)
@@ -173,7 +194,7 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
             if s['ambito']==ambito and s['origen_drive']==f['id'] and s['clase']=='PLANILLA_CONTEO' and s['filas_copiadas']!=s['filas_previstas']:bloqueos['PLANILLA_COPIADA_PARCIALMENTE']=1
         grupos=defaultdict(list);conteos=[]
         if not pendiente:
-            for l in lineas:grupos[(l['codigo_original'],l['fecha_inicio']) if separar else (next(iter(codigos)) if len(codigos)==1 else None,next(iter(fechas)) if len(fechas)==1 else None)].append(l)
+            for l in lineas:grupos[(l['codigo_original'],l['fecha_inicio']) if separar else (next(iter(codigos)) if len(codigos)==1 else None,inicio_inventario)].append(l)
         for ng,((codigo,inicio),grupo) in enumerate(sorted(grupos.items(),key=lambda x:json.dumps(x[0])),1):
             inv_id=id_estable('inventario',[f['id'],codigo,inicio])
             for numero,l in enumerate(grupo,1):
@@ -183,7 +204,7 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
                 'requiere_delta_final':True,'listo_para_activar':False}
             conteos.append(conteo);conteos_privados.append({**conteo,'inventario_id':inv_id,'origen_drive':f['id'],'ambito':ambito,
                 'cliente_id':ids[0] if len(ids)==1 else None,'cliente_panel':cliente,'sede':sedes[0] if len(sedes)==1 else None,
-                'codigo_operativo':codigo,'fecha_inicio':inicio,'estado_destino':estados[0] if len(estados)==1 else None,
+                'codigo_operativo':codigo,'fecha_inicio':inicio,'criterio_inicio':criterio_inicio,'estado_destino':estados[0] if len(estados)==1 else None,
                 'bloqueos':dict(sorted(bloqueos.items())),'filas_panel_corte':refs})
         if pendiente:
             for l in lineas:proyecciones.append({**l,'inventario_id':None,'pendiente_id':id_estable('pendiente',f['id']),'cliente_id':ids[0] if len(ids)==1 else None,'ambito':ambito})
@@ -191,6 +212,7 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
             'codigos_distintos':len(codigos),'estado_captura':f['estado'],'estado_destino':estados[0] if len(estados)==1 else None,
             'sin_bloqueos_estructurales':not bool(bloqueos) and not pendiente,'bloqueos':dict(sorted(bloqueos.items())),
             'regla_operativa':modo,'pendiente_de_iniciar':pendiente,'conteos_planificados':len(conteos),'conteos':conteos,
+            'criterio_inicio':criterio_inicio,
             'perfiles_fecha':{k:dict(sorted(v.items())) for k,v in perfiles_fecha.items()},'muestras_fechas_revision':muestras_fecha,
             'origen_dia_fecha':{k:dict(sorted(v.items())) for k,v in origen_dia.items()},'zonas_fuente_fecha':dict(sorted(zonas_fecha.items())),
             'series_repetidas':{'tipo':'STOCK_TEORICO','bloquea_importacion_stock':False,'grupos':len(repetidas),'lineas':sum(len(g) for g in repetidas),'muestras':muestras_series},

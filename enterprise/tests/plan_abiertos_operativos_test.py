@@ -174,3 +174,19 @@ class PlanAbiertosOperativosTests(unittest.TestCase):
     if i<2:next(k for k in x['fila_original']['celdas'] if k['columna']==9).update(tipo='s',valor='sn-repetida' if i==0 else 'SN-REPETIDA')
    self.resellar(p,rows,c);out=Path(t)/'plan';r=planificar(p,c,out,t);f=next(f for f in r['fuentes'] if f['productos']==4)
    self.assertTrue(f['sin_bloqueos_estructurales']);self.assertFalse(f['series_repetidas']['bloquea_importacion_stock']);self.assertEqual(f['series_repetidas']['grupos'],1);self.assertIn('SERIE_TEORICA_REPETIDA_REQUIERE_SELECCION_DE_LINEA',f['avisos']);self.assertEqual(f['productos'],4);self.assertFalse(f['listo_para_activar'])
+
+ def test_un_codigo_con_fechas_distintas_usa_cabecera_a2_sin_reescribir_fechas_de_lineas_o_tomar_minimo(self):
+  with tempfile.TemporaryDirectory() as t:
+   p,c=self.paquete(t);rows=self.filas(p);propias=[r for r in rows if r['codigo_operativo_original']=='121126_BELIA']
+   next(k for k in propias[1]['fila_original']['celdas'] if k['columna']==1).update(tipo='s',valor='11/11/2026 10:00:00')
+   self.resellar(p,rows,c);out=Path(t)/'plan';r=planificar(p,c,out,t);f=next(f for f in r['fuentes'] if f['productos']==4)
+   self.assertNotIn('ARCHIVO_CON_VARIAS_FECHAS_INICIO',f['bloqueos']);self.assertEqual(f['criterio_inicio'],'CABECERA_A2_LEGADO');self.assertEqual(f['conteos_planificados'],1);self.assertEqual(f['avisos']['FECHAS_POR_LINEA_DISTINTAS_DE_CABECERA_CONSERVADAS'],1)
+   plan=json.loads((out/'plan_operativo_NO_ACTIVAR.json').read_bytes());inv=next(i for i in plan['inventarios'] if i['codigo_operativo']=='121126_BELIA');self.assertEqual(inv['fecha_inicio'],'2026-11-12')
+   lineas=[json.loads(s) for s in (out/'lineas_operativas_NO_ACTIVAR.jsonl').read_text().splitlines() if json.loads(s)['inventario_id']==inv['inventario_id']];self.assertEqual(len(lineas),4);self.assertEqual(lineas[1]['fecha_inicio'],'2026-11-11');self.assertIsNone(lineas[1]['conteo_1']);self.assertEqual(lineas[0]['conteo_1'],'0.000000000')
+
+ def test_inicio_a2_no_elige_fecha_si_su_codigo_o_valor_no_concuerda(self):
+  with tempfile.TemporaryDirectory() as t:
+   p,c=self.paquete(t);rows=self.filas(p);propias=[r for r in rows if r['codigo_operativo_original']=='121126_BELIA']
+   next(k for k in propias[1]['fila_original']['celdas'] if k['columna']==1).update(tipo='s',valor='11/11/2026')
+   propias[0]['codigo_operativo_original']=None;next(k for k in propias[0]['fila_original']['celdas'] if k['columna']==3).update(tipo='z',valor=None)
+   self.resellar(p,rows,c);r=planificar(p,c,Path(t)/'plan',t);f=next(f for f in r['fuentes'] if f['productos']==4);self.assertIn('ARCHIVO_CON_VARIAS_FECHAS_INICIO',f['bloqueos']);self.assertNotEqual(f['criterio_inicio'],'CABECERA_A2_LEGADO')

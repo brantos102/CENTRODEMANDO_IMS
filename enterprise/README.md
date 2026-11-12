@@ -1,5 +1,7 @@
 # Preparación de la migración de Centro de Mando a MySQL
 
+Tras resolver fechas y conservar los 22 conteos, [obtener el corte completo para conciliar](CORTE_COMPLETO_PARA_CONCILIAR.md): abiertos actuales y maestro completo con INVENTARIOS y REGISTRO, en una carpeta nueva. La captura se obtiene después de confirmar la consolidación diaria y conserva todas las copias anteriores.
+
 Siguiente etapa tras confirmar la copia SQL: [proyectar los abiertos a las columnas operativas](PLAN_OPERATIVO_ABIERTOS.md). Revisa el catálogo y los orígenes existentes con SQL de solo lectura, conserva todas las líneas y enumera los conflictos pendientes antes de la activación. La [copia de revisión en MySQL](COPIA_ABIERTOS_MYSQL.md) se conserva; no se repite la carga. La importación operativa y el delta final siguen pendientes.
 
 Actualización del 12 de noviembre: [preparar el traslado con Google en operación](PREPARAR_TRASLADO_ABIERTOS.md) revisa líneas, cantidades y estructuras sobre el ZIP privado ya recibido, conserva las fuentes cambiadas y prepara candidatos sin importar datos. Horarios confirmados: fin de capturas 17:30 y consolidación `dash_consolidarAuditoria` a las 18:30, hora de Ecuador; el delta final debe obtenerse después de confirmar su ejecución correcta.

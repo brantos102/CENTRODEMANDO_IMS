@@ -156,11 +156,16 @@ def validar_zip(archivo,base_dir=None):
             if info.is_dir():continue
             exigir(len(path.parts)<=2 and path.name not in entradas,'Nombres ZIP ambiguos.')
             carpetas.add(str(path.parent));exigir(len(carpetas)==1,'ZIP con varias carpetas raíz.')
-            total+=info.file_size;exigir(info.file_size<=8388608 and total<=536870912,'Contenido ZIP demasiado grande.');entradas[path.name]=info
+            total+=info.file_size;exigir(info.file_size<=8388608 and total<=1073741824,'Contenido ZIP demasiado grande.');entradas[path.name]=info
         exigir('plan_abiertos_privado.json' in entradas,'Falta el plan privado.')
         p=cargar(z.read(entradas['plan_abiertos_privado.json']))
         exigir(p.get('formato') in ('ims-abiertos-corte-v1','ims-abiertos-corte-v2') and p.get('proyecto')==PROYECTO and p.get('maestro')==MAESTRO and p.get('propietario') in ('brantos102@gmail.com','bespinoza@itsanet.com') and re.fullmatch(UUID,p.get('corte_id','')),'Origen o formato de corte incompatible.')
-        v2=p['formato']=='ims-abiertos-corte-v2';base=None;max_columnas=512 if v2 else 200
+        completo=p.get('modo_captura')=='ABIERTO_Y_CONSOLIDADO_V1'
+        exigir(p.get('modo_captura') in (None,'ABIERTO_Y_CONSOLIDADO_V1'),'Modo de captura desconocido.')
+        exigir(not completo or p['formato']=='ims-abiertos-corte-v1','Modo de captura incompatible con recuperación.')
+        exigir(total<=(1073741824 if completo else 536870912),'Contenido ZIP demasiado grande para el modo de captura.')
+        v2=p['formato']=='ims-abiertos-corte-v2';base=None;max_columnas=512 if v2 or completo else 200
+        if completo:exigir(p.get('limites')=={'filas':1000000,'columnas':512,'celdas_fragmento':10000},'Límites de captura completa incompatibles.')
         if v2:
             exigir(p.get('limites')=={'filas':1000000,'columnas':512,'celdas_fragmento':10000},'Límites de recuperación incompatibles.');base=buscar_base(p.get('recuperacion'),base_dir);exigir(base['corte_id']!=p['corte_id'],'La recuperación debe tener una identidad nueva.')
         exigir(p.get('corte_final_aprobado') is False and isinstance(p.get('fuentes'),list) and 3<=len(p['fuentes'])<=10000,'Plan incompatible.')
@@ -171,7 +176,9 @@ def validar_zip(archivo,base_dir=None):
             links=r.get('ids_archivo_b',[]);exigir(isinstance(links,list) and links==sorted(set(links)) and len(links)<=20 and all(isinstance(x,str) and re.fullmatch('[A-Za-z0-9_-]{20,120}',x) for x in links),'Enlaces de panel incompatibles.')
         esperadas={};sin=0;discordantes=[]
         for row in panel[1:]:
-            if not panel_valor(row,1).strip() or panel_valor(row,7).strip().upper()=='ENTREGADO':continue
+            cliente=panel_valor(row,1).strip()
+            if (not cliente and not completo) or (panel_valor(row,7).strip().upper()=='ENTREGADO' and (not completo or cliente)):continue
+            if not cliente and not row.get('ids_archivo_b',[]) and not any(panel_valor(row,c).strip() for c in (2,3,4,6,7,9)):continue
             id=panel_valor(row,3).strip()
             valido=bool(re.fullmatch('[A-Za-z0-9_-]{20,120}',id));links=row.get('ids_archivo_b',[])
             if valido and any(x!=id for x in links):discordantes.append(row['fila'])
@@ -179,7 +186,7 @@ def validar_zip(archivo,base_dir=None):
             if not re.fullmatch('[A-Za-z0-9_-]{20,120}',id):sin+=1;continue
             esperadas.setdefault(id,[]).append(row)
         exigir(p.get('referencias_discordantes',[])==discordantes,'Cambió el control de referencias de panel.')
-        especiales={'MAESTRO':MAESTRO,'PLANTILLA':PLANTILLA,'INTERFAZ':INTERFAZ};ids=set();tipos=set();usados=set();filas=0;fragmentos=0;completas=0;revision=0;hojas=0;estructuras={};revision_fuentes=[];pendientes_fuentes=[];hojas_fuera_limite=[]
+        especiales={'MAESTRO':MAESTRO,'PLANTILLA':PLANTILLA,'INTERFAZ':INTERFAZ};ids=set();tipos=set();usados=set();filas=0;fragmentos=0;completas=0;revision=0;hojas=0;estructuras={};revision_fuentes=[];pendientes_fuentes=[];hojas_fuera_limite=[];maestro_detalle=None
         for indice,f in enumerate(p['fuentes'],1):
             tipo=f.get('tipo');id=f.get('id');exigir(tipo in ('INVENTARIO',*especiales) and isinstance(id,str) and id not in ids,'Fuente duplicada o incompatible.');ids.add(id)
             if tipo=='INVENTARIO':exigir(id in esperadas and f.get('panel')==esperadas[id],'Referencias de panel incompletas.')
@@ -207,6 +214,10 @@ def validar_zip(archivo,base_dir=None):
                 permitidas=[i for i in range(1,h['columnas']+1) if i not in omit]
                 for i,r in enumerate(rows):
                     exigir(r.get('fila')==d['inicio']+i,'Fila fuera de secuencia.');verificar_celdas(r.get('celdas'),h['columnas'],permitidas)
+                    if completo and tipo=='MAESTRO' and normal(h['nombre'])=='PANELDECONTROL' and estado=='COMPLETO':
+                        exigir(h['filas']==len(panel),'El panel maestro tiene otra cantidad de filas que el catálogo.')
+                        comparada=[{k:c[k] for k in ('columna','tipo','valor')} for c in r['celdas'] if c['columna'] in (1,2,3,4,6,7,9)]
+                        exigir(comparada==panel[r['fila']-1]['celdas'],'El panel maestro no coincide con el catálogo de preparación.')
                     if tipo=='INVENTARIO' and normal(h['nombre'])=='PLANILLADECONTEOFISICO':
                         if r['fila']==1:
                             campos={k:[c['columna'] for c in r['celdas'] if normal(c['valor']) in aliases] for k,aliases in ALIAS_STOCK.items()}
@@ -223,6 +234,11 @@ def validar_zip(archivo,base_dir=None):
                                     if presente and c['tipo']=='s' and ',' in c['valor']:st['textos_con_coma_en_cantidades']+=1
                 cobertura[h['id']]+=len(rows);exigir(cobertura[h['id']]<=h['filas']+1,'Demasiadas filas.');filas+=len(rows);fragmentos+=1
             if estado=='COMPLETO':exigir(hs and all(cobertura[h['id']]==h['filas']+1 or h['columnas']==0 for h in hs),'Una fuente completa tiene hojas incompletas.')
+            if completo and tipo=='MAESTRO':
+                requeridas={'PANELDECONTROL','USUARIOS','INVENTARIOS','REGISTRO'}
+                presentes={normal(h['nombre']) for h in hs}
+                maestro_detalle={'completo':estado=='COMPLETO','consolidado_inventarios_presente':'INVENTARIOS' in presentes,'registro_presente':'REGISTRO' in presentes,'panel_presente':'PANELDECONTROL' in presentes,'usuarios_presente':'USUARIOS' in presentes,'panel_conciliado_con_catalogo':estado=='COMPLETO' and 'PANELDECONTROL' in presentes,'hojas_identificadas':len(hs)}
+                if estado=='COMPLETO':exigir(requeridas<=presentes,'El maestro completo no incluye panel, usuarios, inventarios y registro.')
             if estado=='PENDIENTE':pendientes_fuentes.append({'fuente_en_corte':indice,'tipo':tipo,'filas_panel_corte':[r['fila'] for r in f['panel']],'hojas_identificadas':len(hs),'fragmentos_guardados':len(partes),'filas_guardadas':sum(cobertura[h['id']]-1 for h in hs)})
             if estado=='REVISION':
                 # Solo etiquetas controladas y posiciones del corte; nunca mensajes
@@ -244,6 +260,10 @@ def validar_zip(archivo,base_dir=None):
         exigir(all(re.fullmatch(r'fuente_[a-f0-9]{16}_\d+_\d+_'+UUID+r'\.json',name) for name in extras),'ZIP con archivos ajenos al corte.')
         r={'ok':True,'formato':'ims-abiertos-validacion-v1','corte_id':p['corte_id'],'fuentes':len(p['fuentes']),'inventarios_en_panel':len(esperadas),'fuentes_completas':completas,'fuentes_revision':revision,'fuentes_pendientes':len(p['fuentes'])-completas-revision,'revision_fuentes':revision_fuentes,'hojas_fuera_limite':hojas_fuera_limite,'hojas':hojas,'filas':filas,'fragmentos':fragmentos,'fragmentos_no_referenciados':len(extras),'panel_cambio':bool(p.get('panel_cambio')),'filas_panel_sin_archivo':sin,'referencias_discordantes':len(discordantes),'estructuras_stock':list(estructuras.values()),'cantidades_interpretadas':False,'lista_para_plan':completas==len(p['fuentes']) and not p.get('panel_cambio') and not extras and not discordantes,'corte_final_aprobado':False,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False}
         r['pendientes_fuentes']=pendientes_fuentes
+        if completo:
+            r['captura_completa']=True;r['maestro']=maestro_detalle;r['limite_contenido_descomprimido']=1073741824
+            r['referencias_cliente_vacio_con_archivo']=sum(not panel_valor(row,1).strip() for filas_referencia in esperadas.values() for row in filas_referencia)
+            r['lista_para_plan']=r['lista_para_plan'] and not sin and bool(maestro_detalle and maestro_detalle['completo'])
         if recuperacion:
             r['recuperacion']=recuperacion;r['lista_para_plan']=r['lista_para_plan'] and not sin and not recuperacion['fuentes_retiradas_panel_actual']
         huella=hashlib.sha256()
