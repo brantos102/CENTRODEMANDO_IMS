@@ -101,6 +101,24 @@ def buscar_base(rec,directorio):
         except (ValueError,OSError,zipfile.BadZipFile,KeyError,TypeError):continue
     raise CorteInvalido('No se encontró un ZIP anterior íntegro con el ID y la huella de plan esperados. Conserva los cortes privados anteriores.')
 
+def origen_panel(row):
+    id=panel_valor(row,3).strip()
+    if re.fullmatch('[A-Za-z0-9_-]{20,120}',id):return id
+    links=row.get('ids_archivo_b',[])
+    return links[0] if len(links)==1 else None
+
+def detalle_retiradas(base,panel,retiradas):
+    detalles=[]
+    for indice,f in enumerate(base['fuentes'],1):
+        if f['id'] not in retiradas:continue
+        coincidencias=[r for r in panel[1:] if origen_panel(r)==f['id']]
+        alternativas=[r['fila'] for r in panel[1:] if origen_panel(r)!=f['id'] and f['id'] in r.get('ids_archivo_b',[])]
+        estados=sorted(set('ENTREGADO' if panel_valor(r,7).strip().upper()=='ENTREGADO' else 'SIN_ESTADO' if not panel_valor(r,7).strip() else 'OTRO_ESTADO' for r in coincidencias))
+        cliente_vacio=any(not panel_valor(r,1).strip() for r in coincidencias)
+        motivo='SIN_REFERENCIA_ACTUAL' if not coincidencias else 'CLIENTE_PANEL_VACIO' if cliente_vacio else 'ENTREGADO_EN_PANEL_ACTUAL' if estados==['ENTREGADO'] else 'REQUIERE_REVISION'
+        detalles.append({'fuente_en_corte_anterior':indice,'filas_panel_anterior':[r['fila'] for r in f['panel']],'filas_panel_actual':[r['fila'] for r in coincidencias],'referencias_alternativas_panel':alternativas,'estados_panel_actual':estados,'cliente_panel_vacio':cliente_vacio,'motivo_salida':motivo,'estado_captura_anterior':f['estado'],'fragmentos_conservados':len(f['partes']),'filas_guardadas_corte_anterior':sum(x['filas'] for x in f['partes']),'reconciliacion_pendiente':True})
+    return detalles
+
 def verificar_recuperacion(p,base,z,entradas,usados):
     rec=p['recuperacion'];previas={f['id']:f for f in base['fuentes']};actuales={f['id']:f for f in p['fuentes']};anteriores={};activos={};archivos={}
     exigir(type(rec.get('fuentes_recapturadas')) is int and type(rec.get('fuentes_agregadas')) is int and type(rec.get('panel_anterior_cambio')) is bool,'Tipos del resumen de recuperación incompatibles.')
@@ -123,7 +141,7 @@ def verificar_recuperacion(p,base,z,entradas,usados):
     retiradas=[f['id'] for f in base['fuentes'] if f['tipo']=='INVENTARIO' and f['id'] not in actuales]
     reutilizadas=sum(f.get('reutilizada_de') is not None for f in p['fuentes']);recapturadas=sum(f['id'] in previas and f.get('reutilizada_de') is None for f in p['fuentes']);agregadas=sum(f['id'] not in previas for f in p['fuentes'])
     exigir(rec.get('fuentes_retiradas')==retiradas and rec.get('fuentes_recapturadas')==recapturadas and rec.get('fuentes_agregadas')==agregadas and rec.get('panel_anterior_cambio')==(p['panel_sha256']!=base['panel_sha256']),'El resumen de recuperación no concilia con ambos cortes.')
-    return {'corte_anterior':base['corte_id'],'linaje_respaldo_verificado':True,'fuentes_reutilizadas':reutilizadas,'fuentes_recapturadas':recapturadas,'fuentes_agregadas':agregadas,'fuentes_retiradas_panel_actual':len(retiradas),'fragmentos_conservados_revision':len(archivos),'panel_anterior_cambio':rec['panel_anterior_cambio']}
+    return {'corte_anterior':base['corte_id'],'linaje_respaldo_verificado':True,'fuentes_reutilizadas':reutilizadas,'fuentes_recapturadas':recapturadas,'fuentes_agregadas':agregadas,'fuentes_retiradas_panel_actual':len(retiradas),'detalle_fuentes_retiradas':detalle_retiradas(base,p['panel'],retiradas),'fragmentos_conservados_revision':len(archivos),'panel_anterior_cambio':rec['panel_anterior_cambio']}
 
 def validar_zip(archivo,base_dir=None):
     archivo=Path(archivo).absolute();exigir(archivo.resolve()==archivo and archivo.is_file() and archivo.suffix.lower()=='.zip','Usa un ZIP local regular, sin enlaces.')
@@ -161,7 +179,7 @@ def validar_zip(archivo,base_dir=None):
             if not re.fullmatch('[A-Za-z0-9_-]{20,120}',id):sin+=1;continue
             esperadas.setdefault(id,[]).append(row)
         exigir(p.get('referencias_discordantes',[])==discordantes,'Cambió el control de referencias de panel.')
-        especiales={'MAESTRO':MAESTRO,'PLANTILLA':PLANTILLA,'INTERFAZ':INTERFAZ};ids=set();tipos=set();usados=set();filas=0;fragmentos=0;completas=0;revision=0;hojas=0;estructuras={};revision_fuentes=[];hojas_fuera_limite=[]
+        especiales={'MAESTRO':MAESTRO,'PLANTILLA':PLANTILLA,'INTERFAZ':INTERFAZ};ids=set();tipos=set();usados=set();filas=0;fragmentos=0;completas=0;revision=0;hojas=0;estructuras={};revision_fuentes=[];pendientes_fuentes=[];hojas_fuera_limite=[]
         for indice,f in enumerate(p['fuentes'],1):
             tipo=f.get('tipo');id=f.get('id');exigir(tipo in ('INVENTARIO',*especiales) and isinstance(id,str) and id not in ids,'Fuente duplicada o incompatible.');ids.add(id)
             if tipo=='INVENTARIO':exigir(id in esperadas and f.get('panel')==esperadas[id],'Referencias de panel incompletas.')
@@ -205,6 +223,7 @@ def validar_zip(archivo,base_dir=None):
                                     if presente and c['tipo']=='s' and ',' in c['valor']:st['textos_con_coma_en_cantidades']+=1
                 cobertura[h['id']]+=len(rows);exigir(cobertura[h['id']]<=h['filas']+1,'Demasiadas filas.');filas+=len(rows);fragmentos+=1
             if estado=='COMPLETO':exigir(hs and all(cobertura[h['id']]==h['filas']+1 or h['columnas']==0 for h in hs),'Una fuente completa tiene hojas incompletas.')
+            if estado=='PENDIENTE':pendientes_fuentes.append({'fuente_en_corte':indice,'tipo':tipo,'filas_panel_corte':[r['fila'] for r in f['panel']],'hojas_identificadas':len(hs),'fragmentos_guardados':len(partes),'filas_guardadas':sum(cobertura[h['id']]-1 for h in hs)})
             if estado=='REVISION':
                 # Solo etiquetas controladas y posiciones del corte; nunca mensajes
                 # de excepción, nombres, enlaces, ID de Drive o valores de celdas.
@@ -224,6 +243,7 @@ def validar_zip(archivo,base_dir=None):
         extras=set(entradas)-usados-{'plan_abiertos_privado.json','resumen_abiertos_para_compartir.json'}
         exigir(all(re.fullmatch(r'fuente_[a-f0-9]{16}_\d+_\d+_'+UUID+r'\.json',name) for name in extras),'ZIP con archivos ajenos al corte.')
         r={'ok':True,'formato':'ims-abiertos-validacion-v1','corte_id':p['corte_id'],'fuentes':len(p['fuentes']),'inventarios_en_panel':len(esperadas),'fuentes_completas':completas,'fuentes_revision':revision,'fuentes_pendientes':len(p['fuentes'])-completas-revision,'revision_fuentes':revision_fuentes,'hojas_fuera_limite':hojas_fuera_limite,'hojas':hojas,'filas':filas,'fragmentos':fragmentos,'fragmentos_no_referenciados':len(extras),'panel_cambio':bool(p.get('panel_cambio')),'filas_panel_sin_archivo':sin,'referencias_discordantes':len(discordantes),'estructuras_stock':list(estructuras.values()),'cantidades_interpretadas':False,'lista_para_plan':completas==len(p['fuentes']) and not p.get('panel_cambio') and not extras and not discordantes,'corte_final_aprobado':False,'datos_importados':False,'base_de_datos_modificada':False,'servicios_reiniciados':False}
+        r['pendientes_fuentes']=pendientes_fuentes
         if recuperacion:
             r['recuperacion']=recuperacion;r['lista_para_plan']=r['lista_para_plan'] and not sin and not recuperacion['fuentes_retiradas_panel_actual']
         huella=hashlib.sha256()

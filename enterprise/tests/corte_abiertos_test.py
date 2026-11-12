@@ -12,7 +12,7 @@ from pathlib import Path
 
 ENTERPRISE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ENTERPRISE/'tools'))
-from validar_corte_abiertos import validar_zip
+from validar_corte_abiertos import validar_zip,detalle_retiradas
 
 
 class CorteAbiertosTests(unittest.TestCase):
@@ -137,6 +137,28 @@ class CorteAbiertosTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as t:
    self.paquete(t,self.retirado['base'],nombre='ims-abiertos-'+'a'*32+'.zip');r,_=validar_zip(self.paquete(t,self.retirado['actual']),t)
    self.assertEqual(r['inventarios_en_panel'],2);self.assertEqual(r['recuperacion']['fuentes_retiradas_panel_actual'],1);self.assertGreater(r['recuperacion']['fragmentos_conservados_revision'],0);self.assertFalse(r['lista_para_plan']);self.assertFalse(r['datos_importados'])
+   detalle=r['recuperacion']['detalle_fuentes_retiradas'][0];self.assertEqual(detalle['motivo_salida'],'ENTREGADO_EN_PANEL_ACTUAL');self.assertEqual(detalle['estados_panel_actual'],['ENTREGADO']);self.assertEqual(detalle['filas_panel_anterior'],[2,5]);self.assertEqual(detalle['filas_panel_actual'],[2,5]);self.assertTrue(detalle['reconciliacion_pendiente']);self.assertEqual(detalle['estado_captura_anterior'],'REVISION');self.assertNotIn('BELIA',json.dumps(detalle))
+
+ def test_salida_de_seleccion_no_infiere_entrega_desde_texto_ambiguo_cliente_vacio_o_enlace_alternativo(self):
+  base=json.loads(next(f['content'] for f in self.retirado['base'] if f['nombre']=='plan_abiertos_privado.json'));actual=json.loads(next(f['content'] for f in self.retirado['actual'] if f['nombre']=='plan_abiertos_privado.json'));retiradas=actual['recuperacion']['fuentes_retiradas'];id=retiradas[0]
+  for modo in ('negacion','cliente','ausente','alternativo'):
+   with self.subTest(modo=modo):
+    panel=copy.deepcopy(actual['panel'])
+    if modo in ('negacion','cliente'):
+     for row in [panel[1],panel[4]]:
+      next(c for c in row['celdas'] if c['columna']==7)['valor']='No Entregado'
+      if modo=='cliente':next(c for c in row['celdas'] if c['columna']==1)['valor']=''
+    else:
+     for row in [panel[1],panel[4]]:
+      next(c for c in row['celdas'] if c['columna']==3)['valor']='OTRO_ARCHIVO_SINTETICO_00000';row['ids_archivo_b']=[id] if modo=='alternativo' else []
+    d=detalle_retiradas(base,panel,retiradas)[0];self.assertTrue(d['reconciliacion_pendiente']);self.assertNotEqual(d['motivo_salida'],'ENTREGADO_EN_PANEL_ACTUAL');self.assertNotIn(id,json.dumps(d));self.assertNotIn('BELIA',json.dumps(d));self.assertNotIn('No Entregado',json.dumps(d))
+    if modo=='cliente':self.assertTrue(d['cliente_panel_vacio']);self.assertEqual(d['motivo_salida'],'CLIENTE_PANEL_VACIO')
+    if modo=='alternativo':self.assertEqual(d['referencias_alternativas_panel'],[2,5])
+
+ def test_pendiente_identifica_tipo_y_progreso_sin_declarar_terminado_el_corte(self):
+  with tempfile.TemporaryDirectory() as t:
+   files=copy.deepcopy(self.archivos);pf=next(f for f in files if f['nombre']=='plan_abiertos_privado.json');p=json.loads(pf['content']);master=next(f for f in p['fuentes'] if f['tipo']=='MAESTRO');master['estado']='PENDIENTE';pf['content']=json.dumps(p,ensure_ascii=False,separators=(',',':'));r,_=validar_zip(self.paquete(t,files))
+   self.assertEqual(r['fuentes_pendientes'],1);self.assertEqual(len(r['pendientes_fuentes']),1);d=r['pendientes_fuentes'][0];self.assertEqual(d['tipo'],'MAESTRO');self.assertGreater(d['fragmentos_guardados'],0);self.assertEqual(d['filas_panel_corte'],[]);self.assertFalse(r['lista_para_plan']);self.assertFalse(r['datos_importados']);self.assertNotIn(master['id'],json.dumps(d))
 
  def test_los_enlaces_ricos_del_panel_son_conciliados_tambien_en_servidor(self):
   with tempfile.TemporaryDirectory() as t:

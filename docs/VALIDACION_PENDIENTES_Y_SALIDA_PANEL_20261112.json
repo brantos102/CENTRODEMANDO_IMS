@@ -1,0 +1,33 @@
+{
+  "fecha_operativa": "2026-11-12",
+  "evidencia_reportada_por_usuario": {
+    "validacion_estructura_completada": true,
+    "linaje_respaldo_verificado": true,
+    "fuentes": 15,
+    "fuentes_completas": 14,
+    "fuentes_pendientes": 1,
+    "fuentes_revision": 0,
+    "inventarios_completos": 12,
+    "filas_producto": 12362,
+    "fuentes_retiradas_panel_actual": 1,
+    "fragmentos_conservados_revision": 44,
+    "panel_cambio": false,
+    "datos_importados": false
+  },
+  "cambio": {
+    "informa_tipo_y_avance_de_fuentes_pendientes": true,
+    "ubica_archivos_fuera_de_seleccion_por_filas_de_ambos_paneles": true,
+    "estado_actual_se_refiere_al_panel_del_corte_no_a_google_en_vivo": true,
+    "distingue_entregado_exacto_cliente_vacio_y_referencia_ausente_o_alternativa": true,
+    "no_convierte_negaciones_en_entregado": true,
+    "conserva_bloqueo_del_plan_hasta_conciliar_archivos_fuera_de_seleccion": true,
+    "omite_id_drive_nombres_clientes_valores_y_texto_de_estados_no_controlados": true
+  },
+  "pruebas_python": {"correctas": 99, "fallidas": 0},
+  "motivo_real_del_archivo_fuera_de_seleccion_ya_identificado": false,
+  "requiere_editar_otra_vez_apps_script": false,
+  "datos_importados": false,
+  "base_de_datos_modificada": false,
+  "servicios_reiniciados": false,
+  "apache_o_puertos_modificados": false
+}
