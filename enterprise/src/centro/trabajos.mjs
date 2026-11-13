@@ -19,7 +19,12 @@ export async function solicitarTrabajo(pool,p,s){
  });
 }
 export async function consultarTrabajo(pool,p,id){uuid(id);return transaccionOperativa(pool,p,async c=>{const [[r]]=await c.execute('SELECT id,tipo,estado,progreso,resultado FROM ims_cm_trabajo WHERE id=? AND actor_id=?',[id,p.actorId]);exigir(r,'SIN_PERMISO','Trabajo no autorizado.');return {...r,resultado:parse(r.resultado)};});}
-export async function descargarTrabajo(pool,p,id){uuid(id);return transaccionOperativa(pool,p,async c=>{const [[r]]=await c.execute('SELECT tipo,estado FROM ims_cm_trabajo WHERE id=? AND actor_id=?',[id,p.actorId]);exigir(r&&r.tipo==='ZIP'&&r.estado==='COMPLETO','SIN_PERMISO','El reporte no está disponible.');const pf=await perfilCentro(c,p);exigir(pf.permisos.exportar,'SIN_PERMISO','Tu rol no exporta.');const [bs]=await c.execute('SELECT contenido FROM ims_cm_archivo WHERE trabajo_id=? ORDER BY parte',[id]);exigir(bs.length,'SOLICITUD_INVALIDA','El reporte ya expiró. Solicita una nueva descarga.');return Buffer.concat(bs.map(b=>b.contenido));});}
+export async function descargarTrabajo(pool,p,id){uuid(id);return transaccionOperativa(pool,p,async c=>{
+ const [[r]]=await c.execute('SELECT tipo,estado,parametros FROM ims_cm_trabajo WHERE id=? AND actor_id=?',[id,p.actorId]);exigir(r&&r.tipo==='ZIP'&&r.estado==='COMPLETO','SIN_PERMISO','El reporte no está disponible.');const pf=await perfilCentro(c,p);exigir(pf.permisos.exportar,'SIN_PERMISO','Tu rol no exporta.');
+ // Un archivo ya generado tampoco concede acceso después de revocar permisos.
+ for(const inventario of parse(r.parametros).inventarios){const [[i]]=await c.execute('SELECT i.sede FROM ims_op_inventario i WHERE i.id=? AND NOT EXISTS(SELECT 1 FROM ims_op_inventario_cliente ic WHERE ic.inventario_id=i.id AND NOT EXISTS(SELECT 1 FROM ims_op_permiso p WHERE p.inventario_id=ic.inventario_id AND p.cliente_id=ic.cliente_id AND p.actor_id=?))',[inventario,p.actorId]);exigir(i&&pf.sedes.includes(i.sede),'SIN_PERMISO','Se revocó el acceso al inventario del reporte.');}
+ const [bs]=await c.execute('SELECT contenido FROM ims_cm_archivo WHERE trabajo_id=? ORDER BY parte',[id]);exigir(bs.length,'SOLICITUD_INVALIDA','El reporte ya expiró. Solicita una nueva descarga.');return Buffer.concat(bs.map(b=>b.contenido));
+ });}
 export function iniciarTrabajadorCentro({pool,clave,actorAutomatico,enviar=enviarSMTP,google=sincronizarEventoGoogle,intervalo=3000}){
  let ocupado=false,cerrado=false,enCurso=Promise.resolve(),ultimoPlan='';
  const ejecutar=async()=>{if(ocupado||cerrado)return;ocupado=true;

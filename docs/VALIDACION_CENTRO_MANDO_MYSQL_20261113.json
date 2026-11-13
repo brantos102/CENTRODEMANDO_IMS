@@ -1,0 +1,52 @@
+{
+  "ok": true,
+  "formato": "ims-centro-validacion-desarrollo-v1",
+  "fecha": "2026-11-13",
+  "motores": {
+    "node": "22.23.3",
+    "python": "3.12",
+    "mysql": "8.0.46",
+    "navegador": "Chromium"
+  },
+  "pruebas": {
+    "unitarias_node": {
+      "aprobadas": 187,
+      "omitidas": 0
+    },
+    "python": {
+      "aprobadas": 155,
+      "omitidas": 0
+    },
+    "mysql": {
+      "aprobadas": 123,
+      "omitidas": 0,
+      "aislamiento": "Base sintética independiente por archivo; perfil operativo y triggers verificados"
+    },
+    "navegador": {
+      "aprobadas": 26,
+      "omitidas": 0
+    }
+  },
+  "casos_centro": [
+    "Creación atómica API/CSV/borrador, carpeta, evento y permisos",
+    "Cantidades exactas, ceros y líneas repetidas",
+    "Entrega WMS y cronograma en una transacción",
+    "Identidad de tareas y equipos con filas insertadas",
+    "Apoyos excluidos y finalizados en Analytics",
+    "Revocación por sede sin modificar el histórico",
+    "Descarga ZIP exige conservar el acceso",
+    "Contraseñas heredadas con hash, cambio obligatorio y visor saneado",
+    "HTTP, CSRF y CSP",
+    "Cola persistente y transporte de correo inyectado"
+  ],
+  "corte_elegido": "07e58bf9-6fe1-4bf0-b93e-d1a89cb66764",
+  "totales_a_verificar_en_servidor": {
+    "historicos": 352,
+    "lineas_historicas": 97822,
+    "conexiones_erp": 24
+  },
+  "servidor_corporativo_actualizado_desde_este_entorno": false,
+  "envios_reales_realizados": false,
+  "calendarios_externos_modificados": false,
+  "autorizacion_correo_y_calendar_pendiente": true
+}

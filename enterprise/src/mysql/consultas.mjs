@@ -5,6 +5,7 @@ function paginacion({cursor='',limite='50'}={}){
     throw new ErrorAuth('SOLICITUD_INVALIDA','Paginación inválida.',400);
   return {cursor,limite:Number(limite)};
 }
+function alcance(principal){return principal.sedes===undefined?{sql:'',params:[]}:{sql:principal.sedes.length?' AND i.sede IN ('+principal.sedes.map(()=>'?').join(',')+')':' AND 0',params:principal.sedes};}
 function resultado(rows,n){const mas=rows.length>n;return {datos:rows.slice(0,n),siguiente:mas?rows[n-1].id:null};}
 function textoBusqueda(value=''){
   if(typeof value!=='string'||[...value].length>120||/[\x00-\x1f\x7f]/.test(value))
@@ -16,7 +17,7 @@ export async function listarInventarios(pool,principal,opciones){
   const {cursor,limite}=paginacion(opciones);
   const buscar=textoBusqueda(opciones?.buscar),sede=opciones?.sede||'',cliente=opciones?.cliente||'';
   if((sede&&!['UIO','GYE'].includes(sede))||(cliente&&!UUID.test(cliente)))throw new ErrorAuth('SOLICITUD_INVALIDA','Filtro inválido.',400);
-  const params=[principal.actorId,cursor];let filtros='';
+  const scope=alcance(principal),params=[principal.actorId,cursor,...scope.params];let filtros=scope.sql;
   if(sede){filtros+=' AND i.sede=?';params.push(sede);}
   if(cliente){filtros+=' AND p.cliente_id=?';params.push(cliente);}
   if(buscar){filtros+=" AND (i.codigo_operativo COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR c.nombre COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!')";params.push(patron(buscar),patron(buscar));}
@@ -35,7 +36,7 @@ export async function listarLineas(pool,principal,inventarioId,opciones,{operaci
     filtro=" AND (l.sku COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.descripcion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.posicion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.serie COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.lote COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!')";
     params.push(...Array(5).fill(patron(buscar)));
   }
-  const [[acceso]]=await pool.execute('SELECT 1 AS permitido FROM ims_op_permiso WHERE actor_id=? AND inventario_id=? LIMIT 1',[principal.actorId,inventarioId]);
+  const scope=alcance(principal),[[acceso]]=await pool.execute('SELECT 1 AS permitido FROM ims_op_permiso p JOIN ims_op_inventario i ON i.id=p.inventario_id WHERE p.actor_id=? AND p.inventario_id=?'+scope.sql+' LIMIT 1',[principal.actorId,inventarioId,...scope.params]);
   if(!acceso)throw new ErrorAuth('SIN_PERMISO','Acceso no autorizado.',403);
   const permiso=operacionNativa?"(p.puede_contar=1 AND n.borrador=0 AND z.rol IN ('SUPERVISOR','OPERADOR'))":'p.puede_contar';
   const joins=operacionNativa?' LEFT JOIN ims_nat_inventario n ON n.inventario_id=l.inventario_id LEFT JOIN ims_nat_perfil z ON z.actor_id=p.actor_id AND z.inventario_id=p.inventario_id AND z.cliente_id=p.cliente_id ':'';
@@ -54,16 +55,17 @@ export async function listarLineas(pool,principal,inventarioId,opciones,{operaci
 export async function consultarResumen(pool,principal){
   if(!principal?.actorId)throw new ErrorAuth('NO_AUTENTICADO','Inicia sesión para continuar.');
   const c=await pool.getConnection();let tx=false,destruir=false;
+  const scope=alcance(principal),params=[principal.actorId,...scope.params];
   const base=`FROM ims_op_permiso p JOIN ims_op_actor a ON a.id=p.actor_id AND a.activo=1
     JOIN ims_op_inventario i ON i.id=p.inventario_id JOIN ims_op_cliente cli ON cli.id=p.cliente_id
-    LEFT JOIN ims_op_linea l ON l.inventario_id=p.inventario_id AND l.cliente_id=p.cliente_id WHERE p.actor_id=?`;
+    LEFT JOIN ims_op_linea l ON l.inventario_id=p.inventario_id AND l.cliente_id=p.cliente_id WHERE p.actor_id=? ${scope.sql}`;
   try{
     await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
     await c.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');tx=true;
     const [[total]]=await c.execute(`SELECT COUNT(DISTINCT i.id) AS conteos,COUNT(l.id) AS lineas,
-      COUNT(DISTINCT cli.id) AS clientes,COUNT(DISTINCT i.sede) AS sedes ${base}`,[principal.actorId]);
+      COUNT(DISTINCT cli.id) AS clientes,COUNT(DISTINCT i.sede) AS sedes ${base}`,params);
     const [clientes]=await c.execute(`SELECT cli.id,cli.nombre,COUNT(DISTINCT i.id) AS conteos,COUNT(l.id) AS lineas
-      ${base} GROUP BY cli.id,cli.nombre ORDER BY cli.nombre,cli.id`,[principal.actorId]);
+      ${base} GROUP BY cli.id,cli.nombre ORDER BY cli.nombre,cli.id`,params);
     await c.commit();tx=false;
     return {totales:Object.fromEntries(Object.entries(total).map(([k,v])=>[k,String(v)])),
       clientes:clientes.map(r=>({...r,conteos:String(r.conteos),lineas:String(r.lineas)})),consultado_en:new Date().toISOString()};

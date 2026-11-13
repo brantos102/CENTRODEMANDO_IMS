@@ -17,8 +17,8 @@ export async function archivoLegado(c,p,id,hoja,desde=0){
 
 export async function entregarCronograma(c,{inventarioId,actorId,operacionId}){
  const {uuidEstable}=await import('../migracion/modelo.mjs');
- const [es]=await c.execute('SELECT e.id,e.estado,e.version,e.fecha_fin FROM ims_cm_evento e JOIN ims_cm_vinculo v ON v.evento_id=e.id WHERE v.inventario_id=? AND e.eliminado=0 AND e.estado<>\'Entregado\' FOR UPDATE',[inventarioId]);
- for(const e of es){const [is]=await c.execute('SELECT i.estado,n.fecha_entrega FROM ims_cm_vinculo v JOIN ims_op_inventario i ON i.id=v.inventario_id LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE v.evento_id=?',[e.id]);if(!is.length||is.some(i=>i.estado!=='ENTREGADO'))continue;const fin=is.map(i=>i.fecha_entrega).filter(Boolean).sort().at(-1);if(!fin)continue;
+ const [vinculos]=await c.execute('SELECT evento_id FROM ims_cm_vinculo WHERE inventario_id=?',[inventarioId]);
+ for(const v of vinculos){const [[e]]=await c.execute("SELECT id,estado,version,fecha_fin FROM ims_cm_evento WHERE id=? AND eliminado=0 AND estado<>'Entregado' FOR UPDATE",[v.evento_id]);if(!e)continue;const [is]=await c.execute('SELECT i.estado,n.fecha_entrega FROM ims_cm_vinculo v JOIN ims_op_inventario i ON i.id=v.inventario_id LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE v.evento_id=?',[e.id]);if(!is.length||is.some(i=>i.estado!=='ENTREGADO'))continue;const fin=is.map(i=>i.fecha_entrega).filter(Boolean).sort().at(-1);if(!fin)continue;
   await c.execute("UPDATE ims_cm_evento SET estado='Entregado',avance=100,fecha_fin=?,version=version+1 WHERE id=?",[fin,e.id]);await c.execute("UPDATE ims_cm_equipo SET estado='FINALIZADO' WHERE evento_id=? AND estado='ACTIVO'",[e.id]);const r={eventoId:e.id,estado:'Entregado',fechaFin:fin};await c.execute('INSERT INTO ims_cm_auditoria(actor_id,operacion_id,tipo,hash,resultado,antes,despues) VALUES (?,?,?,?,?,?,?)',[actorId,uuidEstable('cm-entrega',[operacionId,e.id]),'entrega-inventario','0'.repeat(64),JSON.stringify(r),JSON.stringify({estado:e.estado,version:String(e.version)}),JSON.stringify(r)]);
  }
 }

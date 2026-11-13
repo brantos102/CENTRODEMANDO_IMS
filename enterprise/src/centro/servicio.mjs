@@ -45,7 +45,7 @@ export async function consultarCentro(pool,p,recurso,query={}){
   if(recurso==='eventos')return {eventos:query.desde?calendario(es,query.desde,query.hasta):es};
   if(recurso==='analitica'){
    exigir(pf.permisos.analitica,'SIN_PERMISO','Tu rol no consulta la analítica del equipo.');
-   const ps=await personas(c,pf),cargas=ps.map(u=>{const propios=es.filter(e=>e.responsable_id===u.actor_id||e.equipo.some(q=>q.actor_id===u.actor_id&&q.estado==='ACTIVO'));return {actorId:u.actor_id,nombre:u.nombre,asignados:propios.length,entregados:propios.filter(e=>e.estado==='Entregado').length,enCurso:propios.filter(e=>e.estado==='En curso').length,pendientes:propios.filter(e=>['Pendiente','Pausado'].includes(e.estado)).length};});
+   const ps=await personas(c,pf),cargas=ps.map(u=>{const propios=es.filter(e=>e.responsable_id===u.actor_id||e.equipo.some(q=>q.actor_id===u.actor_id&&['ACTIVO','FINALIZADO'].includes(q.estado)));return {actorId:u.actor_id,nombre:u.nombre,responsabilidades:propios.filter(e=>e.responsable_id===u.actor_id).length,apoyos:propios.filter(e=>e.equipo.some(q=>q.actor_id===u.actor_id&&q.papel==='APOYO'&&['ACTIVO','FINALIZADO'].includes(q.estado))).length,exclusiones:es.filter(e=>e.equipo.some(q=>q.actor_id===u.actor_id&&q.estado==='EXCLUIDO')).length,asignados:propios.length,entregados:propios.filter(e=>e.estado==='Entregado').length,enCurso:propios.filter(e=>e.estado==='En curso').length,pendientes:propios.filter(e=>['Pendiente','Pausado'].includes(e.estado)).length};});
    return {usuarios:cargas};
   }
   const [panel]=pf.sedes.length?await c.execute(`SELECT * FROM ims_cm_panel WHERE sede IN (${marcador(pf.sedes)}) ORDER BY origen_fila`,pf.sedes):[[]];for(const r of panel){r.fecha_inicio=date(r.fecha_inicio);r.fecha_fin=date(r.fecha_fin);}
@@ -69,7 +69,7 @@ export async function consultarCentro(pool,p,recurso,query={}){
   const [cs]=await c.execute('SELECT id,cliente,sku,abc,meses FROM ims_cm_codigo WHERE sede=? AND (?=\'\' OR cliente=?) AND (?=\'\' OR LOCATE(?,sku)>0) ORDER BY cliente,sku LIMIT 5000',[query.sede,cli,cli,q,q]);
   const datos=cs.map(x=>({...x,meses:parse(x.meses)}));return {datos:datos.filter(x=>!mes||x.meses.includes(mes)).slice(0,300),totalesPorMes:Array.from({length:12},(_,i)=>datos.filter(x=>x.meses.includes(i+1)).length),limite:300};
  }
- if(recurso==='archivo-legado')return archivoLegado(c,p,query.inventario,query.hoja,Number(query.desde||0));
+ if(recurso==='archivo-legado'){const [[i]]=await c.execute('SELECT sede FROM ims_op_inventario WHERE id=?',[uuid(query.inventario)]);exigir(i&&pf.sedes.includes(i.sede),'SIN_PERMISO','Sede no autorizada.');return archivoLegado(c,p,query.inventario,query.hoja,Number(query.desde||0));}
  if(recurso==='legado'){
   exigir(pf.permisos.administrar,'SIN_PERMISO','La revisión del respaldo corresponde al administrador.');
   const fuente=texto(query.fuente??'',255,true),desde=Number(query.desde||0);exigir(Number.isInteger(desde)&&desde>=0&&desde<=1000000);
@@ -119,7 +119,7 @@ export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion}){
    }else{const id=randomUUID();await c.execute(`INSERT INTO ims_cm_evento(id,${Object.keys(e).join(',')},origen,creado_por) VALUES (${Array(Object.keys(e).length+3).fill('?').join(',')})`,[id,...Object.values(e),'NATIVO',p.actorId]);resultado={eventoId:id,version:'0'};}
    await c.execute("UPDATE ims_cm_equipo SET estado='EXCLUIDO' WHERE evento_id=? AND papel='RESPONSABLE' AND (? IS NULL OR actor_id<>?)",[resultado.eventoId,e.responsable_id,e.responsable_id]);
    if(e.responsable_id)await asignarEquipo(c,resultado.eventoId,e.responsable_id,'RESPONSABLE');
-   if(s.apoyos!==undefined){exigir(Array.isArray(s.apoyos)&&s.apoyos.length<=30);for(const actor of new Set(s.apoyos))if(actor!==e.responsable_id)await asignarEquipo(c,resultado.eventoId,actor,'APOYO');}
+   if(s.apoyos!==undefined){exigir(Array.isArray(s.apoyos)&&s.apoyos.length<=30);await c.execute("UPDATE ims_cm_equipo SET estado='EXCLUIDO' WHERE evento_id=? AND papel='APOYO' AND estado='ACTIVO'",[resultado.eventoId]);for(const actor of new Set(s.apoyos))if(actor!==e.responsable_id)await asignarEquipo(c,resultado.eventoId,actor,'APOYO');}
    await permisosEquipo(c,resultado.eventoId);despues=e;
   }else if(tipo==='accion'){
    const [[e]]=await c.execute('SELECT * FROM ims_cm_evento WHERE id=? AND eliminado=0 FOR UPDATE',[uuid(s.eventoId)]);exigir(e,'SIN_PERMISO','Evento no disponible.');exigir(String(e.version)===String(s.version),'VERSION_DESACTUALIZADA','El evento cambió. Actualiza antes de continuar.');
@@ -163,7 +163,7 @@ export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion}){
    exigir(pf.permisos.usuarios&&puedeCrearRol(pf.rol,s.rol),'SIN_PERMISO','Solo puedes crear perfiles de menor nivel que el tuyo.');
    const correo=correoCanonico(s.correo),nombre=texto(s.nombre,255,true);exigir(Array.isArray(s.sedes)&&s.sedes.length&&s.sedes.length<=2&&new Set(s.sedes).size===s.sedes.length&&s.sedes.every(x=>pf.sedes.includes(x)),'SIN_PERMISO','Sedes no autorizadas.');
    const [[old]]=await c.execute('SELECT actor_id FROM ims_auth_usuario WHERE correo=? FOR SHARE',[correo]);exigir(!old,'SOLICITUD_INVALIDA','El correo ya existe. No se reemplazan cuentas ni claves.');const clave=await crearHashPassword(s.contrasena),id=randomUUID();
-   await c.execute('INSERT INTO ims_op_actor(id,activo) VALUES (?,1)',[id]);await c.execute('INSERT INTO ims_auth_usuario(actor_id,correo,nombre,password_hash) VALUES (?,?,?,?)',[id,correo,nombre,clave]);await c.execute('INSERT INTO ims_cm_perfil(actor_id,rol,rol_wms,telefono) VALUES (?,?,?,?)',[id,s.rol,['ADMIN','COORDINADOR','LIDER'].includes(s.rol)?'ADMIN':'AUDITOR',texto(s.telefono??'',80)]);
+   await c.execute('INSERT INTO ims_op_actor(id,activo) VALUES (?,1)',[id]);await c.execute('INSERT INTO ims_auth_usuario(actor_id,correo,nombre,password_hash) VALUES (?,?,?,?)',[id,correo,nombre,clave]);await c.execute('INSERT INTO ims_cm_perfil(actor_id,rol,rol_wms,telefono) VALUES (?,?,?,?)',[id,s.rol,['ADMIN','COORDINADOR','LIDER'].includes(s.rol)?'ADMIN':s.rol==='AUDITOR'?'AUDITOR':'OPERADOR',texto(s.telefono??'',80)]);
    for(const sede of s.sedes){await c.execute('INSERT INTO ims_cm_acceso VALUES (?,?)',[id,sede]);if(['ADMIN','COORDINADOR','LIDER'].includes(s.rol))await c.execute('INSERT INTO ims_nat_ambito VALUES (?,?,?)',[id,sede,s.rol==='ADMIN'?'ADMIN':'SUPERVISOR']);}
    resultado={actorId:id,correo};
   }else if(tipo==='usuario-clave'){
@@ -177,7 +177,7 @@ export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion}){
    exigir(['ADMIN','OPERADOR','AUDITOR'].includes(s.rolWms),'SOLICITUD_INVALIDA','Selecciona un rol WMS válido.');await c.execute('UPDATE ims_cm_perfil SET rol=?,rol_wms=?,version=version+1 WHERE actor_id=?',[s.rol,s.rolWms,s.actorId]);await c.execute('DELETE FROM ims_cm_acceso WHERE actor_id=?',[s.actorId]);await c.execute('DELETE FROM ims_nat_ambito WHERE actor_id=?',[s.actorId]);
    for(const sede of s.sedes){await c.execute('INSERT INTO ims_cm_acceso VALUES (?,?)',[s.actorId,sede]);if(['ADMIN','COORDINADOR','LIDER'].includes(s.rol))await c.execute('INSERT INTO ims_nat_ambito VALUES (?,?,?)',[s.actorId,sede,s.rol==='ADMIN'?'ADMIN':'SUPERVISOR']);}
    await c.execute('DELETE p FROM ims_nat_perfil p JOIN ims_op_inventario i ON i.id=p.inventario_id WHERE p.actor_id=? AND i.sede NOT IN ('+s.sedes.map(()=>'?').join(',')+')',[s.actorId,...s.sedes]);
-   await c.execute('DELETE p FROM ims_op_permiso p JOIN ims_op_inventario i ON i.id=p.inventario_id WHERE p.actor_id=? AND i.sede NOT IN ('+s.sedes.map(()=>'?').join(',')+')',[s.actorId,...s.sedes]);
+   await c.execute('DELETE p FROM ims_op_permiso p JOIN ims_op_inventario i ON i.id=p.inventario_id JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE p.actor_id=? AND i.sede NOT IN ('+s.sedes.map(()=>'?').join(',')+')',[s.actorId,...s.sedes]);
    const rol=s.rolWms==='ADMIN'?'SUPERVISOR':s.rolWms==='OPERADOR'?'OPERADOR':'AUDITOR';await c.execute('UPDATE ims_nat_perfil SET rol=? WHERE actor_id=?',[rol,s.actorId]);await c.execute('UPDATE ims_op_permiso p JOIN ims_nat_inventario n ON n.inventario_id=p.inventario_id SET p.puede_contar=? WHERE p.actor_id=?',[rol==='AUDITOR'?0:1,s.actorId]);
    await c.execute('UPDATE ims_auth_sesion SET revocada=1 WHERE actor_id=?',[s.actorId]);resultado={actorId:s.actorId,rol:s.rol,rolWms:s.rolWms,sedes:s.sedes};
   }else if(tipo==='usuario-estado'){

@@ -29,7 +29,7 @@ async function mutar(tipo,body){
 }
 async function contexto(seleccion=$('op-inventario').value){
  const data=await api('/api/operacion');if(!Array.isArray(data.ambitos)||!Array.isArray(data.inventarios)||!Array.isArray(data.clientes))throw Error('Contexto incompleto.');
- state.contexto=data;
+ state.contexto=data;state.inv=null;$('op-lineas').replaceChildren();
  $('op-erp').hidden=!state.sesion.erpDisponible||!data.ambitos.some(r=>['ADMIN','SUPERVISOR'].includes(r.rol));
  $('op-inventario').replaceChildren(new Option('Selecciona un inventario',''),...data.inventarios.map(i=>new Option(i.sede+' · '+i.codigo_operativo+' · '+(i.borrador?'BORRADOR':i.estado),i.id)));
  $('op-inventario').value=seleccion;

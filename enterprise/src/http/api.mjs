@@ -105,6 +105,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       if(centroHabilitado&&!url.pathname.startsWith('/api/centro/')&&url.pathname!=='/api/sesion/cerrar'){
         const perfil=await consultarCentro(pool,principal,'perfil');
         if(perfil.perfil.cambiar_clave)throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
+        principal.sedes=perfil.perfil.sedes;
       }
       if(req.method==='POST'){
         if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Vuelve a consultar la sesión.',403);

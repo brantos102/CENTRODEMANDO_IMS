@@ -21,11 +21,13 @@ export function sanearFila(row,nombre){
  return row;
 }
 export function claseHoja(nombre){const n=normalizar(nombre);if(n==='USUARIOS')return 'USUARIOS';if(n==='PANELDECONTROL')return 'PANEL';if(n==='EQUIPOTAREA'||n==='EQUIPOSTAREA'||n==='EQUIPOOPERATIVO')return 'EQUIPO';if(n.includes('CRONOGRAMA')&&!n.includes('CODIGO'))return 'CRONOGRAMA';if(n.includes('CODIGO')&&n.includes('CRON'))return 'CODIGOS';if(n==='LOGUSUARIOS')return 'LOG';return 'CONSERVADO';}
-export function proyectarEvento(r,fuente){
+export function proyectarEvento(r,fuente,fuentes=[]){
  if(r.fila<9||!valor(r,5))return null;
  const f=fechaCelda(r,12);if(!f)return {incidencia:'EVENTO_SIN_FECHA',fila:r.fila};
- const estado=normal(valor(r,13)),sede=/GYE|GUAYAQUIL/.test(normal(fuente.nombre))?'GYE':'UIO',drive=valor(r,17).match(/(?:\/d\/|id=)([a-zA-Z0-9_-]{20,120})/);
- return {id:uuidEstable('cm-evento',[fuente.clave,r.fila]),sede,cliente:valor(r,5),titulo:valor(r,4)||valor(r,5),categoria:valor(r,6),frecuencia:valor(r,8),prioridad:['Baja','Media','Alta','Urgente'].find(p=>normal(p)===normal(valor(r,10)))||'Media',observacion:valor(r,11),fecha_inicio:f,fecha_fin:fechaCelda(r,14),duracion:Math.max(1,Math.min(3660,Math.trunc(Number(valor(r,15)))||1)),estado:estado==='ENTREGADO'?'Entregado':['EN PROCESO','EN CURSO','INICIADO'].includes(estado)?'En curso':estado==='PAUSADO'?'Pausado':'Pendiente',avance:estado==='ENTREGADO'?'100':String(Math.max(0,Math.min(100,Number(valor(r,16))||0))),responsable_nombre:valor(r,9),archivo_drive:drive?.[1]||( /^[a-zA-Z0-9_-]{20,120}$/.test(valor(r,17))?valor(r,17):''),origen:fuente.clave,origen_fila:r.fila};
+ const referencia=valor(r,17)+' '+String(cv(r,17)?.formula??''),estado=normal(valor(r,13)),sede=/GYE|GUAYAQUIL/.test(normal(fuente.nombre))?'GYE':'UIO',drive=referencia.match(/(?:\/d\/|id=)([a-zA-Z0-9_-]{20,120})/);
+ const prefijo=fuente.clave.split(':').slice(0,2).join(':')+':',panel=fuentes.find(f=>f.clave.startsWith(prefijo)&&normalizar(f.nombre)==='PANELDECONTROL'&&f.completa),fechaChip=referencia.match(/(?:^|[\s·])(\d{1,2}\/\d{1,2}\/\d{4})(?=$|\s)/),dia=fechaChip?fechaCelda({celdas:[{columna:1,tipo:'s',valor:fechaChip[1]}]},1):null,coinciden=panel?.filas.filter(p=>p.fila>1&&normal(valor(p,1))===normal(valor(r,5))&&dia&&fechaCelda(p,4)===dia)||[],ids=[...new Set(coinciden.map(p=>valor(p,3)).filter(Boolean))];
+ const archivo=drive?.[1]||(panel?.filas.some(p=>valor(p,3)===valor(r,17))?valor(r,17):ids.length===1?ids[0]:'');
+ return {id:uuidEstable('cm-evento',[fuente.clave,r.fila]),sede,cliente:valor(r,5),titulo:valor(r,4)||valor(r,5),categoria:valor(r,6),frecuencia:valor(r,8),prioridad:['Baja','Media','Alta','Urgente'].find(p=>normal(p)===normal(valor(r,10)))||'Media',observacion:valor(r,11),fecha_inicio:f,fecha_fin:fechaCelda(r,14),duracion:Math.max(1,Math.min(3660,Math.trunc(Number(valor(r,15)))||1)),estado:estado==='ENTREGADO'?'Entregado':['EN PROCESO','EN CURSO','INICIADO'].includes(estado)?'En curso':estado==='PAUSADO'?'Pausado':'Pendiente',avance:estado==='ENTREGADO'?'100':String(Math.max(0,Math.min(100,Number(valor(r,16))||0))),responsable_nombre:valor(r,9),archivo_drive:archivo,origen:fuente.clave,origen_fila:r.fila};
 }
 export async function fuentesSQL(c){
  const [hojas]=await c.execute(`SELECT h.*,s.creado_en FROM ims_snapshot_hoja h JOIN ims_snapshot s ON s.snapshot_id=h.snapshot_id WHERE s.estado='VERIFICADO' ORDER BY s.creado_en DESC,h.hoja`);
@@ -71,7 +73,7 @@ export async function importarCentro(c,fuentes,{actorInicial}){
     // Solo proyecta el contrato B:T conocido. Los demás formatos quedan conservados.
     const h=f.filas.find(r=>r.fila===8);
     if(!h||!normalizar(valor(h,5)).includes('CLIENTE')||!/FECHA|INICIO/.test(normalizar(valor(h,12)))||!normalizar(valor(h,13)).includes('ESTADO')){resumen.incidencias.push({clase:'CRONOGRAMA_FORMATO_DISTINTO_CONSERVADO',hoja:f.nombre});continue;}
-    for(const r of f.filas){const e=proyectarEvento(r,f);if(!e)continue;if(e.incidencia){resumen.incidencias.push(e);continue;}
+    for(const r of f.filas){const e=proyectarEvento(r,f,fuentes);if(!e)continue;if(e.incidencia){resumen.incidencias.push(e);continue;}
      const cols=Object.keys(e);await c.execute(`INSERT INTO ims_cm_evento(${cols.join(',')},creado_por) VALUES (${cols.map(()=>'?').join(',')},?)`,[...cols.map(k=>e[k]),actorInicial]);resumen.eventos++;
     }
    }
@@ -90,18 +92,21 @@ export async function importarCentro(c,fuentes,{actorInicial}){
   for(const u of sinPerfil){await c.execute("INSERT INTO ims_cm_perfil(actor_id,rol) VALUES (?,'OPERARIO')",[u.actor_id]);await c.execute('INSERT IGNORE INTO ims_cm_acceso(actor_id,sede) SELECT ?,i.sede FROM ims_op_permiso p JOIN ims_op_inventario i ON i.id=p.inventario_id WHERE p.actor_id=? GROUP BY i.sede',[u.actor_id,u.actor_id]);}
   // Las identidades se enlazan solo cuando el nombre canónico es único.
   const [usuarios]=await c.execute('SELECT u.actor_id,u.nombre FROM ims_auth_usuario u JOIN ims_cm_perfil p ON p.actor_id=u.actor_id'),unicos=new Map();for(const u of usuarios){const k=claveNombre(u.nombre);unicos.set(k,unicos.has(k)?null:u.actor_id);}
-  const [candidatos]=await c.execute('SELECT id,origen,fecha_inicio,responsable_nombre,archivo_drive FROM ims_cm_evento WHERE origen<>\'NATIVO\' AND version=0');const es=candidatos.filter(e=>nuevasFuentes.has(e.origen));
+  const [candidatos]=await c.execute('SELECT id,origen,origen_fila,cliente,titulo,fecha_inicio,responsable_id,responsable_nombre,archivo_drive FROM ims_cm_evento WHERE origen<>\'NATIVO\' AND version=0');const es=candidatos.filter(e=>nuevasFuentes.has(e.origen));
   for(const e of es){const actor=unicos.get(claveNombre(e.responsable_nombre));if(actor){await c.execute('UPDATE ims_cm_evento SET responsable_id=? WHERE id=?',[actor,e.id]);await c.execute("INSERT IGNORE INTO ims_cm_equipo VALUES (?,?,'RESPONSABLE','ACTIVO')",[e.id,actor]);}
    if(e.archivo_drive){const [ids]=await c.execute('SELECT DISTINCT l.inventario_id,n.fecha_inicio FROM ims_op_linea l LEFT JOIN ims_nat_inventario n ON n.inventario_id=l.inventario_id WHERE l.origen_drive=?',[e.archivo_drive]);const seleccion=ids.length<=1||ids.every(x=>!x.fecha_inicio)?ids:ids.filter(x=>x.fecha_inicio===e.fecha_inicio);if(ids.length>1&&!seleccion.length)resumen.incidencias.push({clase:'VINCULO_VARIOS_CONTEOS_REQUIERE_MAPEO',fila:e.origen_fila??null});for(const i of seleccion)await c.execute('INSERT IGNORE INTO ims_cm_vinculo VALUES (?,?)',[e.id,i.inventario_id]);}
   }
   for(const f of fuentes.filter(f=>nuevasFuentes.has(f.clave)&&claseHoja(f.nombre)==='EQUIPO'&&normalizar(f.nombre)==='EQUIPOSTAREA'))for(const r of f.filas.filter(r=>r.fila>1)){
    const correo=valor(r,5).toLowerCase(),fila=Number(valor(r,2));if(!correo||!Number.isInteger(fila))continue;
    const [[u]]=await c.execute('SELECT actor_id FROM ims_auth_usuario WHERE correo=?',[correo]);if(!u)continue;
-   const [evs]=await c.execute("SELECT e.id FROM ims_cm_evento e JOIN ims_cm_fuente f ON f.clave=e.origen WHERE e.origen_fila=? AND JSON_UNQUOTE(JSON_EXTRACT(f.metadatos,'$.nombre'))='CRONOGRAMA - 2026'",[fila]);if(evs.length!==1)continue;
-   const papel=normal(valor(r,7))==='RESPONSABLE'?'RESPONSABLE':'APOYO',st=normal(valor(r,8)),estado=['ACTIVO','FINALIZADO','EXCLUIDO','EVENTO_ELIMINADO'].includes(st)?st:'ACTIVO';
+   const prefijo=f.clave.split(':').slice(0,2).join(':')+':',cron=fuentes.find(x=>x.clave.startsWith(prefijo)&&normalizar(x.nombre)==='CRONOGRAMA2026'&&x.completa),anterior=cron?.filas.find(x=>x.fila===fila),tarea=anterior?proyectarEvento(anterior,cron,fuentes):null;
+   const declarada=tarea&&!tarea.incidencia&&(!valor(r,3)||normal(valor(r,3))===normal(tarea.cliente))&&(!valor(r,4)||normal(valor(r,4))===normal(tarea.titulo));
+   const evs=declarada?es.filter(e=>normal(e.cliente)===normal(tarea.cliente)&&normal(e.titulo)===normal(tarea.titulo)&&e.fecha_inicio===tarea.fecha_inicio&&(!e.archivo_drive||!tarea.archivo_drive||e.archivo_drive===tarea.archivo_drive)):[];
+   if(evs.length!==1){resumen.incidencias.push({clase:'EQUIPO_REQUIERE_MAPEO',fila:r.fila});continue;}
+   const papel=normal(valor(r,7))==='RESPONSABLE'?'RESPONSABLE':'APOYO',st=normal(valor(r,8)),estado=['ACTIVO','FINALIZADO','EXCLUIDO','EVENTO_ELIMINADO'].includes(st)?st:st?'EXCLUIDO':'ACTIVO';
    await c.execute('INSERT INTO ims_cm_equipo VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE papel=VALUES(papel),estado=VALUES(estado)',[evs[0].id,u.actor_id,papel,estado]);
   }
-  for(const e of es)await permisosEquipo(c,e.id);
+  for(const e of es){if(!e.responsable_id){const [rs]=await c.execute("SELECT actor_id FROM ims_cm_equipo WHERE evento_id=? AND papel='RESPONSABLE' AND estado='ACTIVO'",[e.id]);if(rs.length===1)await c.execute('UPDATE ims_cm_evento SET responsable_id=? WHERE id=?',[rs[0].actor_id,e.id]);}await permisosEquipo(c,e.id);}
   // El Rol WMS explícito de USUARIOS tenía alcance sobre los archivos de la sede.
   // Conserva lectura histórica; solo los conteos nativos reciben captura.
   const [legados]=await c.execute("SELECT p.actor_id,p.rol_wms,ac.sede FROM ims_cm_perfil p JOIN ims_cm_acceso ac ON ac.actor_id=p.actor_id WHERE p.cambiar_clave=1");

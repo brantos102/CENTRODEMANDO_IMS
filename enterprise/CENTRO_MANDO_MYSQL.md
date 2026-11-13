@@ -30,9 +30,9 @@ No solicita otra extracción de Google. Una hoja parcial se conserva como parcia
 | Calendar | Sincronización explícita con Google Calendar; solo crea/modifica los eventos que pertenecen a este Centro. Requiere autorización privada de la cuenta. |
 | Trazabilidad | Fuentes, cobertura por hoja, bitácora administrativa, historial original y resultados de trabajos. |
 
-Los nombres y códigos originales se conservan. Los conteos de códigos/fechas diferentes del mismo archivo mantienen su identidad. La vinculación automática utiliza el origen físico y, cuando corresponde, la fecha explícita. Las asociaciones ambiguas requieren elegir el conteo desde el detalle de la tarea.
+Los nombres y códigos originales se conservan. Los conteos de códigos/fechas diferentes del mismo archivo mantienen su identidad. La vinculación automática utiliza el origen físico y, cuando corresponde, la fecha explícita. Las referencias de texto del cronograma se resuelven únicamente por cliente y fecha explícita únicos del panel del mismo respaldo. Los equipos del cronograma anterior se concilian por identidad de tarea antes de trasladar las asignaciones; un cambio de número de fila no reasigna personas. Las asociaciones ambiguas quedan señaladas para revisión desde el detalle de la tarea.
 
-Los roles del Centro de Mando y WMS de la hoja USUARIOS son globales en el sistema original; la migración los conserva para UIO/GYE. El administrador puede limitar después las sedes y perfiles. El histórico permanece sin captura. La cuenta ya existente no cambia su contraseña ni identidad. Las cuentas recuperadas se habilitan solo tras verificar la versión nueva y deben cambiar su clave antes de operar. Si el respaldo no contiene una contraseña, quedan para restablecimiento en Usuarios; no se inventa una clave por defecto.
+Los roles del Centro de Mando y WMS de la hoja USUARIOS son globales en el sistema original; la migración los conserva para UIO/GYE. El administrador puede limitar después las sedes y perfiles. El histórico permanece sin captura. Al limitar las sedes de una cuenta se bloquean también los listados, resúmenes y consultas directas del histórico; se conservan sus permisos originales protegidos en el resguardo. La cuenta ya existente no cambia su contraseña ni identidad. Las cuentas recuperadas se habilitan solo tras verificar la versión nueva y deben cambiar su clave antes de operar. Si el respaldo no contiene una contraseña, quedan para restablecimiento en Usuarios; no se inventa una clave por defecto.
 
 ## Publicación
 
@@ -65,3 +65,9 @@ Las credenciales ERP existentes se reutilizan desde su registro privado. No auto
 Los recordatorios automáticos están desactivados hasta que se configure y habilite el correo. La prueba de despliegue no envía correos ni modifica calendarios. Antes de considerar operativas esas conexiones, verificar un envío y una sincronización desde la aplicación. ICS y descargas funcionan sin autorización externa.
 
 Los XLSX se comprimen por bloques para evitar construir una hoja completa en memoria. Los ZIP se conservan siete días en fragmentos SQL, con descarga autenticada y límites de tamaño. La cola no abre otros puertos.
+
+## Validación de esta entrega
+
+Validada con Node 22.23.3, Python 3.12 y MySQL 8.0.46: 187 pruebas unitarias Node, 155 Python, 123 pruebas de integración SQL y 26 recorridos Chromium, sin omisiones. Las pruebas SQL se ejecutaron en bases sintéticas independientes por archivo para no mezclar fixtures anteriores a la instalación de triggers con las pruebas del perfil operativo. Incluyen revocación por sede sin alterar el histórico, permisos limitados del usuario operativo, entrega del inventario y cronograma en una transacción, equipos tras inserciones de filas, participación de apoyos finalizados, reintentos y bloqueo de descargas tras revocar acceso.
+
+No se hicieron envíos reales ni cambios en calendarios externos durante estas pruebas. La comprobación HTTPS del servidor se ejecuta al aplicar la revisión y verifica el histórico esperado antes de confirmar la actualización.
