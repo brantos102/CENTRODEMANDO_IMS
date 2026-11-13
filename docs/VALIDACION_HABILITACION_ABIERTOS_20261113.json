@@ -1,0 +1,47 @@
+{
+  "fecha_operativa": "2026-11-13",
+  "evidencia_corporativa_compartida": {
+    "corte_id": "07e58bf9-6fe1-4bf0-b93e-d1a89cb66764",
+    "copia_id": "0f35ea9a0565483d03bd66519ba6cb3a144c5c8e4fdbbe386e3468237e1fd75b",
+    "plan_id": "2c00275f02bde5699a2c0b121d6a8a1c633b16002a83d8494fcf942b201d29ba",
+    "productos_guardados": 12362,
+    "auxiliares_guardados": 984,
+    "conteos_operativos": 22,
+    "lineas_habilitables": 11732,
+    "productos_pendientes_de_inicio": 630,
+    "bloqueos_estructurales": 0,
+    "c1_presentes": 10602,
+    "c2_presentes": 290,
+    "c3_presentes": 205,
+    "maestro_completo": false
+  },
+  "implementacion": {
+    "transaccion_unica_con_verificacion_de_filas_antes_de_activar": true,
+    "decimal_30_9_sin_flotantes": true,
+    "conserva_ceros_vacios_y_c3_sin_c2": true,
+    "pendiente_sin_codigo_fecha_o_capturas_inventados": true,
+    "pendiente_visible_para_admin_de_sede_con_inicio_desde_web": true,
+    "reintento_no_sobrescribe_capturas_posteriores": true,
+    "no_nuevas_tablas_o_privilegios": true,
+    "no_cuentas_o_contrasenas_reemplazadas": true,
+    "trazabilidad_en_eventos_de_migracion_y_copia_sql_original": true,
+    "lanzador_actualiza_solo_backend_propio_con_reversion_de_version": true
+  },
+  "verificacion": {
+    "node_version": "22.23.3",
+    "node_correctas": 178,
+    "python_correctas": 151,
+    "mysql_version": "8.0.46",
+    "mysql_integracion_correctas": 8,
+    "navegador_chromium_recorridos_correctos": 5,
+    "fallidas_pendientes": 0,
+    "mysql_sintetico_con_13_triggers_y_cuenta_operativa_sin_update_de_eventos": true,
+    "http_sesion_csrf_y_ambito_probados": true,
+    "grandes_decimales_y_cero_visibles_sin_redondeo": true
+  },
+  "importacion_corporativa_ejecutada_por_el_agente": false,
+  "activacion_corporativa_de_esta_revision_pendiente": true,
+  "no_declara_maestro_o_registro_global_completos": true,
+  "no_atribuye_auditorias_anteriores_a_usuarios_nuevos": true,
+  "apache_puertos_y_otros_proyectos_modificados": false
+}

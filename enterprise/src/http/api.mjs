@@ -7,6 +7,7 @@ import {ejecutarOperacion,contextoOperacion,consultarOperacion,previsualizarSeri
 import {servirEstatico} from './estaticos.mjs';
 import {sedesAutorizadasERP,autorizarSedeERP} from '../mysql/acceso-erp.mjs';
 import {crearInventarioERP,consultarOrigenERP} from '../mysql/crear-desde-erp.mjs';
+import {listarPendientesLegado,iniciarPendienteLegado} from '../mysql/pendientes-legado.mjs';
 
 export const COOKIE='__Host-ims_cm_session';
 export function origenPublico(value){
@@ -140,6 +141,14 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       }
       if(url.pathname.startsWith('/api/operacion')){
         if(!operacionNativa)throw new ErrorAuth('SOLO_LECTURA','La operación nativa todavía no está habilitada.',403);
+        if(url.pathname==='/api/operacion/pendientes'&&req.method==='GET'){
+          if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          return json(res,200,await listarPendientesLegado(pool,principal));
+        }
+        if(url.pathname==='/api/operacion/iniciar-pendiente'&&req.method==='POST'){
+          if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          return json(res,200,await iniciarPendienteLegado({pool,principal,solicitud:await leerJson(req)}));
+        }
         if(req.method==='GET'&&url.pathname==='/api/operacion'){
           if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
           return json(res,200,await contextoOperacion(pool,principal));

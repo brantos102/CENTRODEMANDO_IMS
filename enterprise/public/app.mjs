@@ -37,7 +37,7 @@ async function entrar(sesion){
   $('modo-nativo').hidden=!sesion.operacionNativa;
   $('resumen-titulo').textContent=sesion.operacionNativa?'Tus inventarios autorizados':'Tu resumen de inventarios';
   $('tipo-resumen').textContent=sesion.operacionNativa?'INVENTARIOS AUTORIZADOS':'HISTÓRICO AUTORIZADO';
-  $('descripcion-resumen').textContent=sesion.operacionNativa?'Incluye el histórico consultable y los inventarios nativos de ensayo autorizados.':'Cifras de los inventarios trasladados a los que tienes acceso.';
+  $('descripcion-resumen').textContent=sesion.operacionNativa?'Incluye el histórico consultable y los inventarios habilitados para tu cuenta.':'Cifras de los inventarios trasladados a los que tienes acceso.';
 $('modo-lectura').hidden=!state.soloLectura;
   $('acceso').hidden=true;$('operacion').hidden=false;$('detalle').hidden=true;$('seleccion-vacia').hidden=false;
   $('usuario').textContent=sesion.usuario.nombre+' · '+sesion.usuario.correo;

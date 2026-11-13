@@ -33,6 +33,7 @@ async function ambito(c,p,sede,admin=false){
  const [[r]]=await c.execute('SELECT rol FROM ims_nat_ambito WHERE actor_id=? AND sede=? FOR SHARE',[p.actorId,sede]);
  exigir(r&&(!admin||r.rol==='ADMIN'),'SIN_PERMISO','No tienes ese permiso para la sede.');return r;
 }
+export {ambito as exigirAmbitoOperacion};
 async function acceso(c,p,id,roles,completo=false,bloquear=false){
  uuid(id);
  const [[n]]=await c.execute(`SELECT i.*,n.version,n.borrador,n.fecha_inicio,n.fecha_entrega,n.mostrar_depot,

@@ -37,6 +37,9 @@ async function contexto(seleccion=$('op-inventario').value){
  $('op-sede').replaceChildren(...data.ambitos.map(r=>new Option(r.sede,r.sede)));
  $('op-sede-cuenta').replaceChildren(...data.ambitos.filter(r=>r.rol==='ADMIN').map(r=>new Option(r.sede,r.sede)));
  $('op-clientes').replaceChildren(...data.clientes.map(r=>new Option(r.nombre,r.id)));
+ const pendientes=await api('/api/operacion/pendientes');if(!Array.isArray(pendientes.datos))throw Error('Listado de pendientes incompleto.');
+ $('op-legado-pendientes').hidden=!pendientes.datos.length;
+ $('op-pendiente-origen').replaceChildren(...pendientes.datos.map(r=>new Option(r.sede+' · '+r.cliente+' · '+r.productos+' productos',r.pendienteId)));
  if(seleccion)await detalle(false);else{state.inv=null;$('op-supervision').hidden=true;$('op-series-panel').hidden=true;}
 }
 function celda(tr,text){const td=document.createElement('td');td.textContent=text;tr.append(td);}
@@ -71,6 +74,9 @@ function solicitud(){if(!state.inv)throw Error('Selecciona un inventario.');retu
 formulario('op-crear',async()=>{
  const r=await mutar('crear',{sede:$('op-sede').value,codigo:$('op-codigo').value,clientes:[...$('op-clientes').selectedOptions].map(o=>o.value),fechaInicio:$('op-fecha').value,
  fechaProgramada:$('op-programada').value,responsable:$('op-responsable').value});await contexto(r.inventarioId);
+});
+formulario('op-iniciar-pendiente',async()=>{
+ const r=await mutar('iniciar-pendiente',{pendienteId:$('op-pendiente-origen').value,codigo:$('op-pendiente-codigo').value,fechaInicio:$('op-pendiente-fecha').value});await contexto(r.inventarioId);
 });
 formulario('op-cargar',async()=>{
  if(!state.inv?.borrador)throw Error('Selecciona un borrador.');const f=$('op-csv').files[0];if(!f||f.size>24*1024*1024)throw Error('Selecciona un CSV de hasta 24 MB.');

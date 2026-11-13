@@ -1,5 +1,7 @@
 # Preparación de la migración de Centro de Mando a MySQL
 
+Siguiente paso del corte elegido: [habilitar los 22 conteos y conservar los 630 productos pendientes](HABILITAR_ABIERTOS_20261113.md). El usuario confirmó copia SQL íntegra y cero bloqueos estructurales; el nuevo lanzador importa las capturas y actualiza únicamente nuestro backend. La confirmación corporativa de esa ejecución sigue pendiente.
+
 Actualización del 13 de noviembre: el usuario eligió **continuar con las capturas del corte ya enviado**, sin otra extracción ni delta nuevo de Google. [Procesar el corte elegido](CORTE_ELEGIDO_20261113.md) prepara, copia y verifica los datos en MySQL y genera el plan operativo en una sola ejecución. Conserva el maestro parcial y las fuentes cambiadas con sus avisos; no activa inventarios o permisos automáticamente.
 
 El [plan de columnas operativas](PLAN_OPERATIVO_ABIERTOS.md) revisa el catálogo y los orígenes existentes, conserva todas las líneas y enumera los conflictos antes de la activación. La [copia de revisión en MySQL](COPIA_ABIERTOS_MYSQL.md) se conserva; la importación al núcleo operativo sigue pendiente. Las instrucciones anteriores que exigen otra captura o delta final no sustituyen la decisión del usuario para este corte.
