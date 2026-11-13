@@ -1,0 +1,52 @@
+{
+  "fecha_operativa": "2026-11-13",
+  "corte_elegido": "07e58bf9-6fe1-4bf0-b93e-d1a89cb66764",
+  "evidencia_usuario": {
+    "envio_confirmado": true,
+    "validacion_confirmada": true,
+    "inventarios": 12,
+    "productos": 12362,
+    "capturas_presentes": {
+      "c1": 10602,
+      "c2": 290,
+      "c3": 205
+    },
+    "fragmentos": 249,
+    "fuentes_revision": 2,
+    "panel_cambio": false,
+    "maestro_completo": false,
+    "mysql_importado_en_el_envio": false
+  },
+  "decision_explicita": {
+    "usar_capturas_guardadas": true,
+    "pedir_otro_corte_google": false,
+    "decision_vinculada_a_uuid_sha_zip_y_copia_sql": true,
+    "no_suprime_bloqueos_estructurales": true
+  },
+  "proceso": {
+    "una_ejecucion_prepara_copia_sql_verifica_y_proyecta": true,
+    "cuenta_mysql": "ims_cm_migracion",
+    "base_mysql": "centromando_ims_ensayo",
+    "reutiliza_preparacion_del_mismo_zip_y_hash": true,
+    "transaccion_e_idempotencia_de_copia_existentes_sin_cambios": true,
+    "reglas_anteriores_por_hash_del_manifiesto_y_archivo_fisico": true,
+    "mantiene_parciales_con_su_cobertura_y_avisos": true,
+    "datos_operativos_importados": false,
+    "inventarios_activados": false
+  },
+  "pruebas": {
+    "node_version": "22.23.3",
+    "node_copia_correctas": 4,
+    "python_corte_elegido_correctas": 8,
+    "python_plan_operativo_correctas": 18,
+    "python_captura_completa_correctas": 5,
+    "fallidas": 0,
+    "pipeline_simulado_usa_zip_y_preparador_y_planificador_reales": true,
+    "sql_del_pipeline_simulado": true,
+    "pruebas_nuevas_sobre_mysql_corporativo": false
+  },
+  "ejecucion_corporativa_del_proceso_pendiente": true,
+  "fuentes_google_modificadas_por_el_agente": false,
+  "base_corporativa_modificada_por_el_agente": false,
+  "apache_puertos_servicios_u_otros_proyectos_modificados": false
+}

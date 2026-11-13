@@ -1,5 +1,7 @@
 # Proyectar los abiertos a las columnas operativas
 
+**Corte elegido el 13 de noviembre:** para `07e58bf9-6fe1-4bf0-b93e-d1a89cb66764`, el usuario autorizó usar las capturas guardadas sin solicitar otro delta de Google. El [proceso del corte elegido](CORTE_ELEGIDO_20261113.md) vincula esa decisión al ZIP y a la copia SQL. Los bloqueos estructurales y la cobertura incompleta se conservan; las exigencias de actualización final del procedimiento anterior que sigue no sustituyen esa decisión.
+
 La copia de revisión del corte `99d4b7ff-2f53-4f25-b740-23bf1f371c29` ya fue confirmada en el servidor por el usuario: 12.509 productos y 984 filas auxiliares, integridad SQL verificada y sin activación operativa. No repetir esa carga para este paso.
 
 El planificador lee esa copia en una transacción MySQL de **solo lectura**, compara nuevamente cada registro con la preparación privada y consulta el catálogo de clientes y los inventarios que ya usan esos archivos de origen. Genera una proyección de todas las líneas a las columnas de `ims_op_linea`, `ims_op_detalle_linea` e `ims_nat_linea`. No inserta las proyecciones en esas tablas ni modifica permisos, Apache, servicios o puertos.

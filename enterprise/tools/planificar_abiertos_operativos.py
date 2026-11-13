@@ -42,7 +42,7 @@ def resolver_reglas(contexto,fuentes,por_fuente,reglas=None):
     modos={}
     for tipo in ('separar_codigo_fecha','pendientes_inicio'):
         for regla in reglas.get(tipo,[]):
-            candidatos=[(a,c,i,f) for a,c,i,f in fuentes if a=='SELECCION_ACTUAL' and any(r['fila']==regla['fila_panel_corte'] for r in f['panel'])]
+            candidatos=[(a,c,i,f) for a,c,i,f in fuentes if a=='SELECCION_ACTUAL' and (f['id']==regla['origen_drive'] if regla.get('origen_drive') else any(r['fila']==regla['fila_panel_corte'] for r in f['panel']))]
             exigir(len(candidatos)==1,'La referencia de regla no es única en el corte confirmado.')
             a,c,i,f=candidatos[0];clave=(a,c,f['id']);filas=por_fuente.get(clave,[])
             codigos={r['codigo_operativo_original'] for r in filas if r['codigo_operativo_original']}
@@ -98,11 +98,14 @@ def proyectar_linea(row,esquema,numero):
         **fechas,**campos,'interpretacion_fechas':perfiles_fecha,'bloqueos':sorted(set(errores)),'avisos':sorted(set(avisos)),
         'aprobado_para_importar':False}
 
-def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
+def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None,aceptacion=None):
     """Contexto SQL ya verificado; conserva todas las líneas, incluidas retenidas."""
     prep=Path(preparacion);salida=Path(salida)
     m=json.loads((prep/'preparacion_NO_IMPORTAR.json').read_bytes());raw=(prep/'preparacion_NO_IMPORTAR.json').read_bytes()
     exigir(contexto.get('formato')=='ims-abiertos-contexto-sql-v1' and contexto.get('integridad_sql_verificada') is True and contexto.get('copia_id')==sha(raw) and contexto.get('corte_id')==m['corte_id']==plan['corte_id'],'Contexto y copia incompatibles.')
+    if aceptacion is not None:
+        exigir(aceptacion.get('formato')=='ims-abiertos-corte-elegido-v1' and aceptacion.get('corte_id')==m['corte_id'] and aceptacion.get('copia_id')==contexto['copia_id'] and aceptacion.get('sha256_zip')==m['sha256_zip'] and aceptacion.get('usar_capturas_guardadas') is True and aceptacion.get('solicitar_nueva_extraccion_google') is False,'Aceptación de otro corte o paquete.')
+    requiere_delta=aceptacion is None
     for name,h in m['archivos_sha256'].items():exigir(sha_archivo(prep/name)==h,'Preparación alterada.')
     fuentes=[('SELECCION_ACTUAL',plan['corte_id'],i,f) for i,f in enumerate(plan['fuentes'],1) if f['tipo']=='INVENTARIO']
     if base:
@@ -143,6 +146,7 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
         elif estados==['ENTREGADO']:bloqueos['ENTREGADO_EN_SELECCION_ABIERTA']=1
         if existentes[f['id']]:bloqueos['ORIGEN_YA_PRESENTE_REQUIERE_DELTA']=1
         if not filas:bloqueos['ARCHIVO_SIN_PRODUCTOS']=1
+        if aceptacion is not None and f['estado']=='REVISION':avisos['CAPTURA_GUARDADA_CON_LIMITACION_ACEPTADA']=1
         codigos=set();fechas=set();hojas=set();series=defaultdict(list);lineas=[]
         perfiles_fecha={k:Counter() for k in ('fecha_inicio','fecha_fin')};origen_dia={k:Counter() for k in perfiles_fecha};zonas_fecha=Counter();muestras_fecha=[]
         for numero,row in enumerate(filas,1):
@@ -201,7 +205,7 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
                 l['numero']=numero;l['linea_id']=id_estable('linea',[inv_id,l['origen']['hoja_id'],l['origen']['fila']])
                 proyecciones.append({**l,'inventario_id':inv_id,'cliente_id':ids[0] if len(ids)==1 else None,'ambito':ambito})
             conteo={'conteo_en_fuente':ng,'productos':len(grupo),'sin_bloqueos_estructurales':not bool(bloqueos),
-                'requiere_delta_final':True,'listo_para_activar':False}
+                'requiere_delta_final':requiere_delta,'listo_para_activar':False}
             conteos.append(conteo);conteos_privados.append({**conteo,'inventario_id':inv_id,'origen_drive':f['id'],'ambito':ambito,
                 'cliente_id':ids[0] if len(ids)==1 else None,'cliente_panel':cliente,'sede':sedes[0] if len(sedes)==1 else None,
                 'codigo_operativo':codigo,'fecha_inicio':inicio,'criterio_inicio':criterio_inicio,'estado_destino':estados[0] if len(estados)==1 else None,
@@ -218,7 +222,7 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
             'series_repetidas':{'tipo':'STOCK_TEORICO','bloquea_importacion_stock':False,'grupos':len(repetidas),'lineas':sum(len(g) for g in repetidas),'muestras':muestras_series},
             'avisos':dict(sorted(avisos.items())),'capturas_presentes':{k:sum(l[k] is not None for l in lineas) for k in ('conteo_1','conteo_2','conteo_final')},
             'ceros_contados':{k:sum(l[k]=='0.000000000' for l in lineas) for k in ('conteo_1','conteo_2','conteo_final')},
-            'requiere_delta_final':True,'listo_para_activar':False}
+            'requiere_delta_final':requiere_delta,'listo_para_activar':False}
         publicos.append(publico);privados.append({**publico,'origen_drive':f['id'],
             'cliente_panel':cliente,'cliente_id':ids[0] if len(ids)==1 else None,'sede':sedes[0] if len(sedes)==1 else None,
             'codigos_originales':sorted(codigos),'fechas_inicio_originales':sorted(fechas),
@@ -235,7 +239,8 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
         'regla_fechas':REGLA_FECHAS,
         'fuentes':privados,'inventarios':conteos_privados,'esquemas':esquemas,'productos':len(proyecciones),'auxiliares_conservados':contexto['auxiliares'],
         'auxiliares_sha256':sha_archivo(auxiliares),'proyecciones_sha256':sha_archivo(salida/'lineas_operativas_NO_ACTIVAR.jsonl'),
-        'requiere_delta_final':True,'aprobado_para_importar':False}
+        'requiere_delta_final':requiere_delta,'aprobado_para_importar':False}
+    if aceptacion is not None:plan_privado['corte_elegido']=aceptacion
     escribir_json(salida/'plan_operativo_NO_ACTIVAR.json',plan_privado)
     totales=Counter()
     for p in publicos:totales.update(p['bloqueos'])
@@ -251,15 +256,16 @@ def proyectar_paquete(preparacion,contexto,plan,base,salida,reglas=None):
         'conteos_fuera_seleccion_conservados':sum(p['conteos_planificados'] for p in publicos if p['ambito']=='FUERA_SELECCION_CONSERVADO'),
         'fuentes':publicos,'bloqueos':dict(sorted(totales.items())),
         'maestro_hojas':[{'hoja_en_fuente':s['hoja_en_fuente'],'clase':s['clase'],'completa':s['filas_copiadas']==s['filas_previstas'],'filas_previstas':s['filas_previstas'],'filas_copiadas':s['filas_copiadas']} for s in esquemas if s['tipo_fuente']=='MAESTRO' and s['ambito']=='SELECCION_ACTUAL'],
-        'requiere_delta_final':True,'listo_para_activar':False,'datos_operativos_importados':False,
+        'requiere_delta_final':requiere_delta,'listo_para_activar':False,'datos_operativos_importados':False,
         'base_de_datos_modificada':False,'inventarios_activados':False,'permisos_creados':False,'publicacion_kpi':False,
         'servicios_reiniciados':False,'apache_modificado':False,'puertos_abiertos':[]}
+    if aceptacion is not None:resumen.update(corte_elegido_por_usuario=True,solicitar_nueva_extraccion_google=False,limitaciones_captura_conservadas=True)
     exigir((prep/'preparacion_NO_IMPORTAR.json').read_bytes()==raw and sha_archivo(m['archivo_zip'])==m['sha256_zip'],'La preparación cambió durante el plan.')
     for name,h in m['archivos_sha256'].items():exigir(sha_archivo(prep/name)==h,'La preparación cambió durante el plan.')
     escribir_json(salida/'resumen_plan_abiertos_para_compartir.json',resumen)
     return resumen
 
-def planificar(preparacion,contexto,salida,base_dir,reglas=None):
+def planificar(preparacion,contexto,salida,base_dir,reglas=None,aceptacion=None):
     prep=Path(preparacion);m=json.loads((prep/'preparacion_NO_IMPORTAR.json').read_bytes())
     validacion,privado=validar_zip(m['archivo_zip'],base_dir)
     exigir(privado['sha256_zip']==m['sha256_zip'],'ZIP diferente de la preparación.')
@@ -267,4 +273,4 @@ def planificar(preparacion,contexto,salida,base_dir,reglas=None):
         entradas={PurePosixPath(i.filename).name:i for i in z.infolist() if not i.is_dir()}
         p=cargar(z.read(entradas['plan_abiertos_privado.json']))
     base=buscar_base(p['recuperacion'],base_dir) if p['formato']=='ims-abiertos-corte-v2' else None
-    return proyectar_paquete(prep,contexto,p,base,Path(salida),reglas)
+    return proyectar_paquete(prep,contexto,p,base,Path(salida),reglas,aceptacion)

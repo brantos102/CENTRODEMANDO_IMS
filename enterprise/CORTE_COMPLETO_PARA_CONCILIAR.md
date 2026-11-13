@@ -1,5 +1,7 @@
 # Capturar el estado completo para conciliar la migración
 
+**Actualización del 13 de noviembre:** el usuario eligió continuar con el corte ya capturado y enviado, sin otra extracción de Google. Para ese corte seguir [Continuar con el corte elegido](CORTE_ELEGIDO_20261113.md). Las instrucciones de obtención de una captura nueva que siguen no se aplican a esa decisión.
+
 El plan `53b13ebc1e15e0eacb9e9e80ef2b750c0aade14c8586748f65721a9f4adef3de` confirmó que las 8.682 filas ya tienen sus fechas interpretadas. Conserva 22 conteos de la selección, 630 productos pendientes de iniciar, 984 filas auxiliares y un archivo entregado de 147 productos separado para conciliación. La aplicación actual y el histórico permanecen operativos.
 
 La revisión de la cabecera replica `marcarInicioInventario_` y `actualizarColumnasAC` de COD_INVENTARIOS: si un archivo tiene un único código y distintas fechas por línea, puede usar la fecha de A2 como inicio del inventario cuando C2 coincide con ese código y A2 se interpreta correctamente. Las fechas individuales permanecen intactas. No elige el mínimo de fechas, deduce la fecha del nombre ni aplica esta regla a la separación por código/fecha confirmada para la fila 317.
