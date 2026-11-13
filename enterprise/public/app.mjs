@@ -30,7 +30,7 @@ function mostrarAcceso(message=''){
   $('modal-conteo').close();$('form-conteo').reset();aviso();
   limpiarResumen();
 }
-function errorActual(e,c){if(!actual(c))return;if(e.status===401)mostrarAcceso('La sesión venció. Inicia sesión para continuar.');else aviso(e.message,true);}
+function errorActual(e,c){if(!actual(c))return;if(e.codigo==='CAMBIAR_CLAVE'){window.location.href='/centro#perfil';return;}if(e.status===401)mostrarAcceso('La sesión venció. Inicia sesión para continuar.');else aviso(e.message,true);}
 async function entrar(sesion){
   state.epoch++;state.usuario=sesion.usuario;state.csrf=sesion.csrf;
   state.soloLectura=sesion.soloLectura===true;
@@ -46,6 +46,8 @@ $('modo-lectura').hidden=!state.soloLectura;
   $('form-inventarios').reset();$('form-lineas').reset();limpiarResumen();
   await actualizarPendientes();if(!state.usuario)return;
   await Promise.all([cargarResumen(),cargarInventarios()]);
+  const id=new URLSearchParams(window.location.search).get('inventario');
+  if(sesion.centroDisponible&&/^[a-f0-9-]{36}$/.test(id||'')){const r=await api('/api/centro/inventario?inventario='+id);await seleccionar(r.inventario);}
 }
 function limpiarResumen(){
   state.resumen=null;

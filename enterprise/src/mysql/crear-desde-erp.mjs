@@ -18,9 +18,9 @@ async function insertar(c,tabla,columnas,rows){
 /** Una transacción: inventario, permisos, stock, procedencia, activación y auditoría.
  * La solicitud nunca contiene existencias ni IDs de clientes del navegador.
  * La confirmación persistida se recupera antes de requerir la caché temporal. */
-export async function crearInventarioERP({pool,principal:p,solicitud,obtenerVista}){
- const s=solicitudCrearERP(solicitud),digest=hash(s);
- for(let intento=0;intento<3;intento++)try{return await transaccionOperativa(pool,p,async c=>{
+export async function crearInventarioERP({pool,principal:p,solicitud,obtenerVista,conexion}){
+ const s=solicitudCrearERP(solicitud),digest=hash(s),ejecutar=conexion?(_pool,_p,fn)=>fn(conexion):transaccionOperativa;
+ for(let intento=0;intento<3;intento++)try{return await ejecutar(pool,p,async c=>{
   // Las claves únicas de evento y consulta impiden dos creaciones por reintento.
   // Un perdedor concurrente revierte y relee la confirmación sin ampliar privilegios.
   const [[prev]]=await c.execute('SELECT e.tipo,e.payload_sha256,e.resultado,i.sede FROM ims_nat_evento e LEFT JOIN ims_op_inventario i ON i.id=e.inventario_id WHERE e.actor_id=? AND e.operacion_id=? FOR SHARE',[p.actorId,s.operacionId]);

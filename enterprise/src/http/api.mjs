@@ -1,4 +1,9 @@
 import {createServer} from 'node:http';
+import {consultarCentro,mutarCentro} from '../centro/servicio.mjs';
+import {crearDesdeCentro} from '../centro/crear.mjs';
+import {solicitarTrabajo,consultarTrabajo,descargarTrabajo} from '../centro/trabajos.mjs';
+import {consultarConectores,guardarConector} from '../centro/conectores.mjs';
+import {reporteInventario,ics,consolidarCentro} from '../centro/reportes.mjs';
 import {ErrorAuth,tokensIguales} from '../auth/credenciales.mjs';
 import {iniciarSesion,autenticar,cerrarSesion} from '../auth/sesiones.mjs';
 import {guardarConteo} from '../mysql/conteos.mjs';
@@ -32,13 +37,13 @@ function json(res,status,body){
     'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"});
   res.end(JSON.stringify(body));
 }
-function leerJson(req){
+function leerJson(req,limite=16384){
   if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
     return Promise.reject(new ErrorAuth('FORMATO_INVALIDO','Envía JSON.',415));
   return new Promise((resolve,reject)=>{
     let n=0,superado=false;const partes=[];
     req.on('data',b=>{
-      n+=b.length;if(n>16384){if(!superado){superado=true;partes.length=0;reject(new ErrorAuth('CUERPO_EXCESIVO','Solicitud demasiado grande.',413));}return;}
+      n+=b.length;if(n>limite){if(!superado){superado=true;partes.length=0;reject(new ErrorAuth('CUERPO_EXCESIVO','Solicitud demasiado grande.',413));}return;}
       if(!superado)partes.push(b);
     });
     req.on('end',()=>{
@@ -65,7 +70,7 @@ const STATUS={NO_AUTENTICADO:401,SIN_PERMISO:403,BASE_NO_PERMITIDA:503,SOLICITUD
   ERP_CONSULTA_UTILIZADA:409,ERP_CLIENTE_PENDIENTE:409,CODIGO_EXISTENTE:409};
 
 /** No instala esquema ni crea usuarios. Todas las rutas de datos exigen sesión. */
-export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision,gestorERP=null,erpCreacion=false}){
+export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision,gestorERP=null,erpCreacion=false,centroHabilitado=false,claveCentro}){
   const origin=origenPublico(publicUrl);
   if(operacionNativa&&soloLectura)throw Error('Operación nativa incompatible con solo lectura.');
   if(gestorERP&&!operacionNativa)throw Error('ERP requiere operación nativa.');
@@ -78,8 +83,8 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       const url=new URL(req.url,origin);
       if(req.headers.origin&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
       if(req.method==='POST'&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
-      if(await servirEstatico(req,res,url))return;
-      if(req.method==='GET'&&url.pathname==='/salud')return json(res,200,{ok:true,servicio:'centro-mando-ims-candidata',...(revision?{revision}:{})});
+      if(await servirEstatico(req,res,url,{centroHabilitado}))return;
+      if(req.method==='GET'&&url.pathname==='/salud')return json(res,200,{ok:true,servicio:'centro-mando-ims-candidata',...(centroHabilitado?{centroMando:true}:{}),...(revision?{revision}:{})});
       if(req.method==='POST'&&url.pathname==='/api/sesion'){
         const ahora=Math.floor(Date.now()/60000);
         if(ahora!==minuto){minuto=ahora;intentosMinuto=0;}
@@ -91,12 +96,16 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           if(Object.keys(body).some(k=>!['correo','contrasena'].includes(k)))throw new ErrorAuth('SOLICITUD_INVALIDA','Campos no permitidos.',400);
           const sesion=await iniciarSesion(pool,body);
           res.setHeader('Set-Cookie',cookie(sesion.token));
-          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP,erpCreacionDisponible:erpCreacion});
+          return json(res,200,{usuario:sesion.usuario,csrf:sesion.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP,erpCreacionDisponible:erpCreacion,centroDisponible:centroHabilitado});
         }finally{loginsEnCurso--;}
       }
       if(!url.pathname.startsWith('/api/'))return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
       const principal=await autenticar(pool,tokenDeCookie(req.headers.cookie));
-      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP,erpCreacionDisponible:erpCreacion});
+      if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP,erpCreacionDisponible:erpCreacion,centroDisponible:centroHabilitado});
+      if(centroHabilitado&&!url.pathname.startsWith('/api/centro/')&&url.pathname!=='/api/sesion/cerrar'){
+        const perfil=await consultarCentro(pool,principal,'perfil');
+        if(perfil.perfil.cambiar_clave)throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
+      }
       if(req.method==='POST'){
         if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Vuelve a consultar la sesión.',403);
         if(url.pathname==='/api/sesion/cerrar'){
@@ -106,6 +115,38 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           if(soloLectura)throw new ErrorAuth('SOLO_LECTURA','Este piloto permite únicamente consultar inventarios.',403);
           return json(res,200,await guardarConteo({pool,principal,solicitud:await leerJson(req),soloNativos:operacionNativa}));
         }
+      }
+      if(url.pathname.startsWith('/api/centro/')){
+        if(!centroHabilitado)throw new ErrorAuth('NO_CONFIGURADO','El Centro de Mando aún no está preparado.',503);
+        const ruta=url.pathname.slice('/api/centro/'.length);
+        const perfil=await consultarCentro(pool,principal,'perfil');
+        if(perfil.perfil.cambiar_clave&&!['perfil','clave'].includes(ruta))throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
+        if(req.method==='GET'&&ruta==='conexiones')return json(res,200,await consultarConectores(pool,principal,claveCentro));
+        if(req.method==='POST'&&ruta==='conexiones')return json(res,200,await guardarConector(pool,principal,await leerJson(req,65536),claveCentro));
+        if(req.method==='POST'&&ruta==='trabajos')return json(res,202,await solicitarTrabajo(pool,principal,await leerJson(req)));
+        const trabajo=/^trabajos\/([a-f0-9-]+)(\/archivo)?$/.exec(ruta);
+        if(req.method==='GET'&&trabajo){
+          if(!trabajo[2])return json(res,200,await consultarTrabajo(pool,principal,trabajo[1]));
+          const b=await descargarTrabajo(pool,principal,trabajo[1]);res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="inventarios-'+trabajo[1]+'.zip"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(b);
+        }
+        if(req.method==='GET'&&ruta==='calendario.ics'){
+          const r=await consultarCentro(pool,principal,'eventos');const contenido=ics(r.eventos);
+          res.writeHead(200,{'Content-Type':'text/calendar; charset=utf-8','Content-Disposition':'attachment; filename="calendario-itsanet.ics"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(contenido);
+        }
+        const reporte=/^inventarios\/([a-f0-9-]+)\/(csv|excel)$/.exec(ruta);
+        if(req.method==='GET'&&reporte){
+          const r=await reporteInventario(pool,principal,reporte[1],reporte[2]);res.writeHead(200,{'Content-Type':r.tipo,'Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);
+        }
+        if(req.method==='GET'&&['contexto','perfil','usuarios','dashboard','eventos','analitica','codigos','auditoria','legado','archivo-legado','inventario'].includes(ruta)){
+          const q=opciones(url,['sede','cliente','buscar','mes','desde','hasta','fuente','inventario','hoja']);return json(res,200,await consultarCentro(pool,principal,ruta,q));
+        }
+        if(req.method==='POST'&&ruta==='inventarios'){
+          if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
+          return json(res,200,await crearDesdeCentro({pool,principal,solicitud:await leerJson(req,32*1024*1024),obtenerVista:gestorERP?(actor,id)=>gestorERP.paraCrear(actor,id):undefined}));
+        }
+        if(req.method==='POST'&&ruta==='consolidar')return json(res,200,await consolidarCentro(pool,principal,await leerJson(req)));
+        if(req.method==='POST'&&['evento','accion','vincular','carpeta','archivar','perfil','clave','usuario','usuario-estado','usuario-clave','usuario-rol','codigos'].includes(ruta))return json(res,200,await mutarCentro({pool,principal,tipo:ruta,solicitud:await leerJson(req)}));
+        return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
       }
       if(url.pathname.startsWith('/api/erp/')){
         if(!gestorERP)throw new ErrorAuth('ERP_NO_CONFIGURADO','La consulta ERP todavía no está habilitada.',403);
@@ -157,12 +198,12 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         if(req.method==='POST'&&op){
           if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Consulta tu sesión.',403);
           if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
-          return json(res,200,await ejecutarOperacion({pool,principal,tipo:op[1],solicitud:await leerJson(req)}));
+          return json(res,200,await ejecutarOperacion({pool,principal,tipo:op[1],solicitud:await leerJson(req),legadoCentro:centroHabilitado}));
         }
         if(req.method==='POST'&&url.pathname==='/api/operacion/serie/consultar'){
           const body=await leerJson(req);
           if(Object.keys(body).some(k=>!['inventarioId','clienteId','serie'].includes(k)))throw new ErrorAuth('SOLICITUD_INVALIDA','Campos no permitidos.',400);
-          return json(res,200,await previsualizarSerie(pool,principal,body.inventarioId,{clienteId:body.clienteId,serie:body.serie}));
+          return json(res,200,await previsualizarSerie(pool,principal,body.inventarioId,{clienteId:body.clienteId,serie:body.serie},{legadoCentro:centroHabilitado}));
         }
         const historial=/^\/api\/operacion\/inventarios\/([a-f0-9-]+)\/(series|hallazgos)$/.exec(url.pathname);
         if(req.method==='GET'&&historial){

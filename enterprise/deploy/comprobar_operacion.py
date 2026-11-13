@@ -5,7 +5,7 @@ import uuid
 from publicar_piloto_https import exigir
 
 
-def comprobar(request, usuario, conteos, filas, erp_conexiones=None, erp_creacion=False):
+def comprobar(request, usuario, conteos, filas, erp_conexiones=None, erp_creacion=False,centro=False):
     cookie = csrf = None
 
     def consultar(method, path, body=None, auth=True):
@@ -36,6 +36,11 @@ def comprobar(request, usuario, conteos, filas, erp_conexiones=None, erp_creacio
                    and all(set(c) == {'referencia','sede','etiqueta','clienteId','clienteNombre','codigosCliente'} for c in erp['conexiones']), 'El catálogo ERP no coincide o expone campos privados.')
         if erp_creacion:
             exigir(s.get('erpCreacionDisponible') is True,'La creación ERP no está habilitada en la sesión.')
+        if centro:
+            exigir(s.get('centroDisponible') is True,'Centro no habilitado.')
+            for ruta,campo in [('contexto','perfil'),('dashboard','indicadores'),('eventos','eventos'),('usuarios','usuarios'),('analitica','usuarios')]:
+                status,_,cm=consultar('GET','/api/centro/'+ruta)
+                exigir(status==200 and campo in cm,'No se confirmó una función del Centro de Mando.')
         lineas_nativas = sum(int(r['lineas']) for r in contexto['inventarios'])
         ids, historicos, cursor = set(), [], ''
         while True:
@@ -69,5 +74,5 @@ def comprobar(request, usuario, conteos, filas, erp_conexiones=None, erp_creacio
             exigir(status == 200 and r.get('ok') is True, 'No se confirmó el logout.')
     status, _, _ = consultar('GET', '/api/sesion')
     exigir(status == 401, 'La sesión continúa vigente tras salir.')
-    return {**({'erp_creacion':True} if erp_creacion else {}),**({'erp_consulta':True,'conexiones_erp':erp_conexiones} if erp_conexiones is not None else {}),'login_https':True, 'logout_verificado':True, 'operacion_nativa':True, 'historico_protegido':True,
+    return {**({'centro_mando':True} if centro else {}),**({'erp_creacion':True} if erp_creacion else {}),**({'erp_consulta':True,'conexiones_erp':erp_conexiones} if erp_conexiones is not None else {}),'login_https':True, 'logout_verificado':True, 'operacion_nativa':True, 'historico_protegido':True,
             'conteos_historicos':conteos,'filas_historicas':filas,'conteos_nativos':len(natives),'publicacion_kpi':False}

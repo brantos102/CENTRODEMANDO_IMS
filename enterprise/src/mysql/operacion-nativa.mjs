@@ -1,3 +1,4 @@
+import {serieYaCapturada,entregarCronograma} from '../centro/legado.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 import {ErrorConteo} from '../dominio/conteo.mjs';
 import {correoCanonico,crearHashPassword,verificarPassword} from '../auth/credenciales.mjs';
@@ -83,7 +84,7 @@ const CAMPOS={
 /** Todas las mutaciones se limitan a inventarios creados aquí, nunca al histórico migrado.
  * operacionId se conserva al reintentar, incluso si se pierde la respuesta de COMMIT.
  */
-export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s}){
+export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s,conexion,legadoCentro=false}){
  exigir(Object.hasOwn(CAMPOS,tipo));campos(s,['operacionId',...CAMPOS[tipo]]);uuid(s.operacionId);
  const digest=hash({tipo,...s,...(tipo==='usuario'?{contrasena:undefined}:{})});
 
@@ -92,7 +93,8 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s}){
   exigir(typeof s.contrasena==='string'&&s.contrasena.length>=12&&Buffer.byteLength(s.contrasena)<=1024);
 
  }
- return transaccion(pool,p,async c=>{
+ const ejecutar=conexion?(_pool,_p,fn)=>fn(conexion):transaccion;
+ return ejecutar(pool,p,async c=>{
   let n;
   if(['crear','usuario'].includes(tipo))await ambito(c,p,s.sede,tipo==='usuario');
   else n=await acceso(c,p,s.inventarioId,['serie','hallazgo'].includes(tipo)?null:SUPER,!['serie','hallazgo'].includes(tipo),true);
@@ -133,6 +135,7 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s}){
    exigir(!prevUser,'SOLICITUD_INVALIDA','El correo ya tiene una cuenta propia. No se cambia su identidad ni su contraseña.');
    const actor=randomUUID();await c.execute('INSERT INTO ims_op_actor VALUES (?,1)',[actor]);
    await c.execute('INSERT INTO ims_auth_usuario(actor_id,correo,nombre,password_hash) VALUES (?,?,?,?)',[actor,correo,texto(s.nombre,255,false),await crearHashPassword(s.contrasena)]);
+   if(legadoCentro){await c.execute("INSERT INTO ims_cm_perfil(actor_id,rol,rol_wms) VALUES (?,'OPERARIO','AUDITOR')",[actor]);await c.execute('INSERT INTO ims_cm_acceso VALUES (?,?)',[actor,s.sede]);}
    result={actorId:actor,correo,sinPermisos:true};
   }else if(tipo==='lineas'){
    exigir(n.borrador&&n.estado==='EN_PROCESO','INVENTARIO_NO_EDITABLE','La carga de stock ya está cerrada.');
@@ -194,6 +197,7 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s}){
    await c.execute('UPDATE ims_op_linea SET version=version+1 WHERE id=?',[l.id]);
    result={inventarioId:n.id,lineaId:l.id,ajuste,motivo,justificacion,versionLinea:String(BigInt(l.version)+1n),version:await nuevaVersion(c,n)};
   }else if(['serie','hallazgo'].includes(tipo)){
+   if(tipo==='serie'&&legadoCentro)exigir(!await serieYaCapturada(c,n.id,s.serie),'SERIE_DUPLICADA','La serie ya está registrada en la planilla física del corte migrado.');
    const captura=await prepararCaptura(c,n,p,s,tipo);result=captura.resultado;antes=captura.antes;persistir=captura.persistir;
   }else if(tipo==='estado'){
    exigir(!n.borrador,'INVENTARIO_NO_EDITABLE','Activa primero el stock.');
@@ -209,6 +213,7 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s}){
    }else exigir(s.confirmarIncompleto===undefined&&s.fechaEntrega===undefined);
    await c.execute('UPDATE ims_op_inventario SET estado=? WHERE id=?',[s.estado,n.id]);
    if(s.estado==='ENTREGADO')await c.execute('UPDATE ims_nat_inventario SET fecha_entrega=? WHERE inventario_id=?',[s.fechaEntrega,n.id]);
+   if(legadoCentro&&s.estado==='ENTREGADO')await entregarCronograma(c,{inventarioId:n.id,actorId:p.actorId,operacionId:s.operacionId});
    result={inventarioId:n.id,estado:s.estado,fechaEntrega:s.fechaEntrega??null,incompleto,contadas:Number(av.contadas),total:Number(av.total),publicacionKpi:false,version:await nuevaVersion(c,n)};
   }
   const salida={ok:true,operacionId:s.operacionId,...result};
@@ -258,9 +263,9 @@ export async function consultarOperacion(pool,p,id,{analisis=false,cursor=''}={}
  });
 }
 
-export async function previsualizarSerie(pool,p,id,solicitud){
+export async function previsualizarSerie(pool,p,id,solicitud,{legadoCentro=false}={}){
  campos(solicitud,['clienteId','serie']);
- return transaccion(pool,p,async c=>{const n=await acceso(c,p,id);exigirClienteCaptura(n,solicitud);return consultarSerieInterna(c,n,solicitud);});
+ return transaccion(pool,p,async c=>{const n=await acceso(c,p,id);exigirClienteCaptura(n,solicitud);const r=await consultarSerieInterna(c,n,solicitud);if(legadoCentro&&await serieYaCapturada(c,n.id,solicitud.serie))r.duplicada=true;return r;});
 }
 export async function historialCapturas(pool,p,id,{clienteId,cursor='',tipo='series'}={}){
  uuid(clienteId);if(cursor)uuid(cursor);exigir(['series','hallazgos'].includes(tipo));

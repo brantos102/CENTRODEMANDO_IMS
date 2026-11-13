@@ -33,7 +33,7 @@ async function contexto(seleccion=$('op-inventario').value){
  $('op-erp').hidden=!state.sesion.erpDisponible||!data.ambitos.some(r=>['ADMIN','SUPERVISOR'].includes(r.rol));
  $('op-inventario').replaceChildren(new Option('Selecciona un inventario',''),...data.inventarios.map(i=>new Option(i.sede+' · '+i.codigo_operativo+' · '+(i.borrador?'BORRADOR':i.estado),i.id)));
  $('op-inventario').value=seleccion;
- $('op-creacion').hidden=!data.ambitos.length;$('op-cuentas').hidden=!data.ambitos.some(r=>r.rol==='ADMIN');
+ $('op-creacion').hidden=state.sesion.centroDisponible||!data.ambitos.length;$('op-cuentas').hidden=state.sesion.centroDisponible||!data.ambitos.some(r=>r.rol==='ADMIN');
  $('op-sede').replaceChildren(...data.ambitos.map(r=>new Option(r.sede,r.sede)));
  $('op-sede-cuenta').replaceChildren(...data.ambitos.filter(r=>r.rol==='ADMIN').map(r=>new Option(r.sede,r.sede)));
  $('op-clientes').replaceChildren(...data.clientes.map(r=>new Option(r.nombre,r.id)));

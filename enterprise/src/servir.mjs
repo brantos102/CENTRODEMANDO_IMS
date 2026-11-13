@@ -1,3 +1,4 @@
+import {iniciarTrabajadorCentro} from './centro/trabajos.mjs';
 import {pathToFileURL} from 'node:url';
 import {crearPoolConteos} from './mysql/conteos.mjs';
 import {crearApi,origenPublico} from './http/api.mjs';
@@ -19,11 +20,14 @@ export function configuracionApi(env){
   if(env.IMS_ERP_HABILITADO==='1'&&env.IMS_OPERACION_NATIVA!=='1')throw Error('ERP requiere el perfil nativo propio.');
   if(env.IMS_ERP_CREACION!==undefined&&!['0','1'].includes(env.IMS_ERP_CREACION))throw Error('Modo de creación ERP inválido.');
   if(env.IMS_ERP_CREACION==='1'&&env.IMS_ERP_HABILITADO!=='1')throw Error('Creación ERP requiere consultas habilitadas.');
-  return {erpCreacion:env.IMS_ERP_CREACION==='1',erpHabilitado:env.IMS_ERP_HABILITADO==='1',operacionNativa:env.IMS_OPERACION_NATIVA==='1',host:'127.0.0.1',port,publicUrl:origenPublico(env.IMS_PUBLIC_URL),soloLectura:env.IMS_SOLO_LECTURA==='1',revision:env.IMS_RELEASE};
+  if(env.IMS_CENTRO_HABILITADO!==undefined&&!['0','1'].includes(env.IMS_CENTRO_HABILITADO))throw Error('Modo de Centro inválido.');
+  if(env.IMS_CENTRO_HABILITADO==='1'&&env.IMS_OPERACION_NATIVA!=='1')throw Error('Centro requiere operación nativa.');
+  if(env.IMS_CENTRO_HABILITADO==='1'&&(!/^[a-f0-9]{64}$/.test(env.IMS_CENTRO_CLAVE||'')||!/^[a-f0-9-]{36}$/.test(env.IMS_CENTRO_ADMIN_ID||'')))throw Error('Centro requiere configuración privada completa.');
+  return {centroHabilitado:env.IMS_CENTRO_HABILITADO==='1',erpCreacion:env.IMS_ERP_CREACION==='1',erpHabilitado:env.IMS_ERP_HABILITADO==='1',operacionNativa:env.IMS_OPERACION_NATIVA==='1',host:'127.0.0.1',port,publicUrl:origenPublico(env.IMS_PUBLIC_URL),soloLectura:env.IMS_SOLO_LECTURA==='1',revision:env.IMS_RELEASE};
 }
 async function main(){
   const config=configuracionApi(process.env),pool=await crearPoolConteos(process.env);
-  let server;
+  let server,trabajador;
   try{
     const [[db]]=await pool.query('SELECT DATABASE() AS nombre,CURRENT_USER() AS usuario');
     if(!/^centromando_ims(?:_[a-z0-9_]+)?$/.test(db.nombre||'')||/^root@/i.test(db.usuario||''))throw Error('Base no permitida');
@@ -35,11 +39,13 @@ async function main(){
     if(config.operacionNativa){await pool.query('SELECT inventario_id FROM ims_nat_inventario LIMIT 0');await pool.query('SELECT id FROM ims_nat_serie LIMIT 0');await pool.query('SELECT id FROM ims_nat_hallazgo LIMIT 0');}
     const gestorERP=config.erpHabilitado?crearGestorVistasERP({conexiones:registroERPDesdeEntorno(process.env)}):null;
     if(config.erpCreacion)await validarEsquemaCreacionERP(pool);
-    server=crearApi({pool,publicUrl:config.publicUrl,soloLectura:config.soloLectura,revision:config.revision,operacionNativa:config.operacionNativa,gestorERP,erpCreacion:config.erpCreacion});
+    if(config.centroHabilitado)await pool.query('SELECT actor_id FROM ims_cm_perfil LIMIT 0');
+    server=crearApi({pool,publicUrl:config.publicUrl,soloLectura:config.soloLectura,revision:config.revision,operacionNativa:config.operacionNativa,gestorERP,erpCreacion:config.erpCreacion,centroHabilitado:config.centroHabilitado,claveCentro:process.env.IMS_CENTRO_CLAVE});
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,config.host,resolve);});
     console.log(`Centro de Mando candidato disponible en ${config.host}:${config.port}; modo ${config.soloLectura?'solo lectura':'operativo de ensayo'}.`);
+    if(config.centroHabilitado)trabajador=iniciarTrabajadorCentro({pool,clave:process.env.IMS_CENTRO_CLAVE,actorAutomatico:process.env.IMS_CENTRO_ADMIN_ID});
     let cerrando=false;
-    const cerrar=()=>{if(cerrando)return;cerrando=true;server.close(async()=>{await pool.end();process.exitCode=0;});};
+    const cerrar=()=>{if(cerrando)return;cerrando=true;server.close(async()=>{await trabajador?.cerrar();await pool.end();process.exitCode=0;});};
     process.once('SIGTERM',cerrar);process.once('SIGINT',cerrar);
   }catch{if(server)server.close();await pool.end();console.error('No se inició la API candidata. Revisa configuración y esquema de su base exclusiva.');process.exitCode=1;}
 }

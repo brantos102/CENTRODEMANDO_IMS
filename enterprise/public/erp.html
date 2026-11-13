@@ -1,6 +1,7 @@
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stock ERP · Centro de Mando</title><link rel="stylesheet" href="/assets/estilos.css"><script type="module" src="/assets/erp.mjs"></script></head><body class="operacion-nativa erp-consulta">
 <header class="cabecera"><div><strong>Centro de Mando · ITSANET IMS</strong><p>Consulta de stock ERP</p></div><a href="/operacion">Volver a operación</a></header>
-<main><h1>Stock por cuentas, productos o posiciones</h1><p id="erp-usuario"></p><p id="erp-aviso" role="status">Consultando acceso…</p>
+<main>
+<p><a href="/centro">← Centro de Mando Integral</a> · <a href="/crear">Crear y vincular inventario</a></p><h1>Stock por cuentas, productos o posiciones</h1><p id="erp-usuario"></p><p id="erp-aviso" role="status">Consultando acceso…</p>
 <section id="erp-contenido" hidden><p class="tarjeta" id="erp-alcance">Solo consulta. Esta pantalla no crea inventarios ni modifica existencias. La operación vigente continúa en su sistema actual.</p>
 <form id="erp-form" class="tarjeta"><fieldset id="erp-controles"><legend>Elegir stock para revisar</legend>
 <label for="erp-sede">Sede</label><select id="erp-sede" required></select>
@@ -24,4 +25,4 @@
 <label for="erp-responsable">Responsable</label><input id="erp-responsable" maxlength="255">
 <button id="erp-crear-enviar" class="primario">Crear inventario y habilitar conteo</button></fieldset></form>
 <p><a id="erp-creado" hidden>Abrir el inventario creado</a></p></section>
-</section><p><a href="/">Inventarios e inicio de sesión</a></p></main></body></html>
+</section><p><a href="/inventarios">Inventarios e inicio de sesión</a></p></main></body></html>
