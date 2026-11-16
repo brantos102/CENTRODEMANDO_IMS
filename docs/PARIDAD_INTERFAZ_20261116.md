@@ -2,6 +2,8 @@
 
 Esta revisión continúa la migración completa solicitada. El objetivo incluye **Centro de Mando, ITSANET IMS/WMS, EAN y WTW**. Instalar esta revisión no significa que las dependencias externas estén resueltas ni que se haya completado la aceptación de producción.
 
+**Ampliación posterior del 16/11:** recibidos y validados los CSV reales EAN y posiciones, con 12.496 y 31.751 registros respectivamente. Se admite su formato DEPOT directo, Windows-1252/UTF-8, asociaciones pendientes y conservación del CSV original. El backend WTW, plano y unidad de dimensiones siguen pendientes. Consultar [carga de catálogos reales](../enterprise/CATALOGOS_EAN_WTW.md); los recuentos de pruebas de la entrega inicial se conservan más abajo.
+
 Se cotejaron el código original disponible (`CentroDeMandoIntegral.html`, `BlindInventory.html`, `Cronograma_Recordatorios.js`, adaptadores ITSANET y el cotejo documentado de WMS V124), las capturas del usuario y las pantallas nuevas mediante Chromium. No se inspeccionó una sesión corporativa autenticada del navegador ni se modificaron sus proyectos de Google.
 
 ## Base confirmada y cambios actuales
@@ -17,7 +19,7 @@ El usuario confirmó la instalación anterior `df7d43dbd086dc01a4767e63acf751e94
 | Series, semejanzas y planilla alterna | Pantalla integrada con cámara/lector, selección explícita de coincidencia y trazabilidad | Navegador/SQL. Preserva los datos auxiliares disponibles del origen |
 | Análisis y ajustes | Motor oficial ITSANET IMS / WMS V124; supervisión por línea y cantidades exactas legibles | Cotejo con función original y SQL. No redondea el stock para ocultar fracciones |
 | Móvil y continuidad entre pantallas | Cabecera/tema comunes, inventario conservado entre productos, series, análisis y catálogos; conteos como tarjetas en móvil | Capturas sintéticas y recorridos a 390 px; no requiere desplazamiento horizontal para guardar el conteo |
-| EAN | Importación privada/versionada por sede y resolución exacta por inventario/cliente autorizado | SQL/navegador. Falta cargar el catálogo real; no se eliminan ceros ni se elige arbitrariamente entre SKU |
+| EAN | Importación privada/versionada por sede y resolución exacta por inventario/cliente autorizado | CSV real recibido/validado; falta confirmar su carga corporativa y las asociaciones pendientes. No se eliminan ceros ni se elige arbitrariamente entre SKU |
 | Ubicaciones WTW / visor | Catálogo local, filtro, impresión de nombres, visor de geometría explícita y acceso al WTW original | Probado con posiciones sintéticas. Falta maestro real y backend externo; no se declara paridad completa de sus operaciones/etiquetas/3D |
 | Excel, CSV e historial | CSV conserva 30 columnas; libro XLSX añade análisis, series, alterna, capturas, originales autorizados y cobertura; ZIP y envío | Ceros de SKU y cantidades como texto exacto. Hojas parciales identificadas; no se inventa el historial faltante |
 | Correo y Calendar | OAuth web con PKCE, estado de un uso ligado a sesión administrativa, configuración cifrada y reemplazo de cuenta; sincronización propia por tarea/lote | SQL y transportes simulados. Cliente Cloud y consentimiento real aún pendientes. No se enviaron mensajes ni se escribieron calendarios reales en las pruebas |
@@ -29,8 +31,8 @@ El usuario confirmó la instalación anterior `df7d43dbd086dc01a4767e63acf751e94
 ## Lo que requiere datos o acceso externos
 
 1. **Google Cloud:** crear el cliente OAuth web y autorizar `bespinoza@itsanet.com`. La [guía de configuración](../enterprise/GOOGLE_CORREO_CALENDAR.md) incluye las APIs, permisos y la URI exacta. Queda preparada la sustitución por la cuenta oficial, sin cambios de código.
-2. **EAN:** entregar el catálogo efectivo al responsable para cargarlo por el formulario privado. La búsqueda por Drive y el adaptador genérico del respaldo no prueban por sí solos cuál es su fuente vigente.
-3. **WTW:** recibir el maestro POS_UIO, el ID de proyecto Apps Script, su código/versión activa y reglas. El ID de despliegue disponible no permite reconstruir su backend. Se pidió al usuario la ubicación y responsable de estas fuentes, sin pedir credenciales en el chat.
+2. **EAN:** cargar el CSV recibido por el formulario privado y confirmar las asociaciones pendientes; no es necesario volver a entregar ese catálogo.
+3. **WTW:** el maestro de ambas sedes ya se recibió. Faltan el ID de proyecto Apps Script, su código/versión activa, unidad de dimensiones y configuración de distribución. El ID de despliegue disponible no permite reconstruir su backend. Se pidió al usuario la ubicación y responsable de estas fuentes, sin pedir credenciales en el chat.
 4. Completar las funciones auxiliares identificadas y su cotejo con la versión original, y aceptar los flujos con responsables/operadores de ambas sedes. Probar respaldo/restauración y operación del servidor con sus datos efectivos antes de confirmar el cierre total.
 
 Estas dependencias no justifican sobrescribir datos ni desactivar el aplicativo Google todavía utilizado por otros proyectos. El servicio sigue marcado como **entorno de validación**. El paso a producción se realizará cuando la implementación completa y su aceptación estén terminadas, conforme a la última instrucción del usuario.
@@ -52,6 +54,6 @@ Capturas revisables: [conteo escritorio](capturas/ims-conteo-escritorio-20261116
 
 ## Instalación de la revisión
 
-Usar el lanzador fijado a la revisión publicada, como indica [Centro de Mando MySQL](../enterprise/CENTRO_MANDO_MYSQL.md). Reutiliza el mismo respaldo privado, comprueba pruebas/permisos, añade únicamente las tres tablas de catálogos y prepara una versión independiente. No cambia la clave privada existente ni importa catálogos automáticamente.
+Usar el lanzador fijado a la revisión publicada, como indica [Centro de Mando MySQL](../enterprise/CENTRO_MANDO_MYSQL.md). Reutiliza el mismo respaldo privado, comprueba pruebas/permisos, prepara únicamente las tablas propias de catálogos y sus originales y prepara una versión independiente. No cambia la clave privada existente ni importa catálogos automáticamente.
 
 Solo se reinicia `centro-mando-ims-ensayo.service`. Se conservan `127.0.0.1:3003`, HTTPS `8445`, Apache y los servicios de otros proyectos. Si la comprobación HTTPS falla, se restaura la unidad anterior; las tablas aditivas quedan conservadas. No crea un cliente Google Cloud ni autoriza una cuenta como consecuencia de instalar el código.

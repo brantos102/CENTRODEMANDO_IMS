@@ -1,0 +1,84 @@
+{
+  "ok": true,
+  "archivos": [
+    {
+      "tipo": "EAN",
+      "archivo": "RELACION_EAN13_UIO.csv",
+      "bytes": 492827,
+      "sha256": "c9ff4617bd8c9dcbb61963bdb00856f4324add5e29b81833a23c2d7b8d542de5",
+      "codificacion": "Windows-1252",
+      "formato": "DEPOT_EAN_V1",
+      "registros": 12496,
+      "porSede": null,
+      "filasConGeometria": 0,
+      "columnasOriginales": 5,
+      "filasOriginalesConservables": 12496
+    },
+    {
+      "tipo": "WTW",
+      "archivo": "POS_ITSANET.csv",
+      "bytes": 3788450,
+      "sha256": "1bab34bf817a591043ec1a2fb5d81c643715b0bbcb91f92ac8ac48591fd7ea48",
+      "codificacion": "UTF-8",
+      "formato": "DEPOT_POS_V1",
+      "registros": 31751,
+      "porSede": {
+        "UIO": {
+          "registros": 18540,
+          "posicionesFisicas": 18396
+        },
+        "GYE": {
+          "registros": 13211,
+          "posicionesFisicas": 12798
+        }
+      },
+      "filasConGeometria": 0,
+      "columnasOriginales": 26,
+      "filasOriginalesConservables": 31751
+    }
+  ],
+  "datosImportados": false,
+  "fuentesModificadas": false,
+  "formato": "ims-catalogos-depot-validacion-v1",
+  "fecha": "2026-11-16",
+  "validacion": "Archivos reales completos: estructura, proyección y conservación de originales. No importados en el servidor corporativo.",
+  "pruebas": {
+    "node": {
+      "aprobadas": 198,
+      "fallidas": 0
+    },
+    "python": {
+      "aprobadas": 161,
+      "fallidas": 0
+    },
+    "mysql_centro": {
+      "aprobadas": 32,
+      "fallidas": 0
+    },
+    "chromium": {
+      "aprobadas": 31,
+      "fallidas": 0
+    },
+    "carga_clientes_demorada": "Respuesta real retenida: la carga permanece oculta hasta disponer del catálogo de clientes.",
+    "original_multisede": "Descarga completa reservada a administradores con acceso a todas las sedes del CSV."
+  },
+  "recursos": {
+    "node": "22.23.3",
+    "mysql": "8.0.46",
+    "limite_heap_mib": 256,
+    "limite_contenedor_mib": 512,
+    "cpu": 0.5,
+    "tiempo_archivos_completos_ms": 3435,
+    "rss_final_mib": 171
+  },
+  "pendientes": [
+    "Confirmar importación privada por sede en el servidor",
+    "Revisar asociaciones de clientes EAN no confirmadas",
+    "Confirmar semántica de CANTIDAD y unidad de dimensiones",
+    "Recibir backend y configuración física del WTW actual"
+  ],
+  "csv_reales_en_repositorio": false,
+  "stock_modificado": false,
+  "apache_modificado": false,
+  "puertos_corporativos_abiertos": []
+}

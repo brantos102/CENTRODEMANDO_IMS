@@ -44,6 +44,7 @@ class CentroDeployTest(unittest.TestCase):
   self.assertNotIn('DELETE',cm.CM_TABLES['ims_cm_auditoria'])
   self.assertNotIn('UPDATE',cm.CM_TABLES['ims_cm_auditoria'])
  def test_catalogos_versionados_no_admiten_sobrescribir_ni_borrar_originales(self):
+  self.assertEqual(cm.CM_TABLES['ims_cm_catalogo_archivo'],'SELECT, INSERT')
   self.assertEqual(cm.CM_TABLES['ims_cm_catalogo'],'SELECT, INSERT')
   self.assertEqual(cm.CM_TABLES['ims_cm_catalogo_fila'],'SELECT, INSERT')
   self.assertEqual(cm.CM_TABLES['ims_cm_catalogo_actual'],'SELECT, INSERT, UPDATE')

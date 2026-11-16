@@ -152,3 +152,11 @@ CREATE TABLE IF NOT EXISTS ims_cm_catalogo_actual (
  PRIMARY KEY(sede,tipo), FOREIGN KEY(catalogo_id) REFERENCES ims_cm_catalogo(id),
  CHECK(sede IN ('UIO','GYE')), CHECK(tipo IN ('EAN','WTW'))
 ) ENGINE=InnoDB;
+-- CSV original en fragmentos inmutables, con hash del archivo completo.
+CREATE TABLE IF NOT EXISTS ims_cm_catalogo_archivo (
+ catalogo_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ parte INT UNSIGNED NOT NULL, sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ bytes_archivo INT UNSIGNED NOT NULL, codificacion VARCHAR(30) NOT NULL, formato VARCHAR(40) NOT NULL, sedes_archivo VARCHAR(30) NOT NULL,
+ contenido MEDIUMBLOB NOT NULL, PRIMARY KEY(catalogo_id,parte),
+ FOREIGN KEY(catalogo_id) REFERENCES ims_cm_catalogo(id)
+) ENGINE=InnoDB;

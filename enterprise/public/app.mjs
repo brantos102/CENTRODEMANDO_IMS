@@ -254,7 +254,7 @@ async function buscarCodigo(){
  if(!id)return;
  try{if(state.centroDisponible&&valor){const r=await api('/api/centro/ean?'+new URLSearchParams({inventario:id,codigo:valor}));if(!actual(c)||seq!==seqBusqueda||$('buscar-lineas').value.trim()!==valor)return;
   if(r.ambigua){aviso('Este EAN corresponde a varios productos autorizados. Selecciona el producto antes de contar.');for(const f of r.coincidencias){const b=el('button',f.cliente+' · '+f.sku,'secundario');b.type='button';b.onclick=()=>{$('buscar-lineas').value=f.sku;$('ean-coincidencias').replaceChildren();void cargarLineas(false,f.sku);};$('ean-coincidencias').append(b);}return;}
-  if(r.coincidencias.length){const sku=r.coincidencias[0].sku;$('buscar-lineas').value=sku;aviso('EAN '+valor+' → producto '+sku+'. Selecciona su ubicación.');await cargarLineas(false,sku);return;}
+  if(r.coincidencias.length){const sku=r.coincidencias[0].sku;$('buscar-lineas').value=sku;const presentaciones=[...new Set(r.coincidencias.filter(f=>f.tipoCodigo).map(f=>f.tipoCodigo+' · '+(f.cantidadPresentacion===''?'cantidad no informada':f.cantidadPresentacion)))];aviso('EAN '+valor+' → producto '+sku+'. Selecciona su ubicación.'+(presentaciones.length?' Valor CANTIDAD del catálogo: '+presentaciones.join('; ')+'. La cantidad se introduce manualmente.':''));await cargarLineas(false,sku);return;}
  }if(actual(c)&&seq===seqBusqueda)await cargarLineas(false,valor);
  }catch(e){errorActual(e,c);}
 }

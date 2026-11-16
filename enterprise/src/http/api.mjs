@@ -1,5 +1,5 @@
 import {iniciarGoogleOAuth,completarGoogleOAuth,callbackGoogle} from '../centro/google-oauth.mjs';
-import {consultarCatalogos,importarCatalogo,resolverEAN} from '../centro/catalogos.mjs';
+import {consultarCatalogos,importarCatalogo,resolverEAN,previsualizarCatalogo,originalCatalogo} from '../centro/catalogos.mjs';
 import {createServer} from 'node:http';
 import {consultarCentro,mutarCentro} from '../centro/servicio.mjs';
 import {crearDesdeCentro} from '../centro/crear.mjs';
@@ -129,8 +129,14 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         const ruta=url.pathname.slice('/api/centro/'.length);
         const perfil=await consultarCentro(pool,principal,'perfil');
         if(perfil.perfil.cambiar_clave&&!['perfil','clave'].includes(ruta))throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
-        if(req.method==='GET'&&ruta==='catalogos')return json(res,200,await consultarCatalogos(pool,principal,opciones(url,['sede','tipo','desde'])));
-        if(req.method==='POST'&&ruta==='catalogos')return json(res,200,await importarCatalogo(pool,principal,await leerJson(req,24*1024*1024)));
+        if(req.method==='GET'&&ruta==='catalogos')return json(res,200,await consultarCatalogos(pool,principal,opciones(url,['sede','tipo','desde','version'])));
+        if(req.method==='POST'&&['catalogos','catalogos/previsualizar'].includes(ruta)){
+          if(perfil.perfil.rol!=='ADMIN')throw new ErrorAuth('SIN_PERMISO','La carga de catálogos corresponde al administrador.',403);
+          const body=await leerJson(req,24*1024*1024),opciones={cuentasERP:gestorERP?.listar(perfil.perfil.sedes)??[]};
+          return json(res,200,await (ruta.endsWith('previsualizar')?previsualizarCatalogo(pool,principal,body,opciones):importarCatalogo(pool,principal,body,opciones)));
+        }
+        const original=/^catalogos\/([a-f0-9-]+)\/original$/.exec(ruta);
+        if(req.method==='GET'&&original){const r=await originalCatalogo(pool,principal,original[1]);res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);}
         if(req.method==='GET'&&ruta==='ean')return json(res,200,await resolverEAN(pool,principal,opciones(url,['inventario','codigo'])));
         if(req.method==='GET'&&ruta==='google/configuracion'){const r=await consultarConectores(pool,principal,claveCentro);return json(res,200,{...r,callback:callbackGoogle(origin)});}
         if(req.method==='POST'&&ruta==='google/iniciar'){const b=await leerJson(req);if(Object.keys(b).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La cuenta se elige en Conexiones.',400);return json(res,200,await iniciarGoogleOAuth(pool,principal,claveCentro,origin));}
