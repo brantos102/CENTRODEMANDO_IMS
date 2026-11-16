@@ -162,7 +162,7 @@ def activar(sistema, anterior, nueva, probar, recuperar, confirmar):
         detalle = str(exc) if isinstance(exc, (p.PilotoError, https.PublicacionError)) else type(exc).__name__
         raise p.PilotoError('Actualización no confirmada (' + detalle + '). Versión anterior: '
                             + ('restaurada/verificada' if restaurado else 'requiere revisar su estado')
-                            + '. No se cambian datos ni Apache.') from exc
+                            + '. No se cambian inventarios ni Apache.') from exc
 
 
 def esperar(transporte, revision=None):
@@ -220,7 +220,8 @@ def main():
             previa = None
             esperado = p.plantillas(p.APP, carpeta)[SERVICIO]
         exigir(actual['contenido'] == esperado and actual['sha256'] == sha(esperado), 'La unidad propia cambió; no se sobrescribe.')
-        transporte = https.TransporteTLS(https.CERTIFICADO)
+        transporte = https.TransporteTLS(https.CERTIFICADO,
+                                        **({'tiempo_espera': 30, 'limite_respuesta': 8 * 1024 * 1024} if args.centro else {}))
         esperar(transporte, previa)
         releases = datos / 'releases'
         if releases.exists():
@@ -278,7 +279,8 @@ def main():
             esperar(transporte, args.revision)
             if args.operacion_nativa:
                 from comprobar_operacion import comprobar
-                return comprobar(transporte, s['lector'], args.conteos_esperados, args.filas_esperadas, erp_conexiones=erp_meta['conexiones'] if erp_meta else None,erp_creacion=args.erp_creacion,centro=args.centro)
+                return comprobar(transporte, s['lector'], args.conteos_esperados, args.filas_esperadas, erp_conexiones=erp_meta['conexiones'] if erp_meta else None,erp_creacion=args.erp_creacion,centro=args.centro,
+                                 progreso=lambda dato: print(json.dumps({'comprobacion_despliegue': dato}), flush=True))
             return https.comprobar_acceso(transporte, s['lector'], args.conteos_esperados,
                                          filas_esperadas=args.filas_esperadas)
         def recuperar():

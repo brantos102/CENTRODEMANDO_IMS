@@ -31,8 +31,10 @@ export async function reporteInventario(pool,p,id,formato='csv'){
 }
 export async function consolidarCentro(pool,p,s){
  uuid(s.operacionId);return transaccionOperativa(pool,p,async c=>{
- const pf=await perfilCentro(c,p,true);exigir(pf.rol==='ADMIN','SIN_PERMISO','La consolidación corresponde al administrador.');const d=hash({tipo:'consolidar',publicar:s.publicar===true});
- const [[prev]]=await c.execute('SELECT hash,resultado FROM ims_cm_auditoria WHERE actor_id=? AND operacion_id=?',[p.actorId,s.operacionId]);if(prev){exigir(prev.hash===d,'OPERACION_REUTILIZADA','La operación corresponde a otra solicitud.');return {...parse(prev.resultado),repetida:true};}
+ // La consolidación conserva la autorización con bloqueo compartido: las
+ // consultas del administrador deben seguir disponibles durante el cálculo.
+ const pf=await perfilCentro(c,p);exigir(pf.rol==='ADMIN','SIN_PERMISO','La consolidación corresponde al administrador.');const d=hash({tipo:'consolidar',publicar:s.publicar===true});
+ const [[prev]]=await c.execute('SELECT hash,resultado FROM ims_cm_auditoria WHERE actor_id=? AND operacion_id=? FOR SHARE',[p.actorId,s.operacionId]);if(prev){exigir(prev.hash===d,'OPERACION_REUTILIZADA','La operación corresponde a otra solicitud.');return {...parse(prev.resultado),repetida:true};}
  const [invs]=pf.sedes.length?await c.execute('SELECT id,estado FROM ims_op_inventario WHERE sede IN ('+pf.sedes.map(()=>'?').join(',')+') ORDER BY id',pf.sedes):[[]],incidencias=[],resultados=[];
  for(const i of invs){if(i.estado!=='ENTREGADO')continue;
   // Bloquea la cabecera durante el cálculo para que una entrega revertida no se publique.

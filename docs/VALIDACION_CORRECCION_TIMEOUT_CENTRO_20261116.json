@@ -1,0 +1,47 @@
+{
+  "ok": true,
+  "formato": "ims-centro-timeout-validacion-v1",
+  "fecha_ecuador": "2026-11-16",
+  "revision_base": "9228aa87aff66cc0f50b28a270ec31da7d87c3f7",
+  "defectos_reproducidos": [
+    "Lectura del perfil bloqueada por una consolidación del mismo usuario",
+    "Panel completo mayor que el límite anterior de 262144 bytes"
+  ],
+  "pruebas": {
+    "node_unitarias": {
+      "aprobadas": 187,
+      "omitidas": 0
+    },
+    "python": {
+      "aprobadas": 160,
+      "omitidas": 0
+    },
+    "mysql_centro": {
+      "aprobadas": 17,
+      "omitidas": 0
+    }
+  },
+  "escala_sintetica_con_limites": {
+    "filas": 110039,
+    "eventos": 419,
+    "bytes": 356867,
+    "milisegundos": 495,
+    "lineas_historicas": 97822,
+    "lineas_nativas": 12217,
+    "cpu": 0.5,
+    "memoria_maxima_mib": 512,
+    "heap_node_mib": 256
+  },
+  "verificador": {
+    "limite_respuesta_centro_bytes": 8388608,
+    "timeout_consultas_segundos": 30,
+    "timeout_salud_segundos": 10,
+    "tls_y_huella_verificados": true,
+    "progreso_sin_datos_de_filas": true,
+    "rollback_conservado": true
+  },
+  "servidor_corporativo_actualizado_desde_este_entorno": false,
+  "credenciales_incluidas": false,
+  "nueva_extraccion_google_requerida": false,
+  "puertos_nuevos_de_aplicacion": []
+}

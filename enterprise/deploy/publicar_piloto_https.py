@@ -43,19 +43,26 @@ def ejecutar(args, entrada=None, binario=False):
 
 
 class TransporteTLS:
-    def __init__(self, certificado, puerto=8445):
+    def __init__(self, certificado, puerto=8445, tiempo_espera=10, limite_respuesta=262144):
+        exigir(isinstance(tiempo_espera, (int, float)) and 0 < tiempo_espera <= 60,
+               'Tiempo de comprobación inválido.')
+        exigir(isinstance(limite_respuesta, int) and 1 <= limite_respuesta <= 8 * 1024 * 1024,
+               'Límite de respuesta de comprobación inválido.')
         self.contexto = ssl.create_default_context(cafile=str(certificado))
         self.contexto.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
         der = ejecutar(['openssl', 'x509', '-in', str(certificado), '-outform', 'DER'], binario=True)
         self.fingerprint = hashlib.sha256(der).digest()
         self.puerto = puerto
+        self.tiempo_espera = tiempo_espera
+        self.limite_respuesta = limite_respuesta
 
     def __call__(self, metodo, ruta, body=None, headers=None):
         exigir(ruta.startswith('/') and not ruta.startswith('//'), 'Ruta de prueba inválida.')
-        conn = http.client.HTTPSConnection(HOST, self.puerto, timeout=10, context=self.contexto)
+        timeout = min(10, self.tiempo_espera) if ruta == '/salud' else self.tiempo_espera
+        conn = http.client.HTTPSConnection(HOST, self.puerto, timeout=timeout, context=self.contexto)
         try:
             # TCP local, SNI/nombre público y verificación TLS activa. Sin proxies ni redirecciones.
-            raw = socket.create_connection(('127.0.0.1', self.puerto), timeout=10)
+            raw = socket.create_connection(('127.0.0.1', self.puerto), timeout=min(10, timeout))
             try:
                 conn.sock = self.contexto.wrap_socket(raw, server_hostname=HOST)
             except BaseException:
@@ -63,6 +70,7 @@ class TransporteTLS:
                 raise
             exigir(hashlib.sha256(conn.sock.getpeercert(binary_form=True)).digest() == self.fingerprint,
                    'El certificado servido no coincide con el configurado.')
+            conn.sock.settimeout(timeout)
             h = {'Origin': p.URL, **(headers or {})}
             data = None
             if body is not None:
@@ -70,8 +78,8 @@ class TransporteTLS:
                 data = json.dumps(body).encode()
             conn.request(metodo, ruta, body=data, headers=h)
             r = conn.getresponse()
-            datos = r.read(262145)
-            exigir(len(datos) <= 262144, 'Respuesta de prueba demasiado grande.')
+            datos = r.read(self.limite_respuesta + 1)
+            exigir(len(datos) <= self.limite_respuesta, 'Respuesta de prueba demasiado grande.')
             return r.status, dict((k.lower(), v) for k, v in r.getheaders()), datos
         finally:
             conn.close()

@@ -1,17 +1,40 @@
 """Prueba HTTPS del perfil nativo. No crea inventarios ni captura cantidades."""
 import json
 import re
+import sys
+import time
 import uuid
-from publicar_piloto_https import exigir
+from publicar_piloto_https import exigir, PublicacionError
 
 
-def comprobar(request, usuario, conteos, filas, erp_conexiones=None, erp_creacion=False,centro=False):
+def comprobar(request, usuario, conteos, filas, erp_conexiones=None, erp_creacion=False,centro=False,progreso=None):
     cookie = csrf = None
 
     def consultar(method, path, body=None, auth=True):
+        # Etiquetas fijas: nunca registra cookies, claves, IDs ni respuestas.
+        etapa = {'/api/sesion': 'LOGIN' if method == 'POST' else 'SESION_CERRADA',
+                 '/api/sesion/cerrar': 'LOGOUT', '/api/operacion': 'OPERACION',
+                 '/api/erp/conexiones': 'ERP', '/api/resumen': 'RESUMEN',
+                 '/api/centro/contexto': 'CENTRO_CONTEXTO', '/api/centro/dashboard': 'CENTRO_DASHBOARD',
+                 '/api/centro/eventos': 'CENTRO_EVENTOS', '/api/centro/usuarios': 'CENTRO_USUARIOS',
+                 '/api/centro/analitica': 'CENTRO_ANALITICA', '/api/conteos': 'HISTORICO_PROTEGIDO'}.get(
+                     path, 'LISTADO' if path.startswith('/api/inventarios?') else 'LINEAS_HISTORICAS')
+        if progreso:
+            progreso({'etapa': etapa, 'estado': 'INICIO'})
+        inicio = time.monotonic()
         headers = {'Cookie': cookie, 'X-IMS-CSRF': csrf} if auth else {}
-        status, h, raw = request(method, path, body, headers)
-        return status, h, json.loads(raw)
+        try:
+            status, h, raw = request(method, path, body, headers)
+        except TimeoutError:
+            raise PublicacionError('Tiempo de espera agotado en ' + etapa + '.') from None
+        try:
+            datos = json.loads(raw)
+        except (ValueError, UnicodeError):
+            raise PublicacionError('Respuesta incompatible en ' + etapa + '.') from None
+        if progreso:
+            progreso({'etapa': etapa, 'estado': 'RESPUESTA', 'http': status,
+                      'milisegundos': round((time.monotonic() - inicio) * 1000)})
+        return status, h, datos
 
     status, _, _ = consultar('GET', '/api/operacion', auth=False)
     exigir(status == 401, 'La operación anónima no está bloqueada.')
@@ -69,9 +92,14 @@ def comprobar(request, usuario, conteos, filas, erp_conexiones=None, erp_creacio
                                  'lineaId':l['id'],'versionEsperada':l['version'],'etapa':1,'cantidad':'0'})
         exigir(status == 403 and r.get('error') == 'SIN_PERMISO', 'La captura histórica no está bloqueada.')
     finally:
+        fallo_previo = sys.exc_info()[0] is not None
         if cookie and csrf:
-            status, _, r = consultar('POST', '/api/sesion/cerrar', {})
-            exigir(status == 200 and r.get('ok') is True, 'No se confirmó el logout.')
+            try:
+                status, _, r = consultar('POST', '/api/sesion/cerrar', {})
+                exigir(status == 200 and r.get('ok') is True, 'No se confirmó el logout.')
+            except Exception:
+                if not fallo_previo:
+                    raise
     status, _, _ = consultar('GET', '/api/sesion')
     exigir(status == 401, 'La sesión continúa vigente tras salir.')
     return {**({'centro_mando':True} if centro else {}),**({'erp_creacion':True} if erp_creacion else {}),**({'erp_consulta':True,'conexiones_erp':erp_conexiones} if erp_conexiones is not None else {}),'login_https':True, 'logout_verificado':True, 'operacion_nativa':True, 'historico_protegido':True,

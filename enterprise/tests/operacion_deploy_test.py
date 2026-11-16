@@ -31,15 +31,16 @@ class OperacionDeployTests(unittest.TestCase):
   for s in calls:self.assertNotIn('DROP ',s);self.assertNotIn('ALTER ',s)
   def otro(sql):return [['BEFORE','UPDATE','otra_tabla','424547494e20454e44']]
   with self.assertRaises(Exception):op.triggers(repo,otro)
- def transporte(self,escribe=False,erp=False,privado=False,creacion=False):
+ def transporte(self,escribe=False,erp=False,privado=False,creacion=False,centro=False):
   actor='11111111-1111-1111-1111-111111111111';inv='22222222-2222-2222-2222-222222222222';linea='33333333-3333-3333-3333-333333333333';calls=[]
   def request(method,path,body=None,headers=None):
    calls.append((method,path,body));status,h,data=200,{},{}
    if path=='/api/operacion' and not(headers or {}).get('Cookie'):status=401
    elif path=='/api/sesion' and method=='POST':
-    h={'set-cookie':'__Host-ims_cm_session='+'a'*43+'; Secure; HttpOnly; SameSite=Strict; Path=/'};data={'usuario':{'actorId':actor},'csrf':'b'*43,'operacionNativa':True,'soloLectura':False,'erpDisponible':erp,'erpCreacionDisponible':creacion}
+    h={'set-cookie':'__Host-ims_cm_session='+'a'*43+'; Secure; HttpOnly; SameSite=Strict; Path=/'};data={'usuario':{'actorId':actor},'csrf':'b'*43,'operacionNativa':True,'soloLectura':False,'erpDisponible':erp,'erpCreacionDisponible':creacion,'centroDisponible':centro}
    elif path=='/api/erp/conexiones':data={'soloPrevisualizacion':True,'sedes':['UIO','GYE'],'conexiones':[{'referencia':'a'*24,'sede':'UIO','etiqueta':'BELIA','clienteId':None,'clienteNombre':'BELIA','codigosCliente':['BELIA'],**({'password':'NO_PUBLICAR'} if privado else {})}]}
    elif path=='/api/operacion':data={'ambitos':[{'sede':s,'rol':'ADMIN'} for s in ['UIO','GYE']],'inventarios':[]}
+   elif path in ['/api/centro/'+x for x in ['contexto','dashboard','eventos','usuarios','analitica']]:data={dict(contexto='perfil',dashboard='indicadores',eventos='eventos',usuarios='usuarios',analitica='usuarios')[path.rsplit('/',1)[1]]:[]}
    elif path.startswith('/api/inventarios?'):data={'datos':[{'id':inv,'estado':'ENTREGADO'}],'siguiente':None}
    elif path=='/api/resumen':data={'totales':{'conteos':'1','lineas':'1'}}
    elif '/lineas?' in path:data={'datos':[{'id':linea,'version':'0','puede_contar':False}]}
@@ -49,6 +50,21 @@ class OperacionDeployTests(unittest.TestCase):
    else:raise AssertionError(path)
    return status,h,json.dumps(data).encode()
   return request,calls,{'actorId':actor,'correo':'sintetico@prueba.invalid','contrasena':'sintetica'}
+ def test_comprobacion_centro_identifica_timeout_sin_exponer_datos_y_logout_no_oculta_el_fallo(self):
+  request,_,user=self.transporte(centro=True);progreso=[]
+  def lento(method,path,body=None,headers=None):
+   if path in ['/api/centro/dashboard','/api/sesion/cerrar']:raise TimeoutError('SECRETO_SINTETICO_NO_REGISTRAR')
+   return request(method,path,body,headers)
+  with self.assertRaisesRegex(actualizar.https.PublicacionError,'CENTRO_DASHBOARD') as fallo:
+   comprobar(lento,user,1,1,centro=True,progreso=progreso.append)
+  self.assertNotIn('SECRETO',str(fallo.exception));self.assertNotIn('SECRETO',json.dumps(progreso));self.assertNotIn(user['correo'],json.dumps(progreso))
+  self.assertTrue(any(p['etapa']=='CENTRO_DASHBOARD' and p['estado']=='INICIO' for p in progreso))
+ def test_progreso_de_centro_recorre_todas_las_funciones_y_no_incluye_solicitudes(self):
+  request,_,user=self.transporte(centro=True);progreso=[]
+  self.assertTrue(comprobar(request,user,1,1,centro=True,progreso=progreso.append)['centro_mando'])
+  etapas={x['etapa'] for x in progreso if x['estado']=='RESPUESTA'}
+  self.assertTrue({'CENTRO_DASHBOARD','CENTRO_EVENTOS','CENTRO_USUARIOS','CENTRO_ANALITICA','LOGOUT'}<=etapas)
+  self.assertTrue(all(set(x)<= {'etapa','estado','http','milisegundos'} for x in progreso))
  def test_https_exige_proteccion_del_historico_y_revoca_sesion(self):
   request,calls,user=self.transporte();r=comprobar(request,user,1,1)
   self.assertTrue(r['historico_protegido']);self.assertEqual(calls[-1][:2],('GET','/api/sesion'))

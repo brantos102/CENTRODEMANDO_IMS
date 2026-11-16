@@ -71,3 +71,15 @@ Los XLSX se comprimen por bloques para evitar construir una hoja completa en mem
 Validada con Node 22.23.3, Python 3.12 y MySQL 8.0.46: 187 pruebas unitarias Node, 155 Python, 123 pruebas de integración SQL y 26 recorridos Chromium, sin omisiones. Las pruebas SQL se ejecutaron en bases sintéticas independientes por archivo para no mezclar fixtures anteriores a la instalación de triggers con las pruebas del perfil operativo. Incluyen revocación por sede sin alterar el histórico, permisos limitados del usuario operativo, entrega del inventario y cronograma en una transacción, equipos tras inserciones de filas, participación de apoyos finalizados, reintentos y bloqueo de descargas tras revocar acceso.
 
 No se hicieron envíos reales ni cambios en calendarios externos durante estas pruebas. La comprobación HTTPS del servidor se ejecuta al aplicar la revisión y verifica el histórico esperado antes de confirmar la actualización.
+
+## Corrección del tiempo de espera del despliegue · 16/11/2026
+
+Si la actualización informa que restauró y verificó la versión anterior, la preparación administrativa queda conservada; ese resultado no confirma que el Centro nuevo esté activo. Los contadores de importación en cero corresponden a un reintento que no encontró fuentes nuevas. Se reutiliza el mismo corte y no hace falta descargar otro ZIP.
+
+Se corrigió un bloqueo exclusivo del perfil del administrador durante la consolidación: ahora conserva la autorización mediante lectura compartida y mantiene disponible la consulta de ese usuario. La evidencia de la operación conserva el control de reintentos concurrentes, sin conceder edición sobre la auditoría.
+
+El verificador HTTPS del Centro admite respuestas de hasta 8 MiB y hasta 30 segundos para consultas, con salud limitada a 10 segundos. Conserva la verificación del certificado y su huella. El límite anterior de 256 KiB era insuficiente para un cronograma completo. Cada consulta informa una etapa fija, estado, HTTP y duración; no registra claves, cookies, identificadores ni contenido de filas. Si falla también el cierre de sesión, el diagnóstico conserva el fallo inicial. La reversión del servicio continúa activa.
+
+Validación: 187 pruebas Node, 160 Python y 17 de integración del Centro con MySQL 8.0.46. Incluye TLS local con certificado sintético, consolidaciones concurrentes, lectura durante la consolidación y un panel de 110.039 líneas (97.822 históricas y 12.217 nativas) con más de 256 KiB de respuesta. Estas pruebas no actualizan el servidor corporativo; la aplicación de la revisión ejecuta allí las comprobaciones HTTPS.
+
+Con CPU de 50 %, memoria de 512 MiB y heap Node de 256 MiB, el panel sintético respondió en 495 ms con 356.867 bytes. La prueba confirma que el verificador debe aceptar más de 256 KiB incluso cuando la consulta responde rápidamente. El registro original del servidor no identificaba la etapa; el progreso nuevo permite comprobarla en el reintento.
