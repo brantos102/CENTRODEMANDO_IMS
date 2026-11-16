@@ -2,19 +2,18 @@
 <html lang="es">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Centro de Mando · ITSANET</title>
+  <title>ITSANET IMS / WMS · Conteo</title>
   <link rel="stylesheet" href="/assets/estilos.css"><script type="module" src="/assets/app.mjs"></script>
-</head>
+<link rel="stylesheet" href="/assets/interfaz.css"><script type="module" src="/assets/interfaz.mjs"></script></head>
 <body>
-<a class="boton" href="/centro">← Centro de Mando Integral</a>
   <header class="cabecera"><a class="marca" href="/inventarios" aria-label="Centro de Mando, inicio"><span class="isotipo" aria-hidden="true">I</span><span>Centro de Mando<small>ITSANET · Inventarios</small></span></a>
     <div class="cabecera-derecha"><span class="etiqueta candidata">Candidata en validación</span><span id="red" class="etiqueta">Conectado</span></div></header>
   <main>
-<p><a href="/centro">← Centro de Mando Integral</a> · <a href="/crear">Crear y vincular inventario</a></p>
+
     <div id="aviso" class="aviso" role="status" aria-live="polite" hidden></div>
     <section id="acceso" class="acceso" aria-labelledby="acceso-titulo">
       <div class="presentacion"><span class="sobrelinea">OPERACIÓN DE INVENTARIOS</span><h1>Una operación.<br>Un registro confiable.</h1><p>Consulta y captura los conteos de tus inventarios con acceso a las cuentas asignadas.</p><div class="promesas"><span>Conteo por etapas</span><span>Trazabilidad por operación</span><span>Acceso por cliente</span></div></div>
-      <form id="form-login" class="tarjeta login"><span class="sobrelinea">ACCESO AL SISTEMA</span><h2 id="acceso-titulo">Iniciar sesión</h2><p>Usa tu cuenta asignada a esta candidata.</p>
+      <form id="form-login" class="tarjeta login"><span class="sobrelinea">ACCESO AL SISTEMA</span><h2 id="acceso-titulo">Iniciar sesión</h2><p>Usa tu cuenta de ITSANET IMS.</p>
         <label for="correo">Correo electrónico</label><input id="correo" type="email" autocomplete="username" maxlength="254" required>
         <label for="contrasena">Contraseña</label><input id="contrasena" type="password" autocomplete="current-password" maxlength="1024" required>
         <button id="entrar" type="submit" class="primario ancho">Ingresar</button><p id="login-error" class="error" role="alert"></p>
@@ -23,10 +22,11 @@
     </section>
     <section id="operacion" hidden>
       <p id="modo-lectura" class="aviso" hidden>Piloto de solo lectura · Consulta del histórico trasladado. La operación actual continúa en el sistema vigente.</p>
-      <div class="barra-usuario"><div><span class="sobrelinea">ESPACIO DE TRABAJO</span><h1>Inventarios</h1><p id="usuario"></p></div><button id="salir" type="button" class="secundario">Cerrar sesión</button></div>
+      <div class="barra-usuario"><div><span class="sobrelinea">ESPACIO DE TRABAJO</span><h1>Terminal de conteo</h1><p id="usuario"></p></div><button id="salir" type="button" class="secundario">Cerrar sesión</button></div>
       <p id="modo-nativo" class="aviso" hidden>Puedes continuar los conteos habilitados para tu cuenta. El histórico trasladado permanece protegido.</p>
       <section id="panel-resumen" class="resumen" aria-labelledby="resumen-titulo">
         <div class="titulo-panel"><div><span id="tipo-resumen" class="sobrelinea">HISTÓRICO AUTORIZADO</span><h2 id="resumen-titulo">Tu resumen de inventarios</h2><p id="descripcion-resumen" class="nota">Cifras de los inventarios trasladados a los que tienes acceso.</p></div><button id="actualizar-resumen" class="secundario" type="button">Actualizar resumen</button></div>
+        <details id="resumen-desplegable" open><summary>Ver totales y clientes autorizados</summary>
         <div class="metricas">
           <div class="tarjeta metrica"><span>Conteos</span><strong id="total-conteos">—</strong><small>Inventarios independientes</small></div>
           <div class="tarjeta metrica"><span>Líneas</span><strong id="total-lineas">—</strong><small>Productos y ubicaciones registrados</small></div>
@@ -35,24 +35,26 @@
         </div>
         <p id="resumen-error" class="error" role="alert"></p><p id="hora-resumen" class="nota">Resumen pendiente de consulta.</p>
         <details class="tarjeta clientes-resumen"><summary>Consultar por cliente</summary><div class="tabla-scroll"><table><thead><tr><th>Cliente</th><th>Conteos</th><th>Líneas</th><th>Consulta</th></tr></thead><tbody id="resumen-clientes"></tbody></table></div></details>
+        </details>
       </section>
       <div class="distribucion">
         <aside class="tarjeta inventarios" aria-labelledby="inventarios-titulo"><div class="titulo-panel"><h2 id="inventarios-titulo">Tus inventarios</h2><a href="/operacion">Operación</a><button id="actualizar-inv" class="texto-boton" type="button">Actualizar</button></div>
+          <details id="inventarios-desplegable" open><summary>Cambiar inventario o buscar cliente</summary>
           <form id="form-inventarios"><fieldset id="filtros-inventarios"><legend class="sr-only">Filtros de inventarios</legend>
             <label for="buscar-inventarios">Código o cliente</label><input id="buscar-inventarios" type="search" maxlength="120" placeholder="Ej. FLUKE o 260608" autocomplete="off">
             <label for="cliente-inventarios">Cliente</label><select id="cliente-inventarios"><option value="">Todos los autorizados</option></select>
             <label for="sede-inventarios">Sede</label><select id="sede-inventarios"><option value="">Todas</option><option value="UIO">Quito · UIO</option><option value="GYE">Guayaquil · GYE</option></select>
             <div class="acciones-filtro"><button class="primario" type="submit">Buscar inventarios</button><button id="limpiar-inventarios" class="texto-boton" type="button">Limpiar</button></div>
           </fieldset></form><p id="filtro-inventarios-aplicado" class="nota">Mostrando tus inventarios autorizados.</p>
-          <div id="lista-inventarios" class="lista-inventarios"></div><button id="mas-inventarios" class="secundario ancho" type="button" hidden>Cargar más inventarios</button></aside>
+          <div id="lista-inventarios" class="lista-inventarios"></div><button id="mas-inventarios" class="secundario ancho" type="button" hidden>Cargar más inventarios</button></details></aside>
         <div class="contenido">
           <section id="pendientes-panel" class="tarjeta pendientes" hidden><div class="titulo-panel"><div><span class="sobrelinea">ENVÍOS POR CONFIRMAR</span><h2 id="pendientes-titulo">Capturas pendientes</h2></div><button id="sincronizar" class="secundario" type="button">Reintentar envíos</button></div><p class="nota">Se conservan en este navegador hasta recibir confirmación. Reintentar mantiene la misma operación.</p><ul id="lista-pendientes"></ul></section>
           <section id="seleccion-vacia" class="tarjeta vacio"><span class="icono-grande" aria-hidden="true">▦</span><h2>Selecciona un inventario</h2><p>Verás sus productos, ubicaciones y etapas de conteo.</p></section>
           <section id="detalle" class="tarjeta detalle" hidden>
             <div class="titulo-panel"><div><span id="sede" class="sobrelinea"></span><h2 id="codigo"></h2><p id="estado-inventario" class="nota"></p></div><button id="actualizar-lineas" class="secundario" type="button">Actualizar líneas</button></div>
-            <p class="nota">Cada fila es una línea independiente. Un mismo producto puede aparecer en varias ubicaciones.</p>
-            <form id="form-lineas"><fieldset id="filtros-lineas" class="busqueda-lineas"><legend class="sr-only">Buscar líneas del inventario</legend><div><label for="buscar-lineas">Producto, descripción, ubicación, serie o lote</label><input id="buscar-lineas" type="search" maxlength="120" autocomplete="off" placeholder="Buscar dentro de este inventario"></div><button class="secundario" type="submit">Filtrar líneas</button><button id="limpiar-lineas" class="texto-boton" type="button">Limpiar</button></fieldset></form>
-            <div class="tabla-scroll"><table><thead><tr><th>Producto / cliente</th><th>Posición / serie</th><th>Conteo 1</th><th>Conteo 2</th><th>Final</th><th>Acción</th></tr></thead><tbody id="lineas"></tbody></table></div>
+            <div id="wms-acciones" class="wms-acciones" hidden><a id="wms-series" class="boton" href="/operacion#series">Series y hallazgos</a><a id="wms-analisis" class="boton" href="/operacion#analisis">Análisis WMS</a><a id="wms-supervision" class="boton" href="/operacion">Supervisión</a></div><div id="wms-avance" class="wms-avance" aria-live="polite" hidden></div><p id="wms-contexto" class="wms-contexto" hidden></p><p class="nota">Cada fila es una línea independiente. Un mismo producto puede aparecer en varias ubicaciones.</p>
+            <form id="form-lineas"><fieldset id="filtros-lineas" class="busqueda-lineas"><legend class="sr-only">Buscar líneas del inventario</legend><div><label for="buscar-lineas">EAN, producto, ubicación, serie o lote</label><input id="buscar-lineas" type="search" maxlength="120" autocomplete="off" placeholder="Buscar dentro de este inventario"></div><button class="secundario" type="submit">Filtrar líneas</button><button id="limpiar-lineas" class="texto-boton" type="button">Limpiar</button></fieldset></form>
+            <div id="ean-coincidencias" class="wms-tools" aria-live="polite"></div><div class="wms-tools"><button id="producto-escanear" type="button" class="secundario">Escanear producto con cámara</button><label>Orden visual<select id="orden-lineas"><option value="producto">Producto</option><option value="posicion">Posición</option></select></label></div><div id="producto-camara" hidden><video id="producto-video" playsinline muted></video><button id="producto-cerrar" type="button">Cerrar cámara</button></div><div class="tabla-scroll"><table><thead><tr><th>Producto / cliente</th><th>Posición / serie</th><th>Conteo 1</th><th>Conteo 2</th><th>Final</th><th>Acción</th></tr></thead><tbody id="lineas"></tbody></table></div>
             <div class="pie-tabla"><span id="resumen-lineas" class="nota"></span><button id="mas-lineas" class="secundario" type="button" hidden>Cargar más líneas</button></div>
           </section>
         </div>

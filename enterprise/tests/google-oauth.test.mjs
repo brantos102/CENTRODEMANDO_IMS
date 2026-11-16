@@ -1,0 +1,22 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID,createHash} from 'node:crypto';
+import {callbackGoogle,parametrosGoogle,mimeGoogle,enviarGoogle,SCOPES_GOOGLE} from '../src/centro/google-oauth.mjs';
+import {sincronizarEventoGoogle} from '../src/centro/conectores.mjs';
+test('autorización Google usa origen HTTPS propio, PKCE y correo configurable; no incluye el secreto en la URL',()=>{
+ const app={clienteId:'123.apps.googleusercontent.com',clienteSecreto:'SECRETO_SINTETICO',correo:'oficial@sintetico.invalid'},uri=callbackGoogle('https://ims.invalid:8445'),p=parametrosGoogle(app,uri,'ESTADO_SINTETICO','VERIFICADOR_SINTETICO');assert.equal(uri,'https://ims.invalid:8445/api/centro/google/callback');assert.equal(p.get('login_hint'),app.correo);assert.equal(p.get('code_challenge'),createHash('sha256').update('VERIFICADOR_SINTETICO').digest('base64url'));assert.equal(p.get('code_challenge_method'),'S256');assert.equal(p.get('redirect_uri'),uri);assert.ok(!p.toString().includes(app.clienteSecreto));assert.ok(SCOPES_GOOGLE.every(s=>p.get('scope').includes(s)));assert.throws(()=>callbackGoogle('http://ims.invalid'));assert.throws(()=>callbackGoogle('https://ims.invalid/otra-ruta'));
+});
+test('correo Gmail conserva remitente elegido, destinatarios y adjunto sin inyección de cabeceras',()=>{
+ const id=randomUUID(),raw=mimeGoogle({cuenta:'oficial@sintetico.invalid'},{id,destinatarios:['cliente@sintetico.invalid'],asunto:'Inventario\r\nBcc: intruso@sintetico.invalid',texto:'Cantidades exactas',adjunto:{nombre:'inventarios.zip',base64:Buffer.from('ZIP_SINTETICO').toString('base64')}}),mime=Buffer.from(raw,'base64url').toString();assert.match(mime,/From: oficial@sintetico.invalid/);assert.match(mime,/To: cliente@sintetico.invalid/);assert.ok(!mime.includes('\r\nBcc:'));assert.match(mime,/filename="inventarios.zip"/);assert.match(mime,/WklQX1NJTlRFVElDTw==/);assert.throws(()=>mimeGoogle({cuenta:'a@sintetico.invalid'},{id,destinatarios:['a@x.invalid\r\nBcc: x@y.invalid'],asunto:'A',texto:'B'}));
+});
+test('transporte Gmail solo envía con autorización explícita y no utiliza claves como contenido',async()=>{
+ const calls=[],f=async(url,o)=>{calls.push([url,o]);return new Response(JSON.stringify(url.includes('oauth2')?{access_token:'TOKEN_SINTETICO'}:{id:'ENVIADO_SINTETICO'}));},config={cuenta:'oficial@sintetico.invalid',correo:true,clienteId:'CLIENTE',clienteSecreto:'CLAVE_NO_PUBLICAR',refreshToken:'REFRESH_NO_PUBLICAR'},m={id:randomUUID(),destinatarios:['cliente@sintetico.invalid'],asunto:'Inventario',texto:'Reporte autorizado'};
+ assert.equal((await enviarGoogle(config,m,f)).enviado,true);assert.equal(calls.length,2);assert.ok(!calls[1][1].body.includes(config.clienteSecreto));assert.ok(!Buffer.from(JSON.parse(calls[1][1].body).raw,'base64url').toString().includes(config.refreshToken));await assert.rejects(enviarGoogle({...config,correo:false},m,f));
+});
+test('calendario actualiza exclusivamente eventos propios y reutiliza el token dentro del lote',async()=>{
+ const id=randomUUID(),e={id,cliente:'SINTETICO',titulo:'Conteo',fecha_inicio:'2026-11-16',duracion:1},config={calendario:'primary',clienteId:'x',clienteSecreto:'SECRETO',refreshToken:'REFRESH'},calls=[],f=async(url,o)=>{calls.push([url,o]);return new Response(JSON.stringify(url.includes('oauth2')?{access_token:'TOKEN',expires_in:3600}:o.method==='PUT'?{id}:{extendedProperties:{private:{imsEvento:id}}}));};await sincronizarEventoGoogle(config,e,f);assert.equal(calls.filter(([u])=>u.includes('oauth2')).length,1);assert.equal(calls.filter(([,o])=>o.method==='PUT').length,1);
+ const ajeno=async(url)=>new Response(JSON.stringify(url.includes('oauth2')?{access_token:'TOKEN'}:{extendedProperties:{private:{imsEvento:randomUUID()}}}));await assert.rejects(sincronizarEventoGoogle({...config},e,ajeno),e=>e.codigo==='CONEXION_RECHAZADA');
+});
+test('asuntos largos de correo conservan Unicode y límites MIME sin crear cabeceras nuevas',()=>{
+ const asunto='Inventario áéí · 📦 '.repeat(30),mime=Buffer.from(mimeGoogle({cuenta:'oficial@sintetico.invalid'},{id:randomUUID(),destinatarios:['equipo@sintetico.invalid'],asunto,texto:'Reporte'}),'base64url').toString(),codigos=[...mime.matchAll(/=\?UTF-8\?B\?([A-Za-z0-9+/=]+)\?=/g)].map(x=>Buffer.from(x[1],'base64').toString());assert.equal(codigos.join(''),asunto);assert.ok(mime.split('\r\n').every(l=>Buffer.byteLength(l)<=998));assert.ok(!codigos.join('').includes('\uFFFD'));
+});

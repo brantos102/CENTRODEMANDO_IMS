@@ -24,11 +24,13 @@ No solicita otra extracción de Google. Una hoja parcial se conserva como parcia
 | Perfil | Nombre, teléfono y cambio de contraseña; se revocan las otras sesiones al cambiar la clave. |
 | IMS / WMS | Capturas C1/C2/C3, versiones, reintentos, conteo ciego, ajustes auditados, cámara/lector, series, planilla alterna y análisis oficial existentes. Historial auxiliar del corte consultable; no vuelve a registrar series de un origen inequívoco. |
 | Análisis | Fórmula ITSANET IMS / WMS V124 con enteros escalados. Distingue cero de ausencia y conserva hasta 9 decimales, sin redondear cantidades. |
-| Reportes | CSV, XLSX real de 30 columnas, ZIP de hasta 50 inventarios autorizados y envío de reportes con adjunto. SKU/series en Excel son texto. |
+| Reportes | CSV original de 30 columnas; XLSX con INVENTARIOS, ANALISIS_IMS_WMS, SERIES_FISICAS, PLANILLA_ALTERNA, CAPTURAS, originales auxiliares autorizados y COBERTURA. ZIP de hasta 50 inventarios y envío con adjunto. SKU/series y cantidades exactas en Excel son texto. |
 | Consolidación | Auditoría y publicación de resultados únicamente de Entregados verificados. Cola persistente, progreso y revisión de errores. Programación diaria a las 18:30, hora Ecuador. |
-| Notificaciones | Recordatorios manuales y automáticos para el equipo asignado; SMTP TLS configurado por el administrador. Los envíos sin confirmación no se repiten automáticamente. |
+| Notificaciones | Recordatorios manuales y automáticos; cuenta Gmail autorizada con OAuth o SMTP TLS cuando no hay Gmail autorizado. Los envíos sin confirmación no se repiten automáticamente. |
 | Calendar | Sincronización explícita con Google Calendar; solo crea/modifica los eventos que pertenecen a este Centro. Requiere autorización privada de la cuenta. |
 | Trazabilidad | Fuentes, cobertura por hoja, bitácora administrativa, historial original y resultados de trabajos. |
+| Terminal integrada | Conserva inventario entre conteo de productos, series, análisis y supervisión; avance completo autorizado, conteo ciego y lectura por cámara/lector. Interfaz móvil y temas compartidos. |
+| EAN / WTW | Carga privada de catálogos por sede, versiones inmutables, EAN exacto por cliente autorizado, consulta de posiciones y visor de coordenadas explícitas. Backend/datos originales WTW aún pendientes. |
 
 Los nombres y códigos originales se conservan. Los conteos de códigos/fechas diferentes del mismo archivo mantienen su identidad. La vinculación automática utiliza el origen físico y, cuando corresponde, la fecha explícita. Las referencias de texto del cronograma se resuelven únicamente por cliente y fecha explícita únicos del panel del mismo respaldo. Los equipos del cronograma anterior se concilian por identidad de tarea antes de trasladar las asignaciones; un cambio de número de fila no reasigna personas. Las asociaciones ambiguas quedan señaladas para revisión desde el detalle de la tarea.
 
@@ -54,17 +56,25 @@ Desde una terminal SSH de `apps` como `enicolalde`, actualizar referencias y eje
 
 El lanzador prueba el código, recupera los datos desde el ZIP/SQL existentes, amplía exclusivamente los privilegios necesarios sobre tablas propias y prepara una versión inmutable. Verifica los permisos previos; no adopta privilegios desconocidos. La aplicación conserva el límite de 512 MB, CPU de 50% y cinco conexiones MySQL. La actualización reinicia únicamente `centro-mando-ims-ensayo.service`, verifica HTTPS, sesión, histórico y funciones del Centro. Si fallan las verificaciones, restaura la unidad anterior.
 
-Entrada: `https://apps.flexnetuio.com:8445/`. También `/centro`, `/crear`, `/inventarios`, `/operacion` y `/erp`.
+Entrada: `https://apps.flexnetuio.com:8445/`. También `/centro`, `/crear`, `/inventarios`, `/operacion`, `/erp` y `/catalogos`. La instalación continúa como entorno de validación hasta completar las dependencias y aceptación operativa. No habilita nuevas escuchas.
 
 Tras la publicación, las capturas deben continuar en el servidor sobre el corte elegido. No se sincronizan después los cambios hechos en Google. No se deshabilitan ni modifican los triggers de otros proyectos.
 
 ## Conexiones que requieren autorización
 
-Las credenciales ERP existentes se reutilizan desde su registro privado. No autorizan Gmail, SMTP ni Google Calendar. En **Centro de Mando → Conexiones y recordatorios**, el administrador configura SMTP TLS o autoriza Calendar con sus credenciales propias. Se cifran mediante AES-256-GCM; no se devuelven claves a las consultas, no se guardan en la bitácora ni en el navegador. La clave de cifrado se conserva en `centro/clave_propia`, privada, y debe incluirse en el respaldo privado.
+Las credenciales ERP existentes se reutilizan desde su registro privado. No autorizan Gmail, SMTP ni Google Calendar. En **Centro de Mando → Conexiones y recordatorios**, el administrador registra un cliente OAuth y autoriza correo/Calendar con la cuenta configurable, inicialmente **bespinoza@itsanet.com**. El secreto se introduce en el formulario privado; no se solicita refresh token manual. El reemplazo de cuenta conserva la conexión anterior hasta completar el consentimiento nuevo. Pasos exactos: [Google Cloud y autorización](GOOGLE_CORREO_CALENDAR.md). SMTP TLS sigue disponible como alternativa cuando no hay Gmail autorizado. Las claves se cifran mediante AES-256-GCM; no se devuelven en las consultas ni se guardan en bitácora o almacenamiento del navegador. La clave `centro/clave_propia` debe incluirse en el respaldo privado.
 
 Los recordatorios automáticos están desactivados hasta que se configure y habilite el correo. La prueba de despliegue no envía correos ni modifica calendarios. Antes de considerar operativas esas conexiones, verificar un envío y una sincronización desde la aplicación. ICS y descargas funcionan sin autorización externa.
 
 Los XLSX se comprimen por bloques para evitar construir una hoja completa en memoria. Los ZIP se conservan siete días en fragmentos SQL, con descarga autenticada y límites de tamaño. La cola no abre otros puertos.
+
+## Actualización de interfaz y dependencias · 16/11/2026
+
+La revisión conserva cantidades exactas y elimina ceros de relleno solamente al mostrarlas. No convierte automáticamente fracciones ERP en enteros. **Revisar calidad y cobertura** informa etapas heredadas, fuentes parciales e inventarios sin cronograma; estos últimos pueden ser creaciones independientes válidas. No aplica una limpieza destructiva ni registra falsos errores de cantidades por diferencias de formato.
+
+La selección de sede filtra también los indicadores del panel. Los datos originales disponibles se identifican como tales; las hojas parciales no se presentan como archivos completos. Para EAN/WTW se añaden tres tablas propias con permisos limitados; no se concede modificación sobre versiones anteriores, existencias históricas o fuentes.
+
+La [matriz vigente](../docs/PARIDAD_INTERFAZ_20261116.md) distingue funcionalidades implementadas, pruebas sintéticas, ejecución corporativa confirmada y dependencias que aún requieren datos o autorización. Las cifras de validación siguientes documentan entregas anteriores.
 
 ## Validación de esta entrega
 

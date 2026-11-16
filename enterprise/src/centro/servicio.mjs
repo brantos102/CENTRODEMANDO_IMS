@@ -25,7 +25,7 @@ async function personas(c,pf){
 }
 export async function consultarCentro(pool,p,recurso,query={}){
  return transaccionOperativa(pool,p,async c=>{
- const pf=await perfilCentro(c,p);
+ let pf=await perfilCentro(c,p);if(['dashboard','eventos','analitica'].includes(recurso)&&query.sede){exigir(pf.sedes.includes(query.sede),'SIN_PERMISO','Sede no autorizada.');pf={...pf,sedes:[query.sede]};}
  if(recurso==='contexto'){
   const [clientes]=await c.execute('SELECT id,nombre FROM ims_op_cliente ORDER BY nombre');
   const [carpetas]=pf.sedes.length?await c.execute(`SELECT * FROM ims_cm_carpeta WHERE sede IN (${marcador(pf.sedes)}) ORDER BY nombre`,pf.sedes):[[]];
@@ -54,14 +54,22 @@ export async function consultarCentro(pool,p,recurso,query={}){
   // El panel capturado se conserva. Para archivos operativos, la vista usa el estado actual de MySQL.
   const [nativos]=pf.sedes.length?await c.execute(`SELECT i.id,i.sede,i.codigo_operativo,i.estado,n.fecha_inicio,n.fecha_entrega,n.responsable,MIN(l.origen_drive) archivo_drive,SUM(x.depot) unidades,COUNT(DISTINCT l.sku) referencias,COUNT(DISTINCT d.posicion) posiciones FROM ims_op_inventario i JOIN ims_nat_inventario n ON n.inventario_id=i.id AND n.borrador=0 LEFT JOIN ims_op_linea l ON l.inventario_id=i.id LEFT JOIN ims_nat_linea x ON x.linea_id=l.id LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id WHERE i.sede IN (${marcador(pf.sedes)}) GROUP BY i.id`,pf.sedes):[[]];
   const [unicos]=pf.sedes.length?await c.execute(`SELECT COALESCE(NULLIF(l.origen_drive,''),i.id) grupo,COUNT(DISTINCT l.sku) referencias,COUNT(DISTINCT d.posicion) posiciones FROM ims_op_inventario i JOIN ims_nat_inventario n ON n.inventario_id=i.id AND n.borrador=0 LEFT JOIN ims_op_linea l ON l.inventario_id=i.id LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id WHERE i.sede IN (${marcador(pf.sedes)}) GROUP BY grupo`,pf.sedes):[[]];
+  const [nombresClientes]=await c.execute('SELECT ic.inventario_id,c.nombre FROM ims_op_inventario_cliente ic JOIN ims_op_cliente c ON c.id=ic.cliente_id ORDER BY c.nombre');
   const grupos=new Map();for(const n of nativos){const key=n.archivo_drive||n.id;if(!grupos.has(key))grupos.set(key,[]);grupos.get(key).push(n);}
   for(const [key,ns] of grupos){const row=panel.find(r=>r.archivo_drive===key),m=ns[0];const total=ns.reduce((a,n)=>{const [v,f='']=String(n.unidades||'0').split('.');return a+BigInt(v+f.padEnd(9,'0'));},0n),unidades=String(total/1000000000n)+'.'+String(total%1000000000n).padStart(9,'0');
-   const vista={...(row||{id:m.id,archivo_drive:'',cliente:m.codigo_operativo,sede:m.sede}),inventarios:ns.map(n=>({id:n.id,codigo:n.codigo_operativo,nativo:true})),fecha_inicio:row?.fecha_inicio||ns.map(n=>date(n.fecha_inicio)).sort()[0],fecha_fin:ns.every(n=>n.estado==='ENTREGADO')?ns.map(n=>date(n.fecha_entrega)).sort().at(-1):null,estado:ns.every(n=>n.estado==='ENTREGADO')?'Entregado':ns.every(n=>n.estado==='CANCELADO')?'Cancelado':'En proceso',responsable:m.responsable,unidades,referencias:Number(unicos.find(u=>u.grupo===key)?.referencias??0),posiciones:Number(unicos.find(u=>u.grupo===key)?.posiciones??0)};
+   const vista={...(row||{id:m.id,archivo_drive:'',cliente:[...new Set(ns.flatMap(n=>nombresClientes.filter(c=>c.inventario_id===n.id).map(c=>c.nombre)))].join(' · '),sede:m.sede}),inventarios:ns.map(n=>({id:n.id,codigo:n.codigo_operativo,nativo:true})),fecha_inicio:row?.fecha_inicio||ns.map(n=>date(n.fecha_inicio)).sort()[0],fecha_fin:ns.every(n=>n.estado==='ENTREGADO')?ns.map(n=>date(n.fecha_entrega)).sort().at(-1):null,estado:ns.every(n=>n.estado==='ENTREGADO')?'Entregado':ns.every(n=>n.estado==='CANCELADO')?'Cancelado':'En proceso',responsable:m.responsable,unidades,referencias:Number(unicos.find(u=>u.grupo===key)?.referencias??0),posiciones:Number(unicos.find(u=>u.grupo===key)?.posiciones??0)};
    if(row)Object.assign(row,vista);else panel.push(vista);
   }
   const [trabajos]=await c.execute('SELECT id,tipo,estado,progreso,resultado,actualizado_en FROM ims_cm_trabajo WHERE actor_id=? ORDER BY creado_en DESC LIMIT 10',[p.actorId]);
   const [[pub]]=await c.execute('SELECT COUNT(*) AS n FROM ims_cm_publicacion');
   return {indicadores:indicadores(es,panel),eventos:es,actualizadoEn:new Date().toISOString(),publicados:Number(pub.n),trabajos:trabajos.map(x=>({...x,resultado:parse(x.resultado)})),panel:panel.map(({datos,...r})=>r),kpiOrigen:'PANEL_DEL_CORTE_ELEGIDO'};
+ }
+ if(recurso==='calidad'){
+  exigir(pf.rol==='ADMIN','SIN_PERMISO','La revisión de datos corresponde al administrador.');
+  const sedes=pf.sedes.length?pf.sedes:['SIN_SEDE'];const [[inventarios]]=await c.execute(`SELECT COUNT(DISTINCT i.id) total,COUNT(DISTINCT CASE WHEN n.inventario_id IS NULL THEN i.id END) historicos,COUNT(DISTINCT n.inventario_id) nativos FROM ims_op_inventario i LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE i.sede IN (${marcador(sedes)})`,sedes);
+  const [[lineas]]=await c.execute('SELECT COUNT(*) total,SUM(l.conteo_1 IS NOT NULL) c1,SUM(l.conteo_2 IS NOT NULL) c2,SUM(l.conteo_final IS NOT NULL) c3,SUM((l.conteo_1 IS NULL AND (l.conteo_2 IS NOT NULL OR l.conteo_final IS NOT NULL)) OR (l.conteo_2 IS NULL AND l.conteo_final IS NOT NULL)) etapasHeredadasParaRevisar FROM ims_op_linea l JOIN ims_op_inventario i ON i.id=l.inventario_id WHERE i.sede IN ('+marcador(sedes)+')',sedes);
+  const [sinVinculo]=await c.execute('SELECT i.id,i.sede,i.codigo_operativo FROM ims_op_inventario i JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE i.sede IN ('+marcador(sedes)+') AND NOT EXISTS(SELECT 1 FROM ims_cm_vinculo v WHERE v.inventario_id=i.id) ORDER BY i.sede,i.codigo_operativo',sedes);
+  const [fuentes]=await c.execute('SELECT clave,filas,metadatos FROM ims_cm_fuente ORDER BY clave');return {inventarios,lineas,sinVinculo,fuentes:pf.sedes.includes('UIO')&&pf.sedes.includes('GYE')?fuentes.map(x=>({...x,metadatos:parse(x.metadatos)})):[],datosModificados:false,nota:'Las etapas heredadas se conservan como fueron capturadas. Un inventario sin vínculo puede ser una creación independiente válida.'};
  }
  if(recurso==='codigos'){
   exigir(pf.sedes.includes(query.sede),'SIN_PERMISO','Sede no autorizada.');

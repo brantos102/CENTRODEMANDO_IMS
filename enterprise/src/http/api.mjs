@@ -1,3 +1,5 @@
+import {iniciarGoogleOAuth,completarGoogleOAuth,callbackGoogle} from '../centro/google-oauth.mjs';
+import {consultarCatalogos,importarCatalogo,resolverEAN} from '../centro/catalogos.mjs';
 import {createServer} from 'node:http';
 import {consultarCentro,mutarCentro} from '../centro/servicio.mjs';
 import {crearDesdeCentro} from '../centro/crear.mjs';
@@ -8,7 +10,7 @@ import {ErrorAuth,tokensIguales} from '../auth/credenciales.mjs';
 import {iniciarSesion,autenticar,cerrarSesion} from '../auth/sesiones.mjs';
 import {guardarConteo} from '../mysql/conteos.mjs';
 import {listarInventarios,listarLineas,consultarResumen} from '../mysql/consultas.mjs';
-import {ejecutarOperacion,contextoOperacion,consultarOperacion,previsualizarSerie,historialCapturas} from '../mysql/operacion-nativa.mjs';
+import {ejecutarOperacion,contextoOperacion,consultarOperacion,previsualizarSerie,historialCapturas,avanceOperacion} from '../mysql/operacion-nativa.mjs';
 import {servirEstatico} from './estaticos.mjs';
 import {sedesAutorizadasERP,autorizarSedeERP} from '../mysql/acceso-erp.mjs';
 import {crearInventarioERP,consultarOrigenERP} from '../mysql/crear-desde-erp.mjs';
@@ -70,7 +72,7 @@ const STATUS={NO_AUTENTICADO:401,SIN_PERMISO:403,BASE_NO_PERMITIDA:503,SOLICITUD
   ERP_CONSULTA_UTILIZADA:409,ERP_CLIENTE_PENDIENTE:409,CODIGO_EXISTENTE:409};
 
 /** No instala esquema ni crea usuarios. Todas las rutas de datos exigen sesión. */
-export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision,gestorERP=null,erpCreacion=false,centroHabilitado=false,claveCentro}){
+export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision,gestorERP=null,erpCreacion=false,centroHabilitado=false,claveCentro,fetchGoogle=fetch}){
   const origin=origenPublico(publicUrl);
   if(operacionNativa&&soloLectura)throw Error('Operación nativa incompatible con solo lectura.');
   if(gestorERP&&!operacionNativa)throw Error('ERP requiere operación nativa.');
@@ -81,6 +83,11 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
   const servidor=createServer(async(req,res)=>{
     try{
       const url=new URL(req.url,origin);
+      if(req.method==='GET'&&url.pathname==='/api/centro/google/callback'&&centroHabilitado){
+        let texto='La autorización no se confirmó. La conexión anterior se conserva. Vuelve al Centro para intentarlo de nuevo.',status=400;
+        try{if(['state','code','error'].some(k=>url.searchParams.getAll(k).length>1))throw Error();await completarGoogleOAuth(pool,{estado:url.searchParams.get('state'),codigo:url.searchParams.get('code'),denegado:url.searchParams.has('error')},claveCentro,fetchGoogle);texto='Cuenta Google autorizada. Correo y calendario ya están conectados con la cuenta elegida.';status=200;}catch{}
+        res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});return res.end('<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conexión Google · ITSANET</title><link rel="stylesheet" href="/assets/centro.css"><main><section class="panel"><h1>Conexión con Google</h1><p>'+texto+'</p><a class="boton principal" href="/centro#conexiones">Volver al Centro de Mando</a></section></main></html>');
+      }
       if(req.headers.origin&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
       if(req.method==='POST'&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
       if(await servirEstatico(req,res,url,{centroHabilitado}))return;
@@ -122,6 +129,11 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         const ruta=url.pathname.slice('/api/centro/'.length);
         const perfil=await consultarCentro(pool,principal,'perfil');
         if(perfil.perfil.cambiar_clave&&!['perfil','clave'].includes(ruta))throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
+        if(req.method==='GET'&&ruta==='catalogos')return json(res,200,await consultarCatalogos(pool,principal,opciones(url,['sede','tipo','desde'])));
+        if(req.method==='POST'&&ruta==='catalogos')return json(res,200,await importarCatalogo(pool,principal,await leerJson(req,24*1024*1024)));
+        if(req.method==='GET'&&ruta==='ean')return json(res,200,await resolverEAN(pool,principal,opciones(url,['inventario','codigo'])));
+        if(req.method==='GET'&&ruta==='google/configuracion'){const r=await consultarConectores(pool,principal,claveCentro);return json(res,200,{...r,callback:callbackGoogle(origin)});}
+        if(req.method==='POST'&&ruta==='google/iniciar'){const b=await leerJson(req);if(Object.keys(b).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La cuenta se elige en Conexiones.',400);return json(res,200,await iniciarGoogleOAuth(pool,principal,claveCentro,origin));}
         if(req.method==='GET'&&ruta==='conexiones')return json(res,200,await consultarConectores(pool,principal,claveCentro));
         if(req.method==='POST'&&ruta==='conexiones')return json(res,200,await guardarConector(pool,principal,await leerJson(req,65536),claveCentro));
         if(req.method==='POST'&&ruta==='trabajos')return json(res,202,await solicitarTrabajo(pool,principal,await leerJson(req)));
@@ -138,7 +150,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         if(req.method==='GET'&&reporte){
           const r=await reporteInventario(pool,principal,reporte[1],reporte[2]);res.writeHead(200,{'Content-Type':r.tipo,'Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);
         }
-        if(req.method==='GET'&&['contexto','perfil','usuarios','dashboard','eventos','analitica','codigos','auditoria','legado','archivo-legado','inventario'].includes(ruta)){
+        if(req.method==='GET'&&['contexto','perfil','usuarios','dashboard','eventos','analitica','codigos','auditoria','legado','archivo-legado','inventario','calidad'].includes(ruta)){
           const q=opciones(url,['sede','cliente','buscar','mes','desde','hasta','fuente','inventario','hoja']);return json(res,200,await consultarCentro(pool,principal,ruta,q));
         }
         if(req.method==='POST'&&ruta==='inventarios'){
@@ -211,6 +223,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           if([...url.searchParams.keys()].some(k=>!['clienteId','cursor'].includes(k))||['clienteId','cursor'].some(k=>url.searchParams.getAll(k).length>1))throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
           return json(res,200,await historialCapturas(pool,principal,historial[1],{tipo:historial[2],clienteId:url.searchParams.get('clienteId'),cursor:url.searchParams.get('cursor')||''}));
         }
+        const avance=/^\/api\/operacion\/inventarios\/([a-f0-9-]+)\/avance$/.exec(url.pathname);if(req.method==='GET'&&avance)return json(res,200,await avanceOperacion(pool,principal,avance[1]));
         const inv=/^\/api\/operacion\/inventarios\/([a-f0-9-]+)(\/analisis)?$/.exec(url.pathname);
         if(req.method==='GET'&&inv){
           if([...url.searchParams.keys()].some(k=>k!=='cursor')||url.searchParams.getAll('cursor').length>1)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);

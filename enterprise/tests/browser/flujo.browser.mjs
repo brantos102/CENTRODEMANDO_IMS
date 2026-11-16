@@ -61,7 +61,7 @@ async function fixture(t,options={}){
       const h=Object.fromEntries(r.headers);
       for(const k of ['connection','transfer-encoding','content-length','keep-alive'])delete h[k];
       if(url.pathname.endsWith('/lineas')&&f.fault==='demorar-pagina'){
-        f.fault=null;f.liberarPagina=()=>route.fulfill({status:r.status,headers:h,body});return;
+        f.fault=null;f.paginaRetenida=request;f.liberarPagina=()=>route.fulfill({status:r.status,headers:h,body});return;
       }
       await route.fulfill({status:r.status,headers:h,body});
     }catch{await route.abort('failed');}
@@ -148,7 +148,8 @@ test('una respuesta anterior no borra el conteo recién confirmado en pantalla',
   const f=await fixture(t);await f.login();f.fault='demorar-pagina';await f.page.locator('#actualizar-lineas').click();
   await esperar(()=>!!f.liberarPagina);await f.capturar(f.a,'2');
   const etapa2=f.page.locator(`tr[data-linea="${f.a}"]`).getByRole('button',{name:'Contar · 2',exact:true});await etapa2.waitFor();
-  await f.liberarPagina();await f.page.waitForLoadState('networkidle');assert.equal(await etapa2.isVisible(),true);
+  // Esperar la respuesta retenida concreta: otros módulos pueden consultar en paralelo.
+  await Promise.all([f.page.waitForEvent('requestfinished',{predicate:r=>r===f.paginaRetenida}),f.liberarPagina()]);await f.page.evaluate(()=>new Promise(requestAnimationFrame));assert.equal(await etapa2.isVisible(),true);
 });
 test('almacenamiento bloqueado permite consulta y evita capturas sin respaldo local',async t=>{
   const f=await fixture(t,{sinAlmacen:true});await f.login();

@@ -127,3 +127,28 @@ CREATE TABLE IF NOT EXISTS ims_cm_archivo (
  parte INT UNSIGNED NOT NULL, contenido MEDIUMBLOB NOT NULL,
  PRIMARY KEY(trabajo_id,parte), FOREIGN KEY(trabajo_id) REFERENCES ims_cm_trabajo(id)
 ) ENGINE=InnoDB;
+-- Catálogos versionados: importar nunca modifica existencias ni versiones anteriores.
+CREATE TABLE IF NOT EXISTS ims_cm_catalogo (
+ id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+ sede VARCHAR(50) NOT NULL, tipo VARCHAR(20) NOT NULL, nombre VARCHAR(255) NOT NULL,
+ sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, filas INT UNSIGNED NOT NULL,
+ creado_por CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ creado_en TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+ FOREIGN KEY(creado_por) REFERENCES ims_op_actor(id), CHECK(sede IN ('UIO','GYE')),
+ CHECK(tipo IN ('EAN','WTW'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin;
+CREATE TABLE IF NOT EXISTS ims_cm_catalogo_fila (
+ catalogo_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, numero INT UNSIGNED NOT NULL,
+ cliente_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+ ean VARCHAR(120) NOT NULL DEFAULT '', sku VARCHAR(255) NOT NULL DEFAULT '', posicion VARCHAR(255) NOT NULL DEFAULT '',
+ datos LONGTEXT NOT NULL, PRIMARY KEY(catalogo_id,numero),
+ KEY ix_cm_ean(catalogo_id,ean), KEY ix_cm_pos(catalogo_id,posicion),
+ FOREIGN KEY(catalogo_id) REFERENCES ims_cm_catalogo(id), FOREIGN KEY(cliente_id) REFERENCES ims_op_cliente(id),
+ CHECK(JSON_VALID(datos))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin;
+CREATE TABLE IF NOT EXISTS ims_cm_catalogo_actual (
+ sede VARCHAR(50) NOT NULL, tipo VARCHAR(20) NOT NULL,
+ catalogo_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+ PRIMARY KEY(sede,tipo), FOREIGN KEY(catalogo_id) REFERENCES ims_cm_catalogo(id),
+ CHECK(sede IN ('UIO','GYE')), CHECK(tipo IN ('EAN','WTW'))
+) ENGINE=InnoDB;

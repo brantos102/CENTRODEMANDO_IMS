@@ -1,0 +1,122 @@
+{
+  "ok": true,
+  "formato": "ims-interfaz-google-catalogos-validacion-v1",
+  "fecha": "2026-11-16",
+  "revision_base": "df7d43dbd086dc01a4767e63acf751e94b1405aa",
+  "pruebas": {
+    "node": {
+      "total": 195,
+      "aprobadas": 195
+    },
+    "python": {
+      "total": 161,
+      "aprobadas": 161
+    },
+    "mysql": {
+      "total": 138,
+      "aprobadas": 138,
+      "archivos": {
+        "api.integration.mjs": {
+          "tests": 18,
+          "pass": 18,
+          "fail": 0,
+          "skipped": 0
+        },
+        "centro.integration.mjs": {
+          "tests": 29,
+          "pass": 29,
+          "fail": 0,
+          "skipped": 0
+        },
+        "conteos.integration.mjs": {
+          "tests": 12,
+          "pass": 12,
+          "fail": 0,
+          "skipped": 0
+        },
+        "copia-abiertos.integration.mjs": {
+          "tests": 12,
+          "pass": 12,
+          "fail": 0,
+          "skipped": 0
+        },
+        "creacion-erp.integration.mjs": {
+          "tests": 11,
+          "pass": 11,
+          "fail": 0,
+          "skipped": 0
+        },
+        "erp.integration.mjs": {
+          "tests": 5,
+          "pass": 5,
+          "fail": 0,
+          "skipped": 0
+        },
+        "importar-abiertos.integration.mjs": {
+          "tests": 8,
+          "pass": 8,
+          "fail": 0,
+          "skipped": 0
+        },
+        "nativa.integration.mjs": {
+          "tests": 9,
+          "pass": 9,
+          "fail": 0,
+          "skipped": 0
+        },
+        "piloto.integration.mjs": {
+          "tests": 4,
+          "pass": 4,
+          "fail": 0,
+          "skipped": 0
+        },
+        "series.integration.mjs": {
+          "tests": 13,
+          "pass": 13,
+          "fail": 0,
+          "skipped": 0
+        },
+        "traslado.integration.mjs": {
+          "tests": 17,
+          "pass": 17,
+          "fail": 0,
+          "skipped": 0
+        }
+      }
+    },
+    "chromium": {
+      "total": 30,
+      "aprobadas": 30
+    }
+  },
+  "datos_de_prueba": "SINTETICOS",
+  "correos_reales_enviados": false,
+  "calendarios_externos_modificados": false,
+  "servidor_corporativo_modificado_en_esta_validacion": false,
+  "apache_modificado": false,
+  "nuevas_escuchas_corporativas": [],
+  "google": {
+    "cuenta_temporal_configurable": "bespinoza@itsanet.com",
+    "cliente_cloud_creado": false,
+    "consentimiento_real_completado": false,
+    "cuenta_reemplazable": true,
+    "uri_redireccion": "https://apps.flexnetuio.com:8445/api/centro/google/callback"
+  },
+  "catalogos": {
+    "ean_implementado": true,
+    "ean_real_cargado": false,
+    "wtw_catalogo_y_visor_local_implementados": true,
+    "maestro_wtw_real_cargado": false,
+    "backend_wtw_original_recibido": false,
+    "versiones_inmutables": true,
+    "stock_modificado": false
+  },
+  "produccion_activada": false,
+  "migracion_total_terminada": false,
+  "pendientes": [
+    "Crear cliente OAuth y autorizar cuenta corporativa",
+    "Cargar catálogo EAN efectivo",
+    "Recibir maestro y backend WTW para completar paridad",
+    "Completar funciones auxiliares y aceptación de operación/restauración en servidor"
+  ]
+}

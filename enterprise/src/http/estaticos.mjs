@@ -1,6 +1,14 @@
 import {readFile} from 'node:fs/promises';
 const ROOT=new URL('../../public/',import.meta.url);
 const FILES={
+  '/catalogos':['catalogos.html','text/html; charset=utf-8'],
+  '/assets/catalogos.mjs':['catalogos.mjs','text/javascript; charset=utf-8'],
+  '/assets/catalogos-csv.mjs':['catalogos-csv.mjs','text/javascript; charset=utf-8'],
+  '/plantilla-ean.csv':['plantilla-ean.csv','text/csv; charset=utf-8'],
+  '/plantilla-wtw.csv':['plantilla-wtw.csv','text/csv; charset=utf-8'],
+  '/assets/interfaz.css':['interfaz.css','text/css; charset=utf-8'],
+  '/assets/interfaz.mjs':['interfaz.mjs','text/javascript; charset=utf-8'],
+  '/wms':['index.html','text/html; charset=utf-8'],
   '/assets/legado.mjs':['legado.mjs','text/javascript; charset=utf-8'],
   '/inventarios':['index.html','text/html; charset=utf-8'],
   '/centro':['centro.html','text/html; charset=utf-8'],

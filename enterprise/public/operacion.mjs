@@ -44,14 +44,14 @@ async function contexto(seleccion=$('op-inventario').value){
 }
 function celda(tr,text){const td=document.createElement('td');td.textContent=text;tr.append(td);}
 async function detalle(mas=false){
- const id=$('op-inventario').value;if(!id)return;const ep=++state.epoch;
+ const id=$('op-inventario').value;if(!id){state.inv=null;$('op-lineas').replaceChildren();$('op-supervision').hidden=true;$('op-series-panel').hidden=true;return;}const ep=++state.epoch;
  const r=await api('/api/operacion/inventarios/'+id+(mas&&state.cursor?'?cursor='+state.cursor:''));
  if(ep!==state.epoch||$('op-inventario').value!==id)return;
  if(!r.inventario||!Array.isArray(r.lineas))throw Error('Detalle incompleto.');
  const origen=state.sesion.erpCreacionDisponible&&r.lineas.length?await api('/api/erp/inventarios/'+id+'/origen?lineas='+r.lineas.map(l=>l.id).join(',')):{datos:[]};
  if(!Array.isArray(origen.datos)||ep!==state.epoch||$('op-inventario').value!==id)return;
  const procedencias=new Map(origen.datos.map(o=>[o.linea_id,o]));
- state.inv=r.inventario;state.cursor=r.siguiente;
+ state.inv=r.inventario;state.cursor=r.siguiente;document.dispatchEvent(new CustomEvent('ims:inventario',{detail:{id}}));$('op-ir-conteo').href='/inventarios?inventario='+id;
  actualizarSeries();
  const n=state.inv,supervisor=n.perfiles.length&&n.perfiles.every(p=>p.rol==='SUPERVISOR');
  $('op-supervision').hidden=!supervisor;$('op-cargar').hidden=!n.borrador;$('op-activar').hidden=!n.borrador;
@@ -59,12 +59,12 @@ async function detalle(mas=false){
  $('op-detalle').textContent=n.codigo+' · '+n.estado+' · versión '+n.version+(n.borrador?' · Stock por activar':'');
  const clientes=n.perfiles.map(p=>{const c=state.contexto.clientes.find(c=>c.id===p.cliente_id);return new Option(c?.nombre||p.cliente_id,p.cliente_id);});
  $('op-cliente-csv').replaceChildren(...clientes.map(o=>o.cloneNode(true)));$('op-cli-permiso').replaceChildren(...clientes);
- if(!mas){$('op-lineas').replaceChildren();$('op-kpis').replaceChildren();}
+ if(!mas){$('op-lineas').replaceChildren();$('op-kpis').replaceChildren();$('op-ajustar').reset();$('op-ajuste-contexto').textContent='Selecciona Revisar ajuste en la línea que deseas corregir.';}
  for(const l of r.lineas){const tr=document.createElement('tr');
   const erp=procedencias.get(l.id);
-  celda(tr,l.numero+' · '+l.sku+'\n'+l.id);celda(tr,l.cliente+' · '+(l.posicion||'—')+(erp?'\nCuenta ERP: '+erp.etiqueta+' · '+erp.codigo_cliente_erp:''));
+  celda(tr,l.numero+' · '+l.sku);celda(tr,l.cliente+' · '+(l.posicion||'—')+(erp?'\nCuenta ERP: '+erp.etiqueta+' · '+erp.codigo_cliente_erp:''));
   celda(tr,[l.conteo_1,l.conteo_2,l.conteo_final].map(formatearCantidad).join(' / '));
-  celda(tr,Object.hasOwn(l,'depot')?[l.depot,l.fisico,l.desfase].map(formatearCantidad).join(' / '):'Conteo ciego');celda(tr,l.version);$('op-lineas').append(tr);
+  celda(tr,Object.hasOwn(l,'depot')?[l.depot,l.fisico,l.desfase].map(formatearCantidad).join(' / '):'Conteo ciego');const accion=document.createElement('td'),version=document.createElement('small');version.textContent='Versión '+l.version;accion.append(version);if(supervisor&&['EN_PROCESO','EN_VALIDACION'].includes(n.estado)){const b=document.createElement('button');b.type='button';b.textContent='Revisar ajuste';b.onclick=()=>{$('op-linea-ajuste').value=l.id;$('op-version-ajuste').value=l.version;$('op-ajuste-contexto').textContent=l.sku+' · '+(l.posicion||'Sin posición')+' · '+l.cliente;$('op-cantidad-ajuste').value=String(l.ajuste||'0').replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,'');$('op-motivo').value=l.motivo||'';$('op-justificacion').value=l.justificacion||'';$('op-ajustar').closest('details').open=true;$('op-ajustar').scrollIntoView({block:'center'});};accion.append(b);}tr.append(accion);$('op-lineas').append(tr);
  }
  $('op-mas').hidden=!state.cursor;
 }
@@ -109,7 +109,8 @@ formulario('op-usuario-crear',async()=>{
 $('op-depot-guardar').addEventListener('click',()=>tarea(async()=>{await mutar('depot',{...solicitud(),visible:$('op-depot').checked});await detalle();}));
 $('op-analisis').addEventListener('click',()=>tarea(async()=>{const id=state.inv?.id;if(!id)throw Error('Selecciona un inventario.');const r=await api('/api/operacion/inventarios/'+id+'/analisis');
  if(state.inv?.id!==id)return;if(r.referencia!=='ITSANET_IMS_WMS_V124'||!r.kpis||!r.avance)throw Error('Análisis incompleto.');
- $('op-kpis').textContent='Exactitud WMS: unidades '+formatearCantidad(r.kpis.efectividadUnidades)+'% · referencias '+formatearCantidad(r.kpis.efectividadRef)+'% · posiciones '+formatearCantidad(r.kpis.efectividadPos)+'% · avance '+r.avance.contadas+'/'+r.avance.lineas+' líneas ('+r.avance.porcentaje+'%).';
+ const contenedor=$('op-kpis'),resumen=document.createElement('p');resumen.textContent='Exactitud WMS · avance '+r.avance.contadas+'/'+r.avance.lineas+' líneas ('+r.avance.porcentaje+'%).';const tarjetas=document.createElement('div');tarjetas.className='wms-avance';for(const [titulo,valor]of [['Exactitud de unidades',formatearCantidad(r.kpis.efectividadUnidades)+'%'],['Exactitud de referencias',formatearCantidad(r.kpis.efectividadRef)+'%'],['Exactitud de posiciones',formatearCantidad(r.kpis.efectividadPos)+'%'],['Unidades teóricas',formatearCantidad(r.kpis.uniTotal)]]){const d=document.createElement('div'),label=document.createElement('span'),v=document.createElement('strong');label.textContent=titulo;v.textContent=valor;d.append(label,v);tarjetas.append(d);}contenedor.replaceChildren(resumen,tarjetas);
+
 }));
 $('op-actualizar').addEventListener('click',()=>tarea(()=>contexto()));$('op-inventario').addEventListener('change',()=>tarea(()=>detalle()));$('op-mas').addEventListener('click',()=>tarea(()=>detalle(true)));
 $('op-reintentar').addEventListener('click',()=>tarea(async()=>{const p=pendiente();if(!p)return;if(p.requiereClave){p.body.contrasena=$('op-clave-nueva').value;$('op-clave-nueva').value='';if(!p.body.contrasena)throw Error('Escribe otra vez la misma contraseña nueva para recuperar la cuenta.');}const r=await ejecutar(p);await contexto(r.inventarioId||$('op-inventario').value);}));
@@ -188,5 +189,7 @@ try{
  if(state.sesion.operacionNativa!==true)throw Error('La operación nativa aún no está habilitada. El piloto de consulta sigue disponible.');
  $('op-fecha').value=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Guayaquil',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  const seleccionado=new URL(location.href).searchParams.get('inventario')||'';
- await contexto(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(seleccionado)?seleccionado:'');$('op-contenido').hidden=false;controles();aviso('Sesión verificada. Selecciona o crea un inventario de ensayo.');
+ await contexto(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(seleccionado)?seleccionado:'');$('op-contenido').hidden=false;document.dispatchEvent(new Event('ims:sesion'));if(state.sesion.centroDisponible){const cm=await api('/api/centro/contexto');$('op-cuenta').replaceChildren(new Option('Selecciona una persona',''),...cm.personas.filter(u=>u.activo).map(u=>new Option(u.nombre+' · '+u.correo,u.actor_id)));$('op-cuenta').hidden=false;$('op-cuenta').required=true;$('op-actor').type='hidden';$('op-actor-etiqueta').hidden=true;}controles();aviso('Sesión verificada. Selecciona un inventario para continuar.');if(location.hash==='#analisis'&&state.inv)$('op-analisis').click();if(location.hash==='#series')$('op-series-panel').scrollIntoView({block:'start'});
 }catch(e){aviso(e.status===401?'Inicia sesión desde Inventarios y capturas, luego vuelve a Operación.':e.message,true);}
+
+$('op-cuenta').onchange=()=>{$('op-actor').value=$('op-cuenta').value;};

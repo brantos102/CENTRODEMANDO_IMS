@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {permisos,puedeCrearRol,evento,transicion,calendario,indicadores,codigosDesdeFilas,fecha} from '../src/centro/dominio.mjs';
 import {proyectarEvento,sanearFila} from '../src/centro/importar.mjs';
 import {csv,ics} from '../src/centro/reportes.mjs';
-import {xlsx} from '../src/centro/archivos.mjs';
+import {xlsx,xlsxLibro} from '../src/centro/archivos.mjs';
 import {inflateRawSync} from 'node:zlib';
 const actor='00000000-0000-4000-8000-000000000001';
 test('jerarquía del original: coordinador crea líderes; líder no crea administradores ni otros líderes',()=>{
@@ -37,4 +37,7 @@ test('CSV e ICS no ejecutan fórmulas ni inyectan cabeceras; Excel conserva iden
 });
 test('conexiones privadas se cifran con autenticación y rechazan una clave o contenido distintos',async()=>{
  const {cifrar,descifrar,validarConector}=await import('../src/centro/conectores.mjs'),k='a'.repeat(64),s={password:'SECRETO_SINTETICO',host:'correo.sintetico.invalid'},c=cifrar(s,k);assert.ok(!c.includes(s.password));assert.deepEqual(descifrar(c,k),s);assert.throws(()=>descifrar(c,'b'.repeat(64)));assert.throws(()=>validarConector('SMTP',{host:'localhost',puerto:25}));
+});
+test('libro de Excel conserva hojas auxiliares y rechaza nombres inválidos o duplicados',async()=>{
+ const b=await xlsxLibro([{nombre:'INVENTARIOS',filas:[['SKU'],['000123']]},{nombre:'SERIES_FISICAS',filas:[['SERIE'],['000001']]}]);let p=0,libro='';const nombres=[];while(b.readUInt32LE(p)===0x04034b50){const len=b.readUInt32LE(p+18),n=b.readUInt16LE(p+26),extra=b.readUInt16LE(p+28),name=b.subarray(p+30,p+30+n).toString(),start=p+30+n+extra;nombres.push(name);if(name==='xl/workbook.xml')libro=inflateRawSync(b.subarray(start,start+len)).toString();p=start+len;}assert.match(libro,/name="SERIES_FISICAS"/);assert.ok(nombres.includes('xl/worksheets/sheet2.xml'));for(const nombre of ['../x','bad[x','bad]x','a'.repeat(32)])await assert.rejects(xlsxLibro([{nombre,filas:[]}]));await assert.rejects(xlsxLibro([{nombre:'Datos',filas:[]},{nombre:'DATOS',filas:[]}]));
 });

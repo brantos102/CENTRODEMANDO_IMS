@@ -2,7 +2,7 @@
 
 Esta rama es una **candidata aislada** de Centro de Mando. Parte de codigo-en-vivo @04fdb88, incorpora desarrollo @69f602f (Guayaquil) y conserva el esquema Power BI de 30/15 columnas. Incluye los ajustes revisados y el núcleo MySQL probado. No se ha fusionado con codigo-en-vivo ni publicado en Apps Script o en el servidor empresarial.
 
-WTW queda pendiente por instrucción del usuario. Su aplicación y enlaces actuales continúan; su extracción no bloquea esta fase.
+Actualización del 16/11/2026: el usuario reincorporó EAN y WTW al alcance completo. Su aplicación original sigue disponible; consultar [catálogos EAN y WTW](../enterprise/CATALOGOS_EAN_WTW.md) y la [matriz vigente](PARIDAD_INTERFAZ_20261116.md) antes de considerar terminada la migración. Las instrucciones anteriores de esta guía corresponden a su fase histórica.
 
 ## PowerShell en el PC Windows
 

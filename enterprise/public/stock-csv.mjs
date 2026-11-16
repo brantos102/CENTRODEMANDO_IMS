@@ -1,5 +1,5 @@
 // CSV textual: conserva SKU, ceros, celdas vacías y filas repetidas.
-export function leerCsv(text){
+export function leerTablaCsv(text){
  if(typeof text!=='string'||text.length>24*1024*1024)throw Error('CSV demasiado grande.');
  text=text.replace(/^\uFEFF/,'');
  const primera=text.split(/\r?\n/,1)[0];
@@ -18,6 +18,10 @@ export function leerCsv(text){
  if(quoted)throw Error('Comillas CSV sin cerrar.');
  row.push(cell);if(row.some(v=>v!==''))rows.push(row);
  if(rows.length<2||rows.length>100001)throw Error('El CSV debe tener cabecera y de 1 a 100.000 líneas.');
+ return rows;
+}
+export function leerCsv(text){
+ const rows=leerTablaCsv(text);
  const head=rows.shift().map(v=>v.trim().toLowerCase());
  if(new Set(head).size!==head.length||head.some(x=>!x)||!head.includes('sku')||!head.includes('depot'))throw Error('Cabeceras inválidas: requiere sku y depot, sin duplicados.');
  const permitidos=['cliente_id','sku','depot','descripcion','posicion','serie','lote','unidad','abc','despacho','partida','categoria','estado_mercancia'];

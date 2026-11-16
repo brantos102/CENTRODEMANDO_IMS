@@ -18,6 +18,7 @@ _validacion=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(_val
 validar_zip,normal=_validacion.validar_zip,_validacion.normal
 
 CM_TABLES={
+ 'ims_cm_catalogo':'SELECT, INSERT','ims_cm_catalogo_fila':'SELECT, INSERT','ims_cm_catalogo_actual':'SELECT, INSERT, UPDATE',
  'ims_cm_conector':'SELECT, INSERT, UPDATE','ims_cm_archivo':'SELECT, INSERT, DELETE',
  'ims_cm_perfil':'SELECT, INSERT, UPDATE','ims_cm_acceso':'SELECT, INSERT, DELETE',
  'ims_cm_evento':'SELECT, INSERT, UPDATE','ims_cm_equipo':'SELECT, INSERT, UPDATE',
