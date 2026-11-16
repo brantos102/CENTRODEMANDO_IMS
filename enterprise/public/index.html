@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ITSANET IMS / WMS · Conteo</title>
   <link rel="stylesheet" href="/assets/estilos.css"><script type="module" src="/assets/app.mjs"></script>
-<link rel="stylesheet" href="/assets/interfaz.css"><script type="module" src="/assets/interfaz.mjs"></script></head>
+<link rel="stylesheet" href="/assets/interfaz.css"><script type="module" src="/assets/interfaz.mjs"></script><link rel="stylesheet" href="/assets/ims.css"><script type="module" src="/assets/ims.mjs"></script></head>
 <body>
   <header class="cabecera"><a class="marca" href="/inventarios" aria-label="Centro de Mando, inicio"><span class="isotipo" aria-hidden="true">I</span><span>Centro de Mando<small>ITSANET · Inventarios</small></span></a>
     <div class="cabecera-derecha"><span class="etiqueta candidata">Candidata en validación</span><span id="red" class="etiqueta">Conectado</span></div></header>
@@ -52,11 +52,20 @@
           <section id="seleccion-vacia" class="tarjeta vacio"><span class="icono-grande" aria-hidden="true">▦</span><h2>Selecciona un inventario</h2><p>Verás sus productos, ubicaciones y etapas de conteo.</p></section>
           <section id="detalle" class="tarjeta detalle" hidden>
             <div class="titulo-panel"><div><span id="sede" class="sobrelinea"></span><h2 id="codigo"></h2><p id="estado-inventario" class="nota"></p></div><button id="actualizar-lineas" class="secundario" type="button">Actualizar líneas</button></div>
-            <div id="wms-acciones" class="wms-acciones" hidden><a id="wms-series" class="boton" href="/operacion#series">Series y hallazgos</a><a id="wms-analisis" class="boton" href="/operacion#analisis">Análisis WMS</a><a id="wms-supervision" class="boton" href="/operacion">Supervisión</a></div><div id="wms-avance" class="wms-avance" aria-live="polite" hidden></div><p id="wms-contexto" class="wms-contexto" hidden></p><p class="nota">Cada fila es una línea independiente. Un mismo producto puede aparecer en varias ubicaciones.</p>
+            <nav id="ims-tabs" class="ims-tabs" aria-label="Secciones del inventario" hidden>
+<button type="button" data-vista="inicio">▦ Inicio</button><button type="button" data-vista="conteo">Conteo físico</button><button type="button" data-vista="series">Series</button><button type="button" data-vista="analisis">Análisis</button><button type="button" data-vista="adicionales">Adicionales</button><button type="button" data-vista="mapa">Mapa bodega</button><button type="button" data-vista="supervision">Administración</button><button type="button" id="ims-cambiar">Cambiar inventario</button>
+</nav>
+<section id="ims-home" hidden><div class="ims-home-grid"><aside class="ims-home-lateral">
+<section class="tarjeta"><h3>Búsqueda rápida</h3><form id="ims-busqueda"><label for="ims-codigo-buscar">EAN, SKU o serie</label><input id="ims-codigo-buscar" maxlength="120" autocomplete="off"><button class="primario">Buscar para contar</button></form></section>
+<section class="tarjeta"><h3>Registros generales</h3><label for="ims-posicion-buscar">Buscar ubicación</label><input id="ims-posicion-buscar" type="search" maxlength="120"><p id="ims-totales"></p><div id="ims-posiciones" class="ims-registros"></div></section></aside>
+<div class="ims-mapa"><p id="ims-mapa-estado" role="status">Consultando posiciones del inventario…</p><div class="wms-tools"><button type="button" id="ims-mapa-actualizar" class="secundario">Actualizar mapa y progreso</button><a id="ims-catalogo" href="/catalogos" hidden>Cargar maestro de posiciones</a></div><div id="ims-mapa"></div></div></div></section>
+<section id="ims-panel-operacion" hidden aria-live="polite"></section>
+<div id="ims-panel-conteo"><p id="ims-posicion-activa" class="aviso" hidden></p>
+<div id="wms-acciones" class="wms-acciones" hidden><a id="wms-series" class="boton" href="/operacion#series">Series y hallazgos</a><a id="wms-analisis" class="boton" href="/operacion#analisis">Análisis WMS</a><a id="wms-supervision" class="boton" href="/operacion">Supervisión</a></div><div id="wms-avance" class="wms-avance" aria-live="polite" hidden></div><p id="wms-contexto" class="wms-contexto" hidden></p><p class="nota">Cada fila es una línea independiente. Un mismo producto puede aparecer en varias ubicaciones.</p>
             <form id="form-lineas"><fieldset id="filtros-lineas" class="busqueda-lineas"><legend class="sr-only">Buscar líneas del inventario</legend><div><label for="buscar-lineas">EAN, producto, ubicación, serie o lote</label><input id="buscar-lineas" type="search" maxlength="120" autocomplete="off" placeholder="Buscar dentro de este inventario"></div><button class="secundario" type="submit">Filtrar líneas</button><button id="limpiar-lineas" class="texto-boton" type="button">Limpiar</button></fieldset></form>
             <div id="ean-coincidencias" class="wms-tools" aria-live="polite"></div><div class="wms-tools"><button id="producto-escanear" type="button" class="secundario">Escanear producto con cámara</button><label>Orden visual<select id="orden-lineas"><option value="producto">Producto</option><option value="posicion">Posición</option></select></label></div><div id="producto-camara" hidden><video id="producto-video" playsinline muted></video><button id="producto-cerrar" type="button">Cerrar cámara</button></div><div class="tabla-scroll"><table><thead><tr><th>Producto / cliente</th><th>Posición / serie</th><th>Conteo 1</th><th>Conteo 2</th><th>Final</th><th>Acción</th></tr></thead><tbody id="lineas"></tbody></table></div>
             <div class="pie-tabla"><span id="resumen-lineas" class="nota"></span><button id="mas-lineas" class="secundario" type="button" hidden>Cargar más líneas</button></div>
-          </section>
+          </div></section>
         </div>
       </div>
     </section>

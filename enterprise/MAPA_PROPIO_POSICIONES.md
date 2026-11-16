@@ -51,3 +51,5 @@ No se añaden tablas, privilegios SQL ni puertos para este mapa. No modifica exi
 Pasaron 207 pruebas Node, 161 Python y 32 de navegador con MySQL. El navegador verificó selección, filtros, cambio de pasillo sin modificar SQL, vista en planta/3D, zoom, pantalla móvil y descarga PNG. La geometría completa también pasó un barrido sin superposiciones en un contenedor limitado a 0,5 CPU y 512 MiB: 3.073 ms y 159 MiB RSS en esta ejecución. Son mediciones locales, no una garantía de tiempo en el servidor o teléfono del usuario.
 
 Evidencia agregada sin filas: [validación del mapa](../docs/VALIDACION_MAPA_PROPIO_20261116.json). La [captura de prueba](../docs/capturas/mapa-propio-cm-20261116.png) utiliza posiciones sintéticas.
+
+La [terminal IMS](IMS_TERMINAL_INTEGRADA.md) incorpora este visor al inventario seleccionado y permite pasar desde una ubicación a sus líneas exactas para contar. La carga privada verificada del maestro ya recibido resuelve la falta de datos del visor sin pedir otra extracción Google.

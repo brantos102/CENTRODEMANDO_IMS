@@ -1,0 +1,68 @@
+{
+  "ok": true,
+  "fecha": "2026-11-16",
+  "formato": "ims-terminal-integrada-validacion-v1",
+  "revision_servidor_recibida": "6137578d0d5a4d07cc22dfbd9beef8089f221c3c",
+  "revision_nueva_instalada_en_servidor": false,
+  "pruebas": {
+    "node": {
+      "aprobadas": 207,
+      "fallos": 0
+    },
+    "python": {
+      "aprobadas": 163,
+      "fallos": 0
+    },
+    "mysql_afectadas": {
+      "casos_distintos_aprobados": 45,
+      "fallos": 0,
+      "archivos": [
+        "centro.integration.mjs",
+        "nativa.integration.mjs",
+        "mapa-ims.integration.mjs"
+      ]
+    },
+    "navegador": {
+      "recorridos_aprobados": 33,
+      "fallos": 0,
+      "revalidacion_ims_e_historial": true
+    }
+  },
+  "flujo_navegador": [
+    "API_SIMULADA",
+    "CREACION_SQL",
+    "APERTURA_IMS",
+    "PIXEL_3D_VERIFICADO",
+    "POSICION_EXACTA_SIN_PREFIJO",
+    "CERO_CONFIRMADO",
+    "ACTUALIZACION_PROGRESO",
+    "SERIES",
+    "PLANILLA_ALTERNA",
+    "ANALISIS_WMS",
+    "HISTORIAL_ORIGINAL",
+    "MOVIL"
+  ],
+  "catalogos_reales": {
+    "csv_fuente_conservados": true,
+    "UIO_posiciones_registros": 18540,
+    "GYE_posiciones_registros": 13211,
+    "UIO_ean_registros": 12496,
+    "posiciones_3d": 30751,
+    "pendientes_medidas": 443,
+    "versiones_tras_reintento": 3,
+    "base_temporal_eliminada": true,
+    "stock_modificado": false,
+    "servidor_corporativo_modificado": false,
+    "asociaciones_ean_servidor_verificadas": false
+  },
+  "seguridad": [
+    "MAPA_REQUIERE_PERMISO_INVENTARIO_Y_SEDE",
+    "OPERADOR_DE_UN_CLIENTE_NO_VE_POSICIONES_DEL_OTRO",
+    "MAPA_NO_DEVUELVE_STOCK_TEORICO",
+    "CARGA_IDEMPOTENTE",
+    "CATALOGO_POSTERIOR_DISTINTO_CONSERVADO",
+    "HUELLAS_DE_ZIP_FIJAS_VERIFICADAS"
+  ],
+  "apache_modificado": false,
+  "puertos_nuevos": []
+}

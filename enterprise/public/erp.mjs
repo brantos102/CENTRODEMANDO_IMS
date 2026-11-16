@@ -99,7 +99,7 @@ async function confirmarCreacion(){
  if(r.ok!==true||r.operacionId!==p.body.operacionId||r.consultaId!==p.body.consultaId||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(r.inventarioId)||r.filas!==p.body.filasEsperadas||r.unidades!==p.body.unidadesEsperadas||r.borrador!==false)throw Error('La respuesta no confirma la creación. Recupera su confirmación.');
  sessionStorage.removeItem(clavePendiente());state.pendiente=null;state.creadoConsulta=p.body.consultaId;
  $('erp-creacion-estado').textContent='Inventario '+r.codigo+' creado: '+r.filas+' líneas · '+decimal(r.unidades)+' unidades. Listo para asignar permisos y contar.';
- $('erp-creado').href='/operacion?inventario='+r.inventarioId;$('erp-creado').hidden=false;sincronizarCreacion();
+ $('erp-creado').href=(state.sesion.centroDisponible?'/ims':'/operacion')+'?inventario='+r.inventarioId;$('erp-creado').hidden=false;sincronizarCreacion();
 }
 async function crearORecuperar(){
  ocupado(true);$('erp-creacion-estado').textContent='Guardando y conciliando el inventario…';

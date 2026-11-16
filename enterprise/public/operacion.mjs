@@ -12,7 +12,7 @@ async function api(url,body){
  if(!response.ok)throw Object.assign(Error(data.mensaje||'No se completó la solicitud.'),{status:response.status});return data;
 }
 function pendiente(){const text=sessionStorage.getItem(outbox());if(!text)return null;const p=JSON.parse(text);return p.actor===state.sesion.usuario.actorId?p:null;}
-function controles(){for(const id of ['op-inventario','op-series-cliente','op-historial-tipo','op-actualizar','op-camara-abrir'])$(id).disabled=state.ocupado;const existe=!!pendiente();$('op-pendiente').hidden=!existe;for(const b of document.querySelectorAll('form button, #op-depot-guardar'))b.disabled=state.ocupado||existe;}
+function controles(){if(!state.sesion)return;for(const id of ['op-inventario','op-series-cliente','op-historial-tipo','op-actualizar','op-camara-abrir'])$(id).disabled=state.ocupado;const existe=!!pendiente();$('op-pendiente').hidden=!existe;for(const b of document.querySelectorAll('form button, #op-depot-guardar'))b.disabled=state.ocupado||existe;}
 async function ejecutar(p){
  const result=await api('/api/operacion/'+p.tipo,p.body);
  if(result.ok!==true||result.operacionId!==p.body.operacionId||(p.body.inventarioId&&result.inventarioId!==p.body.inventarioId))throw Error('La respuesta no confirma esta operación.');
@@ -27,8 +27,8 @@ async function mutar(tipo,body){
  sessionStorage.setItem(outbox(),JSON.stringify(resguardo));
  try{return await ejecutar(p);}catch(e){if(e.status===400||e.status===409)sessionStorage.removeItem(outbox());throw e;}finally{controles();}
 }
-async function contexto(seleccion=$('op-inventario').value){
- const data=await api('/api/operacion');if(!Array.isArray(data.ambitos)||!Array.isArray(data.inventarios)||!Array.isArray(data.clientes))throw Error('Contexto incompleto.');
+async function contexto(seleccion=$('op-inventario').value,vigente=()=>true){
+ const data=await api('/api/operacion');if(!vigente())return;if(!Array.isArray(data.ambitos)||!Array.isArray(data.inventarios)||!Array.isArray(data.clientes))throw Error('Contexto incompleto.');
  state.contexto=data;state.inv=null;$('op-lineas').replaceChildren();
  $('op-erp').hidden=!state.sesion.erpDisponible||!data.ambitos.some(r=>['ADMIN','SUPERVISOR'].includes(r.rol));
  $('op-inventario').replaceChildren(new Option('Selecciona un inventario',''),...data.inventarios.map(i=>new Option(i.sede+' · '+i.codigo_operativo+' · '+(i.borrador?'BORRADOR':i.estado),i.id)));
@@ -37,7 +37,7 @@ async function contexto(seleccion=$('op-inventario').value){
  $('op-sede').replaceChildren(...data.ambitos.map(r=>new Option(r.sede,r.sede)));
  $('op-sede-cuenta').replaceChildren(...data.ambitos.filter(r=>r.rol==='ADMIN').map(r=>new Option(r.sede,r.sede)));
  $('op-clientes').replaceChildren(...data.clientes.map(r=>new Option(r.nombre,r.id)));
- const pendientes=await api('/api/operacion/pendientes');if(!Array.isArray(pendientes.datos))throw Error('Listado de pendientes incompleto.');
+ const pendientes=await api('/api/operacion/pendientes');if(!vigente())return;if(!Array.isArray(pendientes.datos))throw Error('Listado de pendientes incompleto.');
  $('op-legado-pendientes').hidden=!pendientes.datos.length;
  $('op-pendiente-origen').replaceChildren(...pendientes.datos.map(r=>new Option(r.sede+' · '+r.cliente+' · '+r.productos+' productos',r.pendienteId)));
  if(seleccion)await detalle(false);else{state.inv=null;$('op-supervision').hidden=true;$('op-series-panel').hidden=true;}
@@ -68,7 +68,7 @@ async function detalle(mas=false){
  }
  $('op-mas').hidden=!state.cursor;
 }
-async function tarea(fn){if(state.ocupado)return;state.ocupado=true;controles();try{await fn();aviso('Operación confirmada.');}catch(e){aviso(e.message,true);}finally{state.ocupado=false;controles();}}
+async function tarea(fn){if(state.ocupado)return;state.ocupado=true;controles();try{await fn();aviso('Operación confirmada.');document.dispatchEvent(new Event('ims:actualizar-capturas'));}catch(e){aviso(e.message,true);}finally{state.ocupado=false;controles();}}
 function formulario(id,fn){$(id).addEventListener('submit',e=>{e.preventDefault();tarea(fn);});}
 function solicitud(){if(!state.inv)throw Error('Selecciona un inventario.');return {inventarioId:state.inv.id,versionEsperada:state.inv.version};}
 formulario('op-crear',async()=>{
@@ -193,3 +193,19 @@ try{
 }catch(e){aviso(e.status===401?'Inicia sesión desde Inventarios y capturas, luego vuelve a Operación.':e.message,true);}
 
 $('op-cuenta').onchange=()=>{$('op-actor').value=$('op-cuenta').value;};
+
+/** Abre las mismas acciones autorizadas dentro de la terminal IMS. */
+let secuenciaIMS=0;
+export async function abrirPanelIMS(id,tipo){
+ const seq=++secuenciaIMS;
+ const vigente=await api('/api/sesion');if(seq!==secuenciaIMS)return;if(state.sesion?.usuario.actorId!==vigente.usuario.actorId){state.inv=null;state.contexto=null;}state.sesion=vigente;
+ if(pendiente()&&state.inv?.id!==id)throw Error('Recupera primero la operación por confirmar en el inventario anterior.');
+ await contexto(id,()=>seq===secuenciaIMS);if(seq!==secuenciaIMS)return;
+ if(!state.inv)throw Error('Este inventario no tiene operación nativa habilitada. Su histórico permanece consultable.');
+ $('ims-aux-error')?.remove();
+ if(tipo==='analisis')$('op-analisis').click();
+ if(tipo==='adicionales'){$('op-historial-tipo').value='hallazgos';$('op-historial').click();$('op-hallazgo').closest('details').open=true;}
+ if(tipo==='series'){$('op-historial-tipo').value='series';$('op-historial').click();}
+}
+
+export function cerrarSesionIMS(){secuenciaIMS++;cerrarCamara();state.epoch++;state.inv=null;state.contexto=null;state.sesion=null;for(const id of ['op-lineas','op-kpis','op-historial-filas','op-inventario','op-serie-linea','op-cuenta','legado-filas','legado-hoja'])$(id)?.replaceChildren();for(const el of document.querySelectorAll('#ims-panel-operacion input,#ims-panel-operacion textarea'))if(el.type!=='checkbox'&&el.type!=='button')el.value='';}

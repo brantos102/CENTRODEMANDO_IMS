@@ -36,6 +36,7 @@ export async function listarLineas(pool,principal,inventarioId,opciones,{operaci
     filtro=" AND (l.sku COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.descripcion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.posicion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.serie COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.lote COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!')";
     params.push(...Array(5).fill(patron(buscar)));
   }
+  const posicion=textoBusqueda(opciones?.posicion);if(posicion){filtro+=' AND TRIM(d.posicion)=?';params.push(posicion);}
   const scope=alcance(principal),[[acceso]]=await pool.execute('SELECT 1 AS permitido FROM ims_op_permiso p JOIN ims_op_inventario i ON i.id=p.inventario_id WHERE p.actor_id=? AND p.inventario_id=?'+scope.sql+' LIMIT 1',[principal.actorId,inventarioId,...scope.params]);
   if(!acceso)throw new ErrorAuth('SIN_PERMISO','Acceso no autorizado.',403);
   const permiso=operacionNativa?"(p.puede_contar=1 AND n.borrador=0 AND z.rol IN ('SUPERVISOR','OPERADOR'))":'p.puede_contar';

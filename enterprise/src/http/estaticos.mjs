@@ -1,6 +1,9 @@
 import {readFile} from 'node:fs/promises';
 const ROOT=new URL('../../public/',import.meta.url);
 const FILES={
+  '/ims':['index.html','text/html; charset=utf-8'],
+  '/assets/ims.mjs':['ims.mjs','text/javascript; charset=utf-8'],
+  '/assets/ims.css':['ims.css','text/css; charset=utf-8'],
   '/assets/mapa-posiciones.mjs':['mapa-posiciones.mjs','text/javascript; charset=utf-8'],
   '/assets/mapa-visor.mjs':['mapa-visor.mjs','text/javascript; charset=utf-8'],
   '/catalogos':['catalogos.html','text/html; charset=utf-8'],

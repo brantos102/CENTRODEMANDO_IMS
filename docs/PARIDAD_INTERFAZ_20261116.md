@@ -4,9 +4,11 @@ Esta revisión continúa la migración completa solicitada. El objetivo incluye 
 
 **Última decisión del 16/11:** WTW externo se aplaza y se sustituye este alcance por un [mapa propio](../enterprise/MAPA_PROPIO_POSICIONES.md), con P/Q/R confirmadas en cm. La integración original WTW deja de ser un requisito para este módulo. La nueva lógica genera la distribución y conserva las dimensiones declaradas.
 
-**Ampliación posterior del 16/11:** recibidos y validados los CSV reales EAN y posiciones, con 12.496 y 31.751 registros respectivamente. Se admite su formato DEPOT directo, Windows-1252/UTF-8, asociaciones pendientes y conservación del CSV original. El backend WTW, plano y unidad de dimensiones siguen pendientes. Consultar [carga de catálogos reales](../enterprise/CATALOGOS_EAN_WTW.md); los recuentos de pruebas de la entrega inicial se conservan más abajo.
+**Ampliación posterior del 16/11:** recibidos y validados los CSV reales EAN y posiciones, con 12.496 y 31.751 registros respectivamente. Se admite su formato DEPOT directo, Windows-1252/UTF-8, asociaciones pendientes y conservación del CSV original. Posteriormente se confirmó la unidad cm y se autorizó sustituir WTW externo por el mapa propio. Consultar [carga de catálogos reales](../enterprise/CATALOGOS_EAN_WTW.md); los recuentos de pruebas de la entrega inicial se conservan más abajo.
 
 Se cotejaron el código original disponible (`CentroDeMandoIntegral.html`, `BlindInventory.html`, `Cronograma_Recordatorios.js`, adaptadores ITSANET y el cotejo documentado de WMS V124), las capturas del usuario y las pantallas nuevas mediante Chromium. No se inspeccionó una sesión corporativa autenticada del navegador ni se modificaron sus proyectos de Google.
+
+**Terminal integrada, revisión posterior:** creación y recuperación abren `/ims`; Inicio, Conteo físico, Series, Análisis, Adicionales, Administración y Mapa bodega conservan el inventario en la misma terminal. Se añade carga privada verificada de los dos CSV ya recibidos, sin otro corte Google. Ver [flujo e instalación](../enterprise/IMS_TERMINAL_INTEGRADA.md).
 
 ## Base confirmada y cambios actuales
 

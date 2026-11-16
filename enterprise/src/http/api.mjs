@@ -1,3 +1,4 @@
+import {consultarMapaInventario} from '../centro/mapa-inventario.mjs';
 import {iniciarGoogleOAuth,completarGoogleOAuth,callbackGoogle} from '../centro/google-oauth.mjs';
 import {consultarCatalogos,importarCatalogo,resolverEAN,previsualizarCatalogo,originalCatalogo} from '../centro/catalogos.mjs';
 import {createServer} from 'node:http';
@@ -129,6 +130,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         const ruta=url.pathname.slice('/api/centro/'.length);
         const perfil=await consultarCentro(pool,principal,'perfil');
         if(perfil.perfil.cambiar_clave&&!['perfil','clave'].includes(ruta))throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
+        if(req.method==='GET'&&ruta==='mapa-inventario')return json(res,200,await consultarMapaInventario(pool,principal,opciones(url,['inventario'])));
         if(req.method==='GET'&&ruta==='catalogos')return json(res,200,await consultarCatalogos(pool,principal,opciones(url,['sede','tipo','desde','version'])));
         if(req.method==='POST'&&['catalogos','catalogos/previsualizar'].includes(ruta)){
           if(perfil.perfil.rol!=='ADMIN')throw new ErrorAuth('SIN_PERMISO','La carga de catálogos corresponde al administrador.',403);
@@ -242,7 +244,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       }
       if(req.method==='GET'&&url.pathname==='/api/inventarios')return json(res,200,await listarInventarios(pool,principal,opciones(url,['buscar','sede','cliente'])));
       const m=/^\/api\/inventarios\/([a-f0-9-]+)\/lineas$/.exec(url.pathname);
-      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url,['buscar']),{operacionNativa}));
+      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url,['buscar','posicion']),{operacionNativa}));
       return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
     }catch(e){
       if(e.status===413)res.setHeader('Connection','close');

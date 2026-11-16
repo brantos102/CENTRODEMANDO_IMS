@@ -25,6 +25,7 @@ async function api(path,{method='GET',body,csrf=state.csrf}={}){
   finally{clearTimeout(timer);}
 }
 function mostrarAcceso(message=''){
+  document.dispatchEvent(new Event('ims:sesion-cerrada'));
   state.epoch++;state.usuario=null;state.csrf=null;state.inv=null;state.lineas=[];state.inventarios=[];state.pendientes=[];
   $('operacion').hidden=true;$('acceso').hidden=false;$('contrasena').value='';$('login-error').textContent=message;
   $('lista-inventarios').replaceChildren();$('lineas').replaceChildren();$('lista-pendientes').replaceChildren();
@@ -126,8 +127,8 @@ async function cargarInventarios(mas=false,filtros=state.filtrosInv||sinFiltros(
 }
 async function seleccionar(inv){
   $('resumen-desplegable').open=false;$('modo-nativo').hidden=true;if(matchMedia('(max-width:700px)').matches)$('inventarios-desplegable').open=false;
-  state.epoch++;state.inv=inv;state.lineas=[];state.cursorLineas=null;document.dispatchEvent(new CustomEvent('ims:inventario',{detail:{id:inv.id}}));$('wms-avance').hidden=true;$('wms-acciones').hidden=true;$('wms-contexto').hidden=true;
-  state.busquedaLineas='';$('form-lineas').reset();$('ean-coincidencias').replaceChildren();
+  state.epoch++;state.inv=inv;state.lineas=[];state.cursorLineas=null;document.dispatchEvent(new CustomEvent('ims:inventario',{detail:{id:inv.id,inventario:{...inv},centro:state.centroDisponible}}));$('wms-avance').hidden=true;$('wms-acciones').hidden=true;$('wms-contexto').hidden=true;
+  state.busquedaLineas='';state.posicionLineas='';$('ims-posicion-activa').hidden=true;$('form-lineas').reset();$('ean-coincidencias').replaceChildren();
   $('seleccion-vacia').hidden=true;$('detalle').hidden=false;
   $('codigo').textContent=inv.codigo_operativo;$('sede').textContent='SEDE '+inv.sede;
   $('estado-inventario').textContent=inv.estado.replaceAll('_',' ')+(inv.estado==='EN_PROCESO'?' · Captura por etapas':' · Consulta');
@@ -157,7 +158,7 @@ async function cargarLineas(mas=false,buscar=state.busquedaLineas||''){
   $('actualizar-lineas').disabled=true;$('mas-lineas').disabled=true;
   $('filtros-lineas').disabled=true;
   try{
-    const q=new URLSearchParams({limite:'50'});if(buscar)q.set('buscar',buscar);if(mas&&state.cursorLineas)q.set('cursor',state.cursorLineas);
+    const q=new URLSearchParams({limite:'50'});if(buscar)q.set('buscar',buscar);if(state.posicionLineas)q.set('posicion',state.posicionLineas);if(mas&&state.cursorLineas)q.set('cursor',state.cursorLineas);
     const data=await api('/api/inventarios/'+id+'/lineas?'+q);
     if(!actual(c)||state.inv?.id!==id||seq!==seqLineas)return;validarPagina(data,'lineas');
     state.busquedaLineas=buscar;state.lineas=mas?[...state.lineas,...data.datos]:data.datos;state.cursorLineas=data.siguiente;pintarLineas();void actualizarWms();
@@ -177,7 +178,7 @@ async function enviar(record,c){
   if(state.usuario?.actorId!==record.actorId)throw Error('Inicia sesión con la cuenta que capturó este envío.');
   const data=await api('/api/conteos',{method:'POST',body:record.solicitud,csrf:state.csrf});
   if(!acuseValido(data,record.solicitud))throw Error('La respuesta no confirma esta captura. Conservamos el envío para revisión.');
-  await confirmarPendiente(record.actorId,record.operacionId);
+  await confirmarPendiente(record.actorId,record.operacionId);document.dispatchEvent(new CustomEvent('ims:captura-confirmada',{detail:{id:record.solicitud.inventarioId}}));
   if(actual(c))aviso(data.repetida?'La operación ya estaba guardada. Confirmación recuperada.':'Conteo guardado y confirmado.');
 }
 $('form-login').addEventListener('submit',async e=>{
@@ -233,7 +234,7 @@ $('form-inventarios').addEventListener('submit',e=>{
 });
 $('limpiar-inventarios').addEventListener('click',()=>{$('form-inventarios').reset();cargarInventarios(false,sinFiltros());});
 $('form-lineas').addEventListener('submit',e=>{e.preventDefault();void buscarCodigo();});
-$('limpiar-lineas').addEventListener('click',()=>{$('buscar-lineas').value='';cargarLineas(false,'');});
+$('limpiar-lineas').addEventListener('click',()=>{state.posicionLineas='';$('ims-posicion-activa').hidden=true;$('buscar-lineas').value='';cargarLineas(false,'');});
 function red(){ $('red').textContent=navigator.onLine?'Red disponible':'Sin red'; }
 window.addEventListener('online',red);window.addEventListener('offline',red);red();
 $('entrar').disabled=true;
@@ -242,7 +243,7 @@ finally{verificandoSesion=false;$('entrar').disabled=false;}
 
 async function actualizarWms(){
  if(!state.operacionNativa||!state.inv)return;const id=state.inv.id,c=contexto(),seq=++seqWms;
- try{const r=await api('/api/operacion/inventarios/'+id+'/avance');if(!actual(c)||state.inv?.id!==id||seq!==seqWms)return;const a=r.totales;$('wms-avance').replaceChildren(...[['Líneas autorizadas',a.lineas],['Conteo 1',a.c1],['Conteo 2',a.c2],['Conteo final',a.c3]].map(([t,v])=>{const d=el('div');d.append(el('span',t),el('strong',mostrarEntero(v)));return d;}));$('wms-avance').hidden=false;$('wms-contexto').hidden=false;$('wms-contexto').textContent=r.borrador?'Stock pendiente de activar.':r.conteoCiego?'Conteo ciego: el stock teórico permanece oculto.':'Captura autorizada. Cada producto y ubicación conserva sus conteos independientes.';state.inv.estado=r.estado;for(const [k,h]of [['wms-series','#series'],['wms-analisis','#analisis'],['wms-supervision','']])$(k).href='/operacion?inventario='+id+h;$('wms-analisis').hidden=r.conteoCiego;$('wms-acciones').hidden=false;pintarLineas();}
+ try{const r=await api('/api/operacion/inventarios/'+id+'/avance');if(!actual(c)||state.inv?.id!==id||seq!==seqWms)return;document.dispatchEvent(new CustomEvent('ims:avance',{detail:r}));const a=r.totales;$('wms-avance').replaceChildren(...[['Líneas autorizadas',a.lineas],['Conteo 1',a.c1],['Conteo 2',a.c2],['Conteo final',a.c3]].map(([t,v])=>{const d=el('div');d.append(el('span',t),el('strong',mostrarEntero(v)));return d;}));$('wms-avance').hidden=false;$('wms-contexto').hidden=false;$('wms-contexto').textContent=r.borrador?'Stock pendiente de activar.':r.conteoCiego?'Conteo ciego: el stock teórico permanece oculto.':'Captura autorizada. Cada producto y ubicación conserva sus conteos independientes.';state.inv.estado=r.estado;for(const [k,h]of [['wms-series','#series'],['wms-analisis','#analisis'],['wms-supervision','']])$(k).href='/operacion?inventario='+id+h;$('wms-analisis').hidden=r.conteoCiego;$('wms-acciones').hidden=false;pintarLineas();}
  catch(e){if(!actual(c)||state.inv?.id!==id)return;if(e.status===403){$('wms-contexto').hidden=false;$('wms-contexto').textContent='Histórico consultable. Las capturas originales permanecen protegidas.';}else if(e.status===401)errorActual(e,c);}
 }
 let cerrarProducto;
@@ -260,3 +261,8 @@ async function buscarCodigo(){
 }
 
 matchMedia('(max-width:700px)').addEventListener('change',e=>{if(e.matches&&state.inv)$('inventarios-desplegable').open=false;});
+
+// La ubicación proviene del mapa del inventario vigente, sin elegir una línea por SKU.
+document.addEventListener('ims:contar-posicion',e=>{if(!state.inv||e.detail?.inventarioId!==state.inv.id)return;state.posicionLineas=String(e.detail.posicion||'');$('buscar-lineas').value='';$('ims-posicion-activa').textContent='Ubicación: '+state.posicionLineas+' · Selecciona la línea que vas a contar. Usa Limpiar para volver a todas.';$('ims-posicion-activa').hidden=!state.posicionLineas;void cargarLineas(false,'');});
+document.addEventListener('ims:buscar-producto',e=>{if(!state.inv||e.detail?.inventarioId!==state.inv.id)return;state.posicionLineas='';$('ims-posicion-activa').hidden=true;$('buscar-lineas').value=String(e.detail.codigo||'');void buscarCodigo();});
+document.addEventListener('ims:actualizar-capturas',()=>{if(state.inv)void cargarLineas();});

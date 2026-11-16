@@ -26,5 +26,10 @@ python3 -m unittest discover -s tests -p '*_test.py'
 python3 deploy/preparar_erp.py --registro "$imsDatos/ERP_LECTURA_5b24e0016a134b1e9aae96f878faf9ff/registro_erp_runtime_NO_COMPARTIR.json" --creacion
 sudo -v
 python3 deploy/preparar_centro.py
+if [ -f "$imsDatos/entrada/catalogos_ims_privados_20261116.zip" ]; then
+  python3 deploy/cargar_catalogos.py
+else
+  echo '{"catalogos_privados":"ZIP_NO_RECIBIDO","accion":"CARGAR_POS_ITSANET_PARA_MAPA_REAL"}'
+fi
 python3 deploy/actualizar_piloto.py --revision "$imsRevision" --conteos-esperados 352 --filas-esperadas 97822 --operacion-nativa --erp-consulta --erp-creacion --centro
 python3 deploy/activar_usuarios_centro.py
