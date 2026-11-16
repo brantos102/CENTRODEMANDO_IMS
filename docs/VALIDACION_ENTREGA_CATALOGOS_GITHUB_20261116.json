@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "formato": "ims-catalogos-entrega-github-v1",
+  "fecha": "2026-11-16",
+  "cifrado": "AES-256-GCM",
+  "clave_bits": 256,
+  "clave_publicada": false,
+  "zip_sha256": "f5470be54fb2ed8778a51b09a1392f6c6c972dd022d4dfabab08c1e83cd3c70c",
+  "cifrado_sha256": "e58a0ba1734420325aafa4991e07281a40c026a9c15535bd375b9d58ac545a32",
+  "cifrado_bytes": 489975,
+  "descifrado_real_comparado_byte_a_byte": true,
+  "originales_csv_publicados_en_claro": false
+}

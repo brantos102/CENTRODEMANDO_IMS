@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createCipheriv,createHash} from 'node:crypto';
+import {mkdtemp,readFile,writeFile,rm,chmod,symlink} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {CABECERA,descifrarPaquete,guardarZipPrivado} from '../tools/recibir-catalogos-github.mjs';
+const clave='11'.repeat(32),zip=Buffer.from('ZIP SINTETICO SIN DATOS REALES'),sha=createHash('sha256').update(zip).digest('hex');
+function paquete(){const iv=Buffer.alloc(12,22),c=createCipheriv('aes-256-gcm',Buffer.from(clave,'hex'),iv);c.setAAD(CABECERA);const datos=Buffer.concat([c.update(zip),c.final()]);return Buffer.concat([CABECERA,iv,c.getAuthTag(),datos]);}
+test('paquete autenticado recupera bytes exactos y exige la huella del ZIP esperado',()=>{assert.deepEqual(descifrarPaquete(paquete(),clave,sha),zip);assert.throws(()=>descifrarPaquete(paquete(),clave),/HUELLA_INCOMPATIBLE/);});
+test('clave incorrecta, cabecera, tag o contenido alterados no entregan un ZIP',()=>{assert.throws(()=>descifrarPaquete(paquete(),'22'.repeat(32),sha));for(const i of [0,CABECERA.length+12,paquete().length-1]){const b=paquete();b[i]^=1;assert.throws(()=>descifrarPaquete(b,clave,sha));}assert.throws(()=>descifrarPaquete(paquete().subarray(0,20),clave,sha));});
+test('recepción privada es idempotente y conserva un archivo anterior diferente',async()=>{const dir=await mkdtemp(join(tmpdir(),'ims-paquete-'));try{assert.deepEqual(await guardarZipPrivado(dir,zip,sha),{yaExistia:false});assert.deepEqual(await guardarZipPrivado(dir,zip,sha),{yaExistia:true});const path=join(dir,'catalogos_ims_privados_20261116.zip');await writeFile(path,'anterior');await assert.rejects(()=>guardarZipPrivado(dir,zip,sha),/ARCHIVO_PREVIO_DISTINTO_CONSERVADO/);assert.equal(await readFile(path,'utf8'),'anterior');}finally{await rm(dir,{recursive:true,force:true});}});
+test('no escribe en directorios expuestos ni sigue un enlace al ZIP de otro destino',async()=>{const dir=await mkdtemp(join(tmpdir(),'ims-paquete-'));try{await chmod(dir,0o755);await assert.rejects(()=>guardarZipPrivado(dir,zip,sha),/DIRECTORIO_PRIVADO_INCOMPATIBLE/);await chmod(dir,0o700);const otro=join(dir,'conservar.txt');await writeFile(otro,'no cambiar',{mode:0o600});await symlink(otro,join(dir,'catalogos_ims_privados_20261116.zip'));await assert.rejects(()=>guardarZipPrivado(dir,zip,sha),/ARCHIVO_PREVIO_DISTINTO_CONSERVADO/);assert.equal(await readFile(otro,'utf8'),'no cambiar');}finally{await rm(dir,{recursive:true,force:true});}});
