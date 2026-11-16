@@ -1,0 +1,63 @@
+{
+  "ok": true,
+  "formato": "ims-mapa-propio-validacion-v1",
+  "fecha": "2026-11-16",
+  "archivo": "POS_ITSANET.csv",
+  "sha256": "1bab34bf817a591043ec1a2fb5d81c643715b0bbcb91f92ac8ac48591fd7ea48",
+  "unidad_origen": "cm",
+  "unidad_modelo": "m",
+  "distribucion": "GENERADA_POR_CALLE_COLUMNA_NIVEL_PROFUNDIDAD",
+  "config": {
+    "pasilloCm": 200,
+    "holguraCm": 0,
+    "entreBodegasCm": 300,
+    "intercambiarXY": false
+  },
+  "registros": 31751,
+  "posiciones": 31194,
+  "dibujables": 30751,
+  "excluidas": 443,
+  "asociacionesCompartidas": 557,
+  "calculadas": 30751,
+  "explicitas": 0,
+  "medidasPequenas": 8,
+  "bodegas": 35,
+  "superposiciones": 0,
+  "por_sede": {
+    "UIO": {
+      "dibujables": 18386,
+      "pendientes_medidas": 10
+    },
+    "GYE": {
+      "dibujables": 12365,
+      "pendientes_medidas": 433
+    }
+  },
+  "stock_modificado": false,
+  "fuente_modificada": false,
+  "wtw_requerido": false,
+  "datos_en_repositorio": false,
+  "pruebas": {
+    "node": {
+      "total": 207,
+      "fallos": 0
+    },
+    "python": {
+      "total": 161,
+      "fallos": 0
+    },
+    "navegador_mysql": {
+      "total": 32,
+      "fallos": 0
+    },
+    "escala_restringida": {
+      "cpu": 0.5,
+      "memoria_contenedor_mib": 512,
+      "heap_node_mib": 256,
+      "duracion_ms": 3073,
+      "rss_mib": 159,
+      "superposiciones": 0
+    }
+  },
+  "instalado_en_servidor_corporativo": false
+}

@@ -1,5 +1,7 @@
 # Catálogos EAN y WTW
 
+**Actualización posterior del 16/11/2026:** confirmadas las medidas en centímetros y autorizada una lógica propia. El [mapa propio](MAPA_PROPIO_POSICIONES.md) ya genera la distribución de las posiciones, sin depender del backend WTW. El aplicativo externo queda aplazado. Las referencias a la unidad/plano pendientes en la revisión inicial quedan sustituidas por esta decisión; la posición calculada se identifica como tal.
+
 Desde el 16 de noviembre ambos módulos vuelven al alcance solicitado por el usuario. La aplicación incluye `/catalogos`, accesible también desde la terminal y el Centro de Mando. No se pide otro corte de inventarios.
 
 ## EAN
@@ -16,23 +18,23 @@ Los códigos de cliente se asocian por nombre oficial inequívoco, por una cuent
 
 ## Ubicaciones y visor WTW
 
-La pantalla permite consultar y filtrar posiciones, zonas y descripción; imprimir nombres; girar un visor de las ubicaciones con geometría explícita. Se conserva un acceso al despliegue WTW original identificado en los respaldos, con sus propios permisos. La vigencia de ese despliegue aún debe comprobarse por su responsable.
+La pantalla permite consultar y filtrar posiciones, zonas y descripción; imprimir nombres; y usar el mapa propio con filtros, giro, zoom y vista en planta. El flujo ya no abre el aplicativo WTW externo. Sus referencias se conservan únicamente como antecedentes.
 
 La plantilla opcional usa `posicion;zona;descripcion;x;y;z;ancho;fondo;alto`. Solo `posicion` es obligatoria. Sus coordenadas y dimensiones explícitas se expresan en metros, con punto decimal y hasta seis decimales; se aceptan únicamente las seis juntas y dimensiones positivas.
 
 La exportación real **POS_ITSANET.csv se carga directamente**, sin convertir sus 26 columnas a la plantilla. Contiene **31.751 registros**: 18.540 UIO (18.396 posiciones físicas) y 13.211 GYE (12.798 posiciones físicas). Las 557 asociaciones adicionales corresponden a posiciones compartidas por clientes; no se eliminan. POSICION_ID tampoco se utiliza como identidad global porque se repite en distintos almacenes. Se conservan ciudad, almacén, bodega, calle, columna, nivel, profundidad, cliente, bloqueos, ocupación, dimensiones y demás campos del original.
 
-El archivo contiene dimensiones pero no X/Y/Z ni origen físico de los pasillos. No se asigna una escala a CALLE/COLUMNA/NIVEL ni se convierten LARGO/ANCHO/ALTO a metros sin confirmación de su unidad. Por tanto se muestra el maestro completo y las dimensiones originales, y **no se genera un plano físico supuesto**. El backend y configuración del WTW actual siguen pendientes.
+El archivo contiene dimensiones pero no X/Y/Z ni origen físico de los pasillos. Tras la confirmación de centímetros, se convierten las medidas para generar un mapa propio por calle, columna, nivel y profundidad. Los espacios de pasillos y las posiciones relativas se calculan con parámetros visibles y ajustables. Se conserva el maestro completo y se distingue la distribución calculada de un plano medido. WTW externo no es necesario para esta lógica.
 
-El visor representa hasta 2.000 ubicaciones por filtro y la tabla hasta 1.000 resultados; ambos informan su límite. La carga admite hasta 50.000 filas y 16 MB de CSV. Es un visor local de consulta: no se declara que reemplace las operaciones ni las etiquetas codificadas del backend externo que todavía no se ha recibido.
+El visor representa hasta 2.000 ubicaciones por filtro y la tabla hasta 1.000 resultados; ambos informan su límite. La carga admite hasta 50.000 filas y 16 MB de CSV. El mapa propio es una consulta independiente de las operaciones y etiquetas codificadas del aplicativo externo aplazado.
 
 Fuentes detectadas en el análisis del código original:
 
 | Dependencia | Referencia disponible | Pendiente |
 |---|---|---|
 | EAN | CSV real recibido y validado: `RELACION_EAN13_UIO.csv` | Cargar en UIO y revisar asociaciones no confirmadas |
-| Ubicaciones | CSV real recibido y validado: `POS_ITSANET.csv` | Cargar por sede y confirmar unidad/plano de distribución |
-| Backend WTW | Despliegue Apps Script `AKfycbzOP_NTy6LWE3Z9dT5wBHdraPTJPpJ6CenS6Woz1S6DTdBjRB2mYmmz6F3b3j8HeyM80w` | ID de secuencia de comandos, código y versión activa, reglas de ubicaciones/etiquetas/3D |
+| Ubicaciones | CSV real recibido y validado: `POS_ITSANET.csv` | Cargar por sede si aún falta; medidas confirmadas en cm y mapa propio disponible |
+| Backend WTW | Despliegue externo conservado como referencia histórica | Aplazado por el usuario; no requerido para el mapa propio |
 
 Un ID de despliegue no es el ID del proyecto Apps Script. Sin el código y los datos efectivos no se declara paridad completa con WTW, ni se interviene su proyecto.
 
@@ -49,8 +51,8 @@ La carga de archivos originales añade `ims_cm_catalogo_archivo`, con permisos S
 Tras instalar la revisión correspondiente, abrir **EAN y WTW → Importar una versión del catálogo**:
 
 1. Seleccionar **UIO**, tipo **EAN** y `RELACION_EAN13_UIO.csv`. Pulsar **Revisar archivo y asociaciones**. Verificar los clientes propuestos; las asociaciones desconocidas pueden conservarse pendientes. Confirmar la carga: deben conservarse **12.496 registros**.
-2. Seleccionar **UIO**, tipo **WTW** y `POS_ITSANET.csv`. Revisar: **18.540 registros**, **18.396 posiciones físicas**. El original íntegro conserva también los datos de GYE. Confirmar la carga de UIO.
-3. Seleccionar **GYE**, tipo **WTW** y el mismo `POS_ITSANET.csv`. Revisar y confirmar: **13.211 registros**, **12.798 posiciones físicas**.
+2. Seleccionar **UIO**, tipo **Maestro de ubicaciones / mapa propio** y `POS_ITSANET.csv`. Revisar: **18.540 registros**, **18.396 posiciones físicas**. El original íntegro conserva también los datos de GYE. Confirmar la carga de UIO.
+3. Seleccionar **GYE**, tipo **Maestro de ubicaciones / mapa propio** y el mismo `POS_ITSANET.csv`. Revisar y confirmar: **13.211 registros**, **12.798 posiciones físicas**.
 
 El formulario espera a recibir el catálogo de clientes antes de habilitar la revisión. La vista previa no escribe en la base. Cada confirmación importa solo la sede seleccionada. Quito y Guayaquil tienen versiones activas independientes; un mismo nombre de posición no mezcla sus clientes ni almacenes. No se carga el archivo EAN de UIO en GYE porque no se recibió un catálogo EAN de esa sede.
 

@@ -30,7 +30,7 @@ No solicita otra extracción de Google. Una hoja parcial se conserva como parcia
 | Calendar | Sincronización explícita con Google Calendar; solo crea/modifica los eventos que pertenecen a este Centro. Requiere autorización privada de la cuenta. |
 | Trazabilidad | Fuentes, cobertura por hoja, bitácora administrativa, historial original y resultados de trabajos. |
 | Terminal integrada | Conserva inventario entre conteo de productos, series, análisis y supervisión; avance completo autorizado, conteo ciego y lectura por cámara/lector. Interfaz móvil y temas compartidos. |
-| EAN / WTW | Carga privada de catálogos por sede, versiones inmutables, EAN exacto por cliente autorizado, consulta de posiciones y visor de coordenadas explícitas. Backend/datos originales WTW aún pendientes. |
+| EAN / ubicaciones | Catálogos versionados por sede, EAN exacto por cliente autorizado y mapa propio con medidas en cm. Distribución calculada, filtros, giro, zoom, planta/3D y exportación de imagen. WTW externo aplazado. |
 
 Los nombres y códigos originales se conservan. Los conteos de códigos/fechas diferentes del mismo archivo mantienen su identidad. La vinculación automática utiliza el origen físico y, cuando corresponde, la fecha explícita. Las referencias de texto del cronograma se resuelven únicamente por cliente y fecha explícita únicos del panel del mismo respaldo. Los equipos del cronograma anterior se concilian por identidad de tarea antes de trasladar las asignaciones; un cambio de número de fila no reasigna personas. Las asociaciones ambiguas quedan señaladas para revisión desde el detalle de la tarea.
 

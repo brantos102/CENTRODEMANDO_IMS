@@ -2,6 +2,8 @@
 
 Esta revisión continúa la migración completa solicitada. El objetivo incluye **Centro de Mando, ITSANET IMS/WMS, EAN y WTW**. Instalar esta revisión no significa que las dependencias externas estén resueltas ni que se haya completado la aceptación de producción.
 
+**Última decisión del 16/11:** WTW externo se aplaza y se sustituye este alcance por un [mapa propio](../enterprise/MAPA_PROPIO_POSICIONES.md), con P/Q/R confirmadas en cm. La integración original WTW deja de ser un requisito para este módulo. La nueva lógica genera la distribución y conserva las dimensiones declaradas.
+
 **Ampliación posterior del 16/11:** recibidos y validados los CSV reales EAN y posiciones, con 12.496 y 31.751 registros respectivamente. Se admite su formato DEPOT directo, Windows-1252/UTF-8, asociaciones pendientes y conservación del CSV original. El backend WTW, plano y unidad de dimensiones siguen pendientes. Consultar [carga de catálogos reales](../enterprise/CATALOGOS_EAN_WTW.md); los recuentos de pruebas de la entrega inicial se conservan más abajo.
 
 Se cotejaron el código original disponible (`CentroDeMandoIntegral.html`, `BlindInventory.html`, `Cronograma_Recordatorios.js`, adaptadores ITSANET y el cotejo documentado de WMS V124), las capturas del usuario y las pantallas nuevas mediante Chromium. No se inspeccionó una sesión corporativa autenticada del navegador ni se modificaron sus proyectos de Google.
@@ -20,7 +22,7 @@ El usuario confirmó la instalación anterior `df7d43dbd086dc01a4767e63acf751e94
 | Análisis y ajustes | Motor oficial ITSANET IMS / WMS V124; supervisión por línea y cantidades exactas legibles | Cotejo con función original y SQL. No redondea el stock para ocultar fracciones |
 | Móvil y continuidad entre pantallas | Cabecera/tema comunes, inventario conservado entre productos, series, análisis y catálogos; conteos como tarjetas en móvil | Capturas sintéticas y recorridos a 390 px; no requiere desplazamiento horizontal para guardar el conteo |
 | EAN | Importación privada/versionada por sede y resolución exacta por inventario/cliente autorizado | CSV real recibido/validado; falta confirmar su carga corporativa y las asociaciones pendientes. No se eliminan ceros ni se elige arbitrariamente entre SKU |
-| Ubicaciones WTW / visor | Catálogo local, filtro, impresión de nombres, visor de geometría explícita y acceso al WTW original | Probado con posiciones sintéticas. Falta maestro real y backend externo; no se declara paridad completa de sus operaciones/etiquetas/3D |
+| Ubicaciones / mapa propio | Catálogo por sede, distribución por calle/columna/nivel/profundidad, medidas en cm, filtros, plano/3D, giro, zoom, selección y exportación de imagen | Validado con las posiciones reales y fixtures sintéticos. WTW externo aplazado; se identifica la distribución calculada |
 | Excel, CSV e historial | CSV conserva 30 columnas; libro XLSX añade análisis, series, alterna, capturas, originales autorizados y cobertura; ZIP y envío | Ceros de SKU y cantidades como texto exacto. Hojas parciales identificadas; no se inventa el historial faltante |
 | Correo y Calendar | OAuth web con PKCE, estado de un uso ligado a sesión administrativa, configuración cifrada y reemplazo de cuenta; sincronización propia por tarea/lote | SQL y transportes simulados. Cliente Cloud y consentimiento real aún pendientes. No se enviaron mensajes ni se escribieron calendarios reales en las pruebas |
 | Auditoría y consolidación | Trabajos persistidos, progreso, publicación de Entregados y programación propia a las 18:30 | SQL, permisos mínimos y concurrencia. La instalación no solicita publicación KPI ni cambia triggers externos |
@@ -32,7 +34,7 @@ El usuario confirmó la instalación anterior `df7d43dbd086dc01a4767e63acf751e94
 
 1. **Google Cloud:** crear el cliente OAuth web y autorizar `bespinoza@itsanet.com`. La [guía de configuración](../enterprise/GOOGLE_CORREO_CALENDAR.md) incluye las APIs, permisos y la URI exacta. Queda preparada la sustitución por la cuenta oficial, sin cambios de código.
 2. **EAN:** cargar el CSV recibido por el formulario privado y confirmar las asociaciones pendientes; no es necesario volver a entregar ese catálogo.
-3. **WTW:** el maestro de ambas sedes ya se recibió. Faltan el ID de proyecto Apps Script, su código/versión activa, unidad de dimensiones y configuración de distribución. El ID de despliegue disponible no permite reconstruir su backend. Se pidió al usuario la ubicación y responsable de estas fuentes, sin pedir credenciales en el chat.
+3. **Mapa propio:** el maestro y la unidad cm ya están confirmados y la distribución generada está implementada. Verificar visualmente sus parámetros en las bodegas cuando se instale. No se requiere el código WTW externo, aplazado por el usuario.
 4. Completar las funciones auxiliares identificadas y su cotejo con la versión original, y aceptar los flujos con responsables/operadores de ambas sedes. Probar respaldo/restauración y operación del servidor con sus datos efectivos antes de confirmar el cierre total.
 
 Estas dependencias no justifican sobrescribir datos ni desactivar el aplicativo Google todavía utilizado por otros proyectos. El servicio sigue marcado como **entorno de validación**. El paso a producción se realizará cuando la implementación completa y su aceptación estén terminadas, conforme a la última instrucción del usuario.
