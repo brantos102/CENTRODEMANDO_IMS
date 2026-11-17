@@ -29,3 +29,23 @@ Registrar resultado, usuario, inventario de prueba y evidencia. Los ensayos loca
 | Móvil | Campos y tablas accesibles, selección exacta y guardado confirmado en el dispositivo usado para contar |
 
 Pendientes externos: nombre de base/usuario SQL de lectura, cliente OAuth y consentimiento de Google, comprobación física de alturas superiores y anclas no presentes en el plano, layout definitivo de B2 y consultas GYE/TLF. El corte elegido no incorpora modificaciones posteriores de Google.
+
+## Ampliación: recorrido, destino y fotos
+
+| Caso | Resultado esperado |
+|---|---|
+| Ubicaciones e IMS | Mismo WebGL, controles y dimensiones originales en cm |
+| Piso B2 | Cambiar a B2 muestra suelo bajo las estructuras, separado del plano BM |
+| Avatar | Clic en la posición sitúa el avatar en un pasillo contiguo y resalta la selección |
+| Recorrido | WASD/botones evitan atravesar racks; planta alta no sale de la plataforma |
+| Doble clic | Abre solo productos autorizados de la ubicación del inventario seleccionado |
+| Cambio de posición | Anterior/siguiente conserva borradores sin presentarlos como capturas confirmadas |
+| Carpetas | Inventario nuevo crea SEDE/año/mes/cliente; repetir no duplica carpetas |
+| Foto | Confirmación del servidor, lectura tras recargar, nota conservada y cantidades intactas |
+| Privacidad | Usuario sin permiso del cliente no descarga fotos; POST sin CSRF se rechaza |
+| Drive pendiente | Sin OAuth se conserva la foto privada y se indica que falta autorización |
+| Drive autorizado | Habilitar Drive API y drive.file; enviar una foto sintética y verificar la ruta y los bytes |
+| Reintento de Drive | Una respuesta perdida reutiliza el ID remoto y conserva una sola copia |
+| Cuenta reemplazable | Nueva cuenta conserva archivos antiguos y genera su propia jerarquía |
+
+No se ha realizado envío real a Google ni lectura real de la base empresarial desde el entorno de desarrollo. Confirmarlos en el servidor es parte de estas pruebas finales.

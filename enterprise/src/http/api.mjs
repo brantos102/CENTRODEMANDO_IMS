@@ -1,3 +1,5 @@
+import {sincronizarEvidencia} from '../centro/drive-evidencias.mjs';
+import {guardarEvidencia,listarEvidencias,leerEvidencia} from '../centro/evidencias.mjs';
 import {resguardarCodigoOrigen} from '../centro/codigo-origen.mjs';
 import {pdfAnalisis,pdfEtiqueta} from '../centro/pdf.mjs';
 import {presenciaInventario,rankingInventario} from '../centro/presencia.mjs';
@@ -149,6 +151,12 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         }
         const original=/^catalogos\/([a-f0-9-]+)\/original$/.exec(ruta);
         if(req.method==='GET'&&original){const r=await originalCatalogo(pool,principal,original[1]);res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);}
+        if(req.method==='POST'&&ruta==='evidencias')return json(res,201,await guardarEvidencia(pool,principal,await leerJson(req,4300000)));
+        if(req.method==='GET'&&ruta==='evidencias')return json(res,200,await listarEvidencias(pool,principal,opciones(url,['linea']).linea));
+        const driveFoto=/^evidencias\/([a-f0-9-]+)\/drive$/.exec(ruta);
+        if(req.method==='POST'&&driveFoto){const b=await leerJson(req);if(Object.keys(b).length)throw new ErrorAuth('SOLICITUD_INVALIDA','El destino de la foto se determina en el servidor.',400);return json(res,200,await sincronizarEvidencia(pool,principal,driveFoto[1],claveCentro,fetchGoogle));}
+        const evidencia=/^evidencias\/([a-f0-9-]+)$/.exec(ruta);
+        if(req.method==='GET'&&evidencia){const r=await leerEvidencia(pool,principal,evidencia[1]);res.writeHead(200,{'Content-Type':r.mime,'Content-Disposition':'inline; filename="evidencia.'+(r.mime==='image/png'?'png':'jpg')+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"});return res.end(r.contenido);}
         if(req.method==='GET'&&ruta==='ean')return json(res,200,await resolverEAN(pool,principal,opciones(url,['inventario','codigo'])));
         if(req.method==='GET'&&ruta==='google/configuracion'){const r=await consultarConectores(pool,principal,claveCentro);return json(res,200,{...r,callback:callbackGoogle(origin)});}
         if(req.method==='POST'&&ruta==='google/iniciar'){const b=await leerJson(req);if(Object.keys(b).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La cuenta se elige en Conexiones.',400);return json(res,200,await iniciarGoogleOAuth(pool,principal,claveCentro,origin));}

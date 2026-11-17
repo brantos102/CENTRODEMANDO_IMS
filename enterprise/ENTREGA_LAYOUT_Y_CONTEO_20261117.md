@@ -48,7 +48,7 @@ Una vez recibidos los paquetes, reintentar solamente la actualización desde SSH
 
 El pool operativo reserva una de las cinco conexiones de su cuenta para comprobaciones. Si el servicio anterior ocupa las cinco, solo ese error de capacidad difiere la comprobación hasta el reinicio propio; los errores de credenciales, permisos o histórico siguen deteniendo la actualización. La revisión no se confirma sin completar la verificación.
 
-El resumen correcto debe incluir `perfil_operacion_verificado: true`, `interfaz_actualizada: true`, `visor: "WEBGL_3D"`, `archivos_interfaz_verificados: 6` y la revisión instalada. Se comparan las huellas de HTML, JS, CSS y bibliotecas 3D servidas por HTTPS con los archivos de la revisión. Si hay una discrepancia o falla el perfil, se restaura la unidad anterior. Después del resultado correcto, recargar IMS con Ctrl+Shift+R.
+El resumen correcto debe incluir `perfil_operacion_verificado: true`, `interfaz_actualizada: true`, `visor: "WEBGL_3D"`, `archivos_interfaz_verificados: 11` y la revisión instalada. Se comparan las huellas de HTML, JS, CSS y bibliotecas 3D servidas por HTTPS con los archivos de la revisión. Si hay una discrepancia o falla el perfil, se restaura la unidad anterior. Después del resultado correcto, recargar IMS con Ctrl+Shift+R.
 
 ## Layout físico y alcance de las medidas
 
@@ -109,3 +109,13 @@ El corte elegido conserva sus límites de cobertura y no incluye modificaciones 
 - [Operación y administración](../docs/manuales/Manual_operacion_IMS_20261117.pdf)
 - [Instalación y conexiones](../docs/manuales/Guia_instalacion_IMS_20261117.pdf)
 - [Pruebas de aceptación](../docs/manuales/Pruebas_aceptacion_IMS_20261117.pdf)
+
+## Actualización de Ubicaciones, recorrido y evidencias
+
+Esta entrega unifica Ubicaciones con el visor WebGL de IMS, añade suelo para B2, avatar de selección, recorrido con obstáculos y doble clic para contar. Incorpora el árbol de destino de inventarios y fotos privadas por línea. La migración aditiva `016_evidencias_drive.sql` añade dos tablas propias; el instalador prepara sus permisos restringidos.
+
+La comprobación HTTPS compara once archivos públicos preparados, incluidos el nuevo módulo de navegación, las evidencias y Ubicaciones. Así se detecta que la interfaz publicada corresponde a la versión instalada.
+
+Para Drive, habilitar **Google Drive API** en el mismo proyecto de Google Cloud, marcar el permiso opcional de carpetas/fotos en Conexiones y volver a autorizar. El alcance solicitado es `drive.file`, limitado a los archivos que crea o abre la aplicación. Los IDs y secretos se introducen únicamente en el formulario privado del servidor. Las fotos se guardan primero en la base propia y se envían mediante **Enviar a Drive**; sin autorización permanecen conservadas en el servidor.
+
+Para ocupación, configurar la conexión de solo lectura a SQL Server `192.168.4.12`, instancia `DEPOTWMS`, puerto `1433`, con la base y credenciales autorizadas. No se ha comprobado una conexión empresarial desde desarrollo. La consulta de EAN está pendiente de identificar: no se ejecutará una consulta inventada ni se reutilizará la de ocupación como catálogo de productos.

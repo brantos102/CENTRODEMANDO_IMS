@@ -1,3 +1,4 @@
+import {abrirEvidencias,cerrarEvidencias} from './evidencias-ui.mjs';
 import {guardarBorrador,leerBorradores,retirarBorrador,sumarLectura} from './borradores-wms.mjs';
 import {iniciarCamara} from './camara.mjs';
 import {cantidadNormalizada,siguienteEtapa,acuseValido,validarPagina,validarResumen,mostrarEntero} from './modelo.mjs';
@@ -15,7 +16,7 @@ function aviso(text='',fallo=false){$('aviso').textContent=text;$('aviso').hidde
 function contexto(){return {epoch:state.epoch,actorId:state.usuario?.actorId};}
 function actual(c){return c.epoch===state.epoch&&c.actorId===state.usuario?.actorId;}
 async function api(path,{method='GET',body,csrf=state.csrf}={}){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),/^\/api\/centro\/evidencias\/[a-f0-9-]+\/drive$/.test(path)?120000:12000);
   try{
     const response=await fetch(path,{method,credentials:'same-origin',cache:'no-store',redirect:'error',signal:controller.signal,
       headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(method==='POST'&&csrf?{'X-IMS-CSRF':csrf}:{})},
@@ -27,6 +28,7 @@ async function api(path,{method='GET',body,csrf=state.csrf}={}){
   finally{clearTimeout(timer);}
 }
 function mostrarAcceso(message=''){
+  cerrarEvidencias();
   document.dispatchEvent(new Event('ims:sesion-cerrada'));
   borradores.clear();elegidas.clear();state.epoch++;state.usuario=null;state.csrf=null;state.inv=null;state.lineas=[];state.inventarios=[];state.pendientes=[];
   $('operacion').hidden=true;$('acceso').hidden=false;$('contrasena').value='';$('login-error').textContent=message;
@@ -128,6 +130,7 @@ async function cargarInventarios(mas=false,filtros=state.filtrosInv||sinFiltros(
   finally{if(seq===seqInv){state.cargandoInv=false;$('filtros-inventarios').disabled=false;$('actualizar-inv').disabled=false;$('mas-inventarios').disabled=false;pintarInventarios();}}
 }
 async function seleccionar(inv){
+  cerrarEvidencias();
   $('resumen-desplegable').open=false;$('modo-nativo').hidden=true;if(matchMedia('(max-width:700px)').matches)$('inventarios-desplegable').open=false;
   state.epoch++;state.inv=inv;state.lineas=[];state.scopeLineas=null;state.bloquearScope=false;borradores=new Map();elegidas=new Set();state.cursorLineas=null;document.dispatchEvent(new CustomEvent('ims:inventario',{detail:{id:inv.id,inventario:{...inv},centro:state.centroDisponible,usuario:state.usuario,csrf:state.csrf}}));$('wms-avance').hidden=true;$('wms-acciones').hidden=true;$('wms-contexto').hidden=true;
   state.busquedaLineas='';state.posicionLineas='';$('ims-posicion-activa').hidden=true;$('form-lineas').reset();$('ean-coincidencias').replaceChildren();
@@ -150,6 +153,7 @@ function pintarLineas(){
     else if(!state.soloLectura&&row.puede_contar&&state.inv?.estado==='EN_PROCESO'&&etapa&&state.almacen){
       const b=el('button','Contar · '+etapa,'primario');b.type='button';b.disabled=state.bloquearScope;b.addEventListener('click',()=>abrirConteo(row));action.append(b);const elegir=el('input');elegir.type='checkbox';elegir.disabled=state.bloquearScope;elegir.checked=elegidas.has(row.id);elegir.dataset.elegir=row.id;elegir.setAttribute('aria-label','Seleccionar '+row.sku+' en '+row.posicion);elegir.onchange=()=>elegir.checked?elegidas.add(row.id):elegidas.delete(row.id);action.prepend(elegir);const draft=borradores.get(row.id),input=el('input');input.dataset.borrador=row.id;input.inputMode='decimal';input.placeholder='C'+etapa;input.setAttribute('aria-label','Cantidad '+row.sku+' en '+row.posicion);input.value=draft?.cantidad||'';input.disabled=state.bloquearScope||!!draft&&draft.version!==row.version;input.onchange=()=>void encolarBorrador(row,input.value).catch(()=>{});action.append(input);if(draft&&draft.version!==row.version){action.append(el('small','La línea cambió. Borrador: '+draft.cantidad+'. Revisa sus capturas antes de continuar.','error'));const descartar=el('button','Descartar borrador');descartar.type='button';descartar.onclick=async()=>{const c=contexto(),id=state.inv.id;try{await retirarBorrador(c.actorId,id,row.id);if(actual(c)&&state.inv?.id===id){borradores.delete(row.id);elegidas.delete(row.id);pintarLineas();}}catch(e){errorActual(e,c);}};action.append(descartar);}
     }else action.append(el('small',state.soloLectura||!row.puede_contar?'Solo lectura':!state.almacen?'Captura no disponible':etapa?'Consulta':'Etapas completas o por revisar'));
+    if(state.centroDisponible){const foto=el('button','📷 Fotos','foto-linea');foto.type='button';foto.disabled=state.bloquearScope;foto.setAttribute('aria-label','Fotos de '+row.sku+' en '+row.posicion);foto.onclick=()=>{const c=contexto();void abrirEvidencias({linea:row,actorId:c.actorId,puedeGuardar:!state.soloLectura&&row.puede_contar&&state.inv?.estado==='EN_PROCESO',api,vigente:()=>actual(c)});};action.append(foto);}
     tr.append(action);tbody.append(tr);
   }
   $('ims-borradores-estado').textContent=borradores.size+' borradores resguardados para este inventario.';

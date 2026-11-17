@@ -201,13 +201,13 @@ $('op-cuenta').onchange=()=>{$('op-actor').value=$('op-cuenta').value;};
 
 /** Abre las mismas acciones autorizadas dentro de la terminal IMS. */
 let secuenciaIMS=0;
-export async function abrirPanelIMS(id,tipo){
+export async function abrirPanelIMS(id,tipo,{posicion=''}={}){
  const seq=++secuenciaIMS;
  const vigente=await api('/api/sesion');if(seq!==secuenciaIMS)return;if(state.sesion?.usuario.actorId!==vigente.usuario.actorId){state.inv=null;state.contexto=null;}state.sesion=vigente;
  if(pendiente()&&state.inv?.id!==id)throw Error('Recupera primero la operación por confirmar en el inventario anterior.');
  await contexto(id,()=>seq===secuenciaIMS);if(seq!==secuenciaIMS)return;
  if(!state.inv)throw Error('Este inventario no tiene operación nativa habilitada. Su histórico permanece consultable.');
- $('ims-aux-error')?.remove();
+ $('ims-aux-error')?.remove();const panel=$('ims-panel-operacion');let cabecera=$('ims-operacion-contexto');if(!cabecera){cabecera=document.createElement('div');cabecera.id='ims-operacion-contexto';cabecera.className='ims-operacion-contexto';panel.prepend(cabecera);}cabecera.textContent=({series:'Series físicas',adicionales:'Planilla alterna',analisis:'Análisis del inventario',supervision:'Administración'})[tipo]+' · '+(posicion||'Todas las ubicaciones');for(const id of ['op-hallazgo-pos','op-serie-posicion'])if(!$(id).value)$(id).value=posicion;
  if(tipo==='analisis')$('op-analisis').click();
  if(tipo==='adicionales'){$('op-historial-tipo').value='hallazgos';$('op-historial').click();$('op-hallazgo').closest('details').open=true;}
  if(tipo==='series'){$('op-historial-tipo').value='series';$('op-historial').click();}

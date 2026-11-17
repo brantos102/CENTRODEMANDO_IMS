@@ -1,0 +1,65 @@
+{
+  "ok": true,
+  "fecha_ecuador": "2026-11-17",
+  "revision_base": "b904547a1f228d65af5f819ced6d70482a465093",
+  "alcance": [
+    "Ubicaciones y terminal con visor WebGL compartido",
+    "Suelo de B2, avatar, recorrido con obstáculos y doble clic para contar",
+    "Ubicaciones sin tipo físico separadas para revisión",
+    "Árbol sede/año/mes/cliente y pestañas operativas",
+    "Fotos privadas con recuperación de envíos y Drive opcional"
+  ],
+  "pruebas": {
+    "node_22": {
+      "correctas": 236,
+      "fallidas": 0
+    },
+    "python_instalador": {
+      "correctas": 168,
+      "fallidas": 0
+    },
+    "mysql": {
+      "correctas": 50,
+      "omitidas_opcionales": 1,
+      "fallidas": 0,
+      "detalle": {
+        "centro": 38,
+        "mapa_inventario": 4,
+        "operacion_nativa": 8
+      }
+    },
+    "chromium": {
+      "correctas": 37,
+      "fallidas": 0,
+      "detalle": {
+        "centro": 14,
+        "erp": 5,
+        "capturas": 13,
+        "operacion_nativa": 4,
+        "abiertos_migrados": 1
+      }
+    }
+  },
+  "catalogo_privado": {
+    "posiciones_positivas_UIO": 18386,
+    "sin_tipo_fisico_para_revision": 1783,
+    "geometria_finita_verificada": true,
+    "medidas_originales_conservadas": true
+  },
+  "drive": {
+    "prueba": "SIMULADA",
+    "recuperacion_sin_duplicados_verificada": true,
+    "permiso_opcional": "drive.file",
+    "envios_reales": false
+  },
+  "pendientes": [
+    "Configurar y probar conexión empresarial de ocupación",
+    "Identificar consulta autorizada EAN en SQL Server",
+    "Crear cliente OAuth web y autorizar cuenta corporativa para Gmail, Calendar y Drive",
+    "Pruebas de aceptación en el servidor y aprobación de producción"
+  ],
+  "publicacion_produccion_realizada": false,
+  "datos_operativos_reales_modificados": false,
+  "apache_modificado": false,
+  "otros_servicios_modificados": false
+}

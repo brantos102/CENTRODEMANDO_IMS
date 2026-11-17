@@ -49,3 +49,25 @@ Correo, Calendar y ocupación se configuran en Conexiones. Antes de enviar corre
 Ante un error, conservar el código, fecha, inventario, operación y resumen compartible. No adjuntar archivos privados con credenciales, tokens, plano descifrado ni resguardos completos. Comprobar primero **Capturas pendientes**, **Trabajos y descargas** y el estado de la propia actualización. No repetir la extracción de Google ni la importación del corte para corregir un problema de interfaz.
 
 Para instalación y conexiones, consultar [la guía de entrega](ENTREGA_LAYOUT_Y_CONTEO_20261117.md).
+
+## Recorrido y selección de ubicaciones
+
+**Ubicaciones** y la terminal IMS utilizan el mismo visor WebGL. En Ubicaciones se muestra BM inicialmente; selecciona B2 en **Bodega / nave** para ver Bodega 2 sobre su propio piso. Las áreas sin ancla confirmada continúan identificadas como provisionales.
+
+Un clic selecciona el hueco y sitúa tu avatar en el pasillo contiguo. Selecciona **Recorrer pasillo** y usa W/A/S/D, las flechas o los botones de dirección; arrastrar sigue permitiendo girar la cámara. El recorrido evita los volúmenes de las estanterías y los límites del piso. En planta alta se limita al mezzanine. La figura representa tu selección virtual, no ubicación física mediante GPS.
+
+El doble clic abre el conteo de los productos autorizados de esa posición. Desde Ubicaciones se necesita haber abierto el mapa con un inventario; la vista general no asigna permisos de captura. **Posición anterior / Siguiente posición** permite avanzar por las ubicaciones del inventario conservando los borradores locales.
+
+## Destino organizado y fotos de novedades
+
+Al crear, **Organizar por sede / año / mes / cliente** utiliza la fecha de inicio y el cliente principal. La ruta se muestra antes de confirmar y las carpetas faltantes se crean junto con el inventario. Puedes desmarcar la organización automática y elegir otra carpeta existente desde el árbol. Los clientes adicionales conservan su acceso por cliente.
+
+En una línea, pulsa **Fotos**, selecciona la cámara o un JPEG/PNG y describe la novedad. El dispositivo ajusta la imagen hasta 1.600 píxeles y conserva el envío pendiente hasta confirmar el servidor. Un reintento usa el mismo identificador; no borres los datos del navegador con fotos pendientes. Las evidencias no rellenan C1/C2/C3 ni modifican stock. Sus permisos dependen de la línea del inventario.
+
+**Enviar a Drive** crea o reutiliza `ITSANET IMS / SEDE / año / mes / cliente`. Las fotos de clientes adicionales usan su propio cliente. Esta acción requiere Google autorizado con **Autorizar las carpetas y fotos creadas por IMS**; el permiso es `drive.file`. La cuenta temporal sigue siendo `bespinoza@itsanet.com` y puede reemplazarse. Las fotos permanecen privadas; no se publican enlaces abiertos. Una respuesta incierta se recupera con el identificador remoto original. La confirmación en Drive verifica también la huella de los bytes enviados.
+
+Hasta autorizar Google, la copia confirmada se conserva en el servidor y el envío a Drive queda pendiente. El envío se inicia con el botón de cada foto; no se presenta como automático. Cambiar la cuenta crea una jerarquía para la nueva cuenta y conserva las copias anteriores.
+
+## Conexiones pendientes de operación
+
+La ocupación dispone de consulta fija de solo lectura para SQL Server DEPOTWMS; requiere configurar la cuenta autorizada en el servidor y comprobar un corte real. Los EAN siguen siendo datos internos de lectura de productos. Su actualización desde SQL requiere identificar la consulta o vista empresarial antes de implementarla; el catálogo privado vigente sigue disponible.

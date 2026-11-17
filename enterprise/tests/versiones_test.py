@@ -185,15 +185,15 @@ class ReleaseGitTest(unittest.TestCase):
         with self.assertRaises(up.p.PilotoError):
             up.preparar_release(self.repo, self.new, enlace, lambda _: None)
 
-    def test_interfaz_https_debe_coincidir_con_los_seis_archivos_preparados(self):
-        nombres={'/ims':'index.html','/assets/ims.mjs':'ims.mjs','/assets/ims.css':'ims.css','/assets/visor-almacen-3d.mjs':'visor-almacen-3d.mjs','/assets/vendor/three.module.min.js':'vendor/three.module.min.js','/assets/vendor/OrbitControls.js':'vendor/OrbitControls.js'}
+    def test_interfaz_https_debe_coincidir_con_todos_los_modulos_preparados(self):
+        nombres={'/ims':'index.html','/assets/ims.mjs':'ims.mjs','/assets/ims.css':'ims.css','/assets/visor-almacen-3d.mjs':'visor-almacen-3d.mjs','/assets/vendor/three.module.min.js':'vendor/three.module.min.js','/assets/vendor/OrbitControls.js':'vendor/OrbitControls.js','/assets/navegacion-almacen.mjs':'navegacion-almacen.mjs','/assets/evidencias-ui.mjs':'evidencias-ui.mjs','/assets/ruta-destino.mjs':'ruta-destino.mjs','/catalogos':'catalogos.html','/assets/catalogos.mjs':'catalogos.mjs'}
         for n in nombres.values():
             f=self.repo/'enterprise/public'/n;f.parent.mkdir(parents=True,exist_ok=True);f.write_text('NUEVA '+n)
         calls=[]
         def request(method,path):
             calls.append((method,path));return 200,{},(self.repo/'enterprise/public'/nombres[path]).read_bytes()
         r=up.comprobar_interfaz(request,self.repo)
-        self.assertTrue(r['interfaz_actualizada']);self.assertEqual(r['visor'],'WEBGL_3D');self.assertEqual(len(calls),6)
+        self.assertTrue(r['interfaz_actualizada']);self.assertEqual(r['visor'],'WEBGL_3D');self.assertEqual(len(calls),11)
         def anterior(method,path):return (200,{},b'INTERFAZ_ANTERIOR')
         with self.assertRaisesRegex(up.p.PilotoError,'no coincide'):
             up.comprobar_interfaz(anterior,self.repo)
