@@ -1,6 +1,11 @@
 import {readFile} from 'node:fs/promises';
 const ROOT=new URL('../../public/',import.meta.url);
 const FILES={
+  '/assets/borradores-wms.mjs':['borradores-wms.mjs','text/javascript; charset=utf-8'],
+  '/assets/layout-fisico.mjs':['layout-fisico.mjs','text/javascript; charset=utf-8'],
+  '/assets/visor-almacen-3d.mjs':['visor-almacen-3d.mjs','text/javascript; charset=utf-8'],
+  '/assets/vendor/three.module.min.js':['vendor/three.module.min.js','text/javascript; charset=utf-8'],
+  '/assets/vendor/OrbitControls.js':['vendor/OrbitControls.js','text/javascript; charset=utf-8'],
   '/ims':['index.html','text/html; charset=utf-8'],
   '/assets/ims.mjs':['ims.mjs','text/javascript; charset=utf-8'],
   '/assets/ims.css':['ims.css','text/css; charset=utf-8'],

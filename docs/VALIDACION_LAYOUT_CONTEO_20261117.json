@@ -1,0 +1,75 @@
+{
+  "fecha": "2026-11-17",
+  "formato": "ims-layout-conteo-validacion-v1",
+  "base_revision": "0c747432c766646fff97f13fce12f29f2f0128a4",
+  "pruebas": {
+    "node": {
+      "tests": 226,
+      "pass": 226,
+      "fail": 0
+    },
+    "python": {
+      "tests": 163,
+      "pass": 163,
+      "fail": 0
+    },
+    "mysql_suite_completa": {
+      "tests": 147,
+      "pass": 143,
+      "fail": 0,
+      "skipped": 4
+    },
+    "mysql_centro_ultima_revision": {
+      "tests": 35,
+      "pass": 35,
+      "fail": 0,
+      "perfil_sql_minimo": true
+    },
+    "navegador_por_suite": {
+      "abiertos": 1,
+      "centro": 12,
+      "erp": 5,
+      "flujo": 13,
+      "nativa": 4
+    },
+    "navegador_total": 35,
+    "navegador_fallos_pendientes": 0,
+    "webgl_swiftshader_local": true,
+    "datos_sinteticos": true
+  },
+  "catalogo_uio": {
+    "registros": 18540,
+    "posiciones": 18386,
+    "excluidas": 10,
+    "ancladas": 10054,
+    "coordenadasDuplicadas": 0,
+    "avisos": {
+      "SIN_ANCLA_EN_PLANO": 104,
+      "GAVETAS_SUPERAN_HUECO": 82,
+      "ALTURA_SUPERIOR_AJUSTADA_PROVISIONAL": 200,
+      "ALTURA_SUPERA_PISO_MEZZANINE": 80
+    },
+    "alturaEntrepisoCm": 210,
+    "alturaSegundaPlantaCm": 210,
+    "pisosMezzanine": 2,
+    "paqueteCifradoVerificado": true
+  },
+  "restricciones": {
+    "conexion_sql_empresarial_verificada": false,
+    "oauth_corporativo_verificado": false,
+    "codigo_actual_google_leido": false,
+    "paridad_absoluta_declarada": false,
+    "produccion_activada": false,
+    "servidor_empresa_modificado_desde_esta_sesion": false,
+    "pdf_y_coordenadas_publicados_sin_cifrar": false,
+    "credenciales_publicadas": false
+  },
+  "pendientes": [
+    "Configurar cuenta SQL de lectura y verificar conexión real a DEPOTWMS.",
+    "Crear cliente OAuth, autorizar correo/Calendar y leer los proyectos actuales.",
+    "Cotejar reglas de los proyectos actuales de Google antes de declarar paridad absoluta.",
+    "Verificar alturas superiores provisionales, gavetas incompatibles y anclas ausentes.",
+    "Completar plano de B2 y conexiones de ocupación GYE/TLF.",
+    "Validar en el servidor y obtener la aprobación de producción prevista."
+  ]
+}

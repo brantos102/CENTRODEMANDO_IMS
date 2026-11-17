@@ -245,12 +245,12 @@ export async function consultarOperacion(pool,p,id,{analisis=false,cursor=''}={}
    JOIN ims_op_cliente cli ON cli.id=l.cliente_id WHERE l.inventario_id=?`;
   if(analisis){
    exigir(!ciego,'SIN_PERMISO','El conteo ciego no revela existencias teóricas ni indicadores.');
-   const a=acumuladorWms();let ultimo='';
+   const a=acumuladorWms(),discrepancias=[],criticos=new Map(),referenciasError=new Set();let discrepanciasTotal=0,faltantes=0,sobrantes=0,ultimo='';
    do{
-    const [rows]=await c.execute(`SELECT l.id,l.sku,l.conteo_1,l.conteo_2,l.conteo_final,d.posicion,x.depot,x.ajuste,x.categoria ${base} AND l.id>? ORDER BY l.id LIMIT 500`,[...parametros,ultimo]);
-    for(const r of rows)a.agregar(r);ultimo=rows.length===500?rows.at(-1).id:'';
+    const [rows]=await c.execute(`SELECT l.id,l.version,l.cliente_id,l.sku,l.conteo_1,l.conteo_2,l.conteo_final,l.observacion,l.nueva_posicion,d.posicion,d.descripcion,x.depot,x.ajuste,x.categoria,x.motivo,x.justificacion,cli.nombre cliente ${base} AND l.id>? ORDER BY l.id LIMIT 500`,[...parametros,ultimo]);
+    for(const r of rows){a.agregar(r);const out=resultadoWms(r);if(String(r.categoria||'').toUpperCase()==='DIF_INV'||!['FALTANTE','SOBRANTE'].includes(out.resultado))continue;discrepanciasTotal++;referenciasError.add(r.sku);out.resultado==='FALTANTE'?faltantes++:sobrantes++;const d=decimal(out.desfase);criticos.set(r.sku,(criticos.get(r.sku)||0n)+(d<0n?-d:d));if(discrepancias.length<1000)discrepancias.push({...r,version:String(r.version),...out});}ultimo=rows.length===500?rows.at(-1).id:'';
    }while(ultimo);
-   return {...a.terminar(),inventarioId:id,estado:n.estado,publicacionKpi:false};
+   return {...a.terminar(),inventarioId:id,estado:n.estado,publicacionKpi:false,discrepancias,discrepanciasTotal,referenciasConDiferencia:referenciasError.size,faltantes,sobrantes,topCriticos:[...criticos].sort((a,b)=>a[1]===b[1]?a[0].localeCompare(b[0]):a[1]>b[1]?-1:1).slice(0,5).map(([sku,cantidad])=>({sku,unidades:textoDecimal(cantidad)}))};
   }
   const select=ciego?'':',x.depot,x.ajuste,x.motivo,x.justificacion';
   const [lineas]=await c.execute(`SELECT l.id,l.cliente_id,l.sku,l.version,l.conteo_1,l.conteo_2,l.conteo_final,l.observacion,l.nueva_posicion,

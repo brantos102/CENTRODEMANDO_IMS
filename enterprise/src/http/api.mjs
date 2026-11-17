@@ -1,3 +1,8 @@
+import {resguardarCodigoOrigen} from '../centro/codigo-origen.mjs';
+import {pdfAnalisis,pdfEtiqueta} from '../centro/pdf.mjs';
+import {presenciaInventario,rankingInventario} from '../centro/presencia.mjs';
+import {consultarOcupacion,actualizarOcupacion} from '../centro/ocupacion.mjs';
+import {consultarLayout} from '../centro/layout.mjs';
 import {consultarMapaInventario} from '../centro/mapa-inventario.mjs';
 import {iniciarGoogleOAuth,completarGoogleOAuth,callbackGoogle} from '../centro/google-oauth.mjs';
 import {consultarCatalogos,importarCatalogo,resolverEAN,previsualizarCatalogo,originalCatalogo} from '../centro/catalogos.mjs';
@@ -118,7 +123,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       if(req.method==='POST'){
         if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Vuelve a consultar la sesión.',403);
         if(url.pathname==='/api/sesion/cerrar'){
-          await cerrarSesion(pool,principal);res.setHeader('Set-Cookie',cookie('',true));return json(res,200,{ok:true});
+          await cerrarSesion(pool,principal);if(centroHabilitado)try{await pool.execute('DELETE FROM ims_cm_presencia WHERE actor_id=?',[principal.actorId]);}catch{}res.setHeader('Set-Cookie',cookie('',true));return json(res,200,{ok:true});
         }
         if(url.pathname==='/api/conteos'){
           if(soloLectura)throw new ErrorAuth('SOLO_LECTURA','Este piloto permite únicamente consultar inventarios.',403);
@@ -130,6 +135,11 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         const ruta=url.pathname.slice('/api/centro/'.length);
         const perfil=await consultarCentro(pool,principal,'perfil');
         if(perfil.perfil.cambiar_clave&&!['perfil','clave'].includes(ruta))throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
+        if(req.method==='POST'&&ruta==='presencia')return json(res,200,await presenciaInventario(pool,principal,await leerJson(req),{guardar:true}));
+        if(req.method==='GET'&&ruta==='ranking')return json(res,200,await rankingInventario(pool,principal,opciones(url,['inventario']).inventario));
+        if(req.method==='GET'&&ruta==='ocupacion')return json(res,200,await consultarOcupacion(pool,principal,opciones(url,['sede']).sede));
+        if(req.method==='POST'&&ruta==='ocupacion/actualizar'){const body=await leerJson(req);if(Object.keys(body).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La consulta SQL es fija y se configura en el servidor.',400);return json(res,200,await actualizarOcupacion(pool,principal,claveCentro));}
+        if(req.method==='GET'&&ruta==='layout')return json(res,200,await consultarLayout(pool,principal,opciones(url,['sede','almacen'])));
         if(req.method==='GET'&&ruta==='mapa-inventario')return json(res,200,await consultarMapaInventario(pool,principal,opciones(url,['inventario'])));
         if(req.method==='GET'&&ruta==='catalogos')return json(res,200,await consultarCatalogos(pool,principal,opciones(url,['sede','tipo','desde','version'])));
         if(req.method==='POST'&&['catalogos','catalogos/previsualizar'].includes(ruta)){
@@ -142,6 +152,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         if(req.method==='GET'&&ruta==='ean')return json(res,200,await resolverEAN(pool,principal,opciones(url,['inventario','codigo'])));
         if(req.method==='GET'&&ruta==='google/configuracion'){const r=await consultarConectores(pool,principal,claveCentro);return json(res,200,{...r,callback:callbackGoogle(origin)});}
         if(req.method==='POST'&&ruta==='google/iniciar'){const b=await leerJson(req);if(Object.keys(b).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La cuenta se elige en Conexiones.',400);return json(res,200,await iniciarGoogleOAuth(pool,principal,claveCentro,origin));}
+        if(req.method==='POST'&&ruta==='codigo-origen'){const body=await leerJson(req);if(Object.keys(body).length)throw new ErrorAuth('SOLICITUD_INVALIDA','Los proyectos permitidos ya están registrados.',400);return json(res,200,await resguardarCodigoOrigen(pool,principal,claveCentro,{fetchImpl:fetchGoogle}));}
         if(req.method==='GET'&&ruta==='conexiones')return json(res,200,await consultarConectores(pool,principal,claveCentro));
         if(req.method==='POST'&&ruta==='conexiones')return json(res,200,await guardarConector(pool,principal,await leerJson(req,65536),claveCentro));
         if(req.method==='POST'&&ruta==='trabajos')return json(res,202,await solicitarTrabajo(pool,principal,await leerJson(req)));
@@ -154,6 +165,8 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           const r=await consultarCentro(pool,principal,'eventos');const contenido=ics(r.eventos);
           res.writeHead(200,{'Content-Type':'text/calendar; charset=utf-8','Content-Disposition':'attachment; filename="calendario-itsanet.ics"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(contenido);
         }
+        const pdf=/^inventarios\/([a-f0-9-]+)\/(pdf|etiqueta)$/.exec(ruta);
+        if(req.method==='GET'&&pdf){const contenido=pdf[2]==='pdf'?await pdfAnalisis(pool,principal,pdf[1]):await pdfEtiqueta(pool,principal,pdf[1],opciones(url,['posicion']).posicion,origin);res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="ims-'+pdf[1]+'-'+pdf[2]+'.pdf"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(contenido);}
         const reporte=/^inventarios\/([a-f0-9-]+)\/(csv|excel)$/.exec(ruta);
         if(req.method==='GET'&&reporte){
           const r=await reporteInventario(pool,principal,reporte[1],reporte[2]);res.writeHead(200,{'Content-Type':r.tipo,'Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);

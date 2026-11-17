@@ -1,3 +1,4 @@
+import {iniciarOcupacionAutomatica} from './centro/ocupacion.mjs';
 import {iniciarTrabajadorCentro} from './centro/trabajos.mjs';
 import {pathToFileURL} from 'node:url';
 import {crearPoolConteos} from './mysql/conteos.mjs';
@@ -27,7 +28,7 @@ export function configuracionApi(env){
 }
 async function main(){
   const config=configuracionApi(process.env),pool=await crearPoolConteos(process.env);
-  let server,trabajador;
+  let server,trabajador,cerrarOcupacion;
   try{
     const [[db]]=await pool.query('SELECT DATABASE() AS nombre,CURRENT_USER() AS usuario');
     if(!/^centromando_ims(?:_[a-z0-9_]+)?$/.test(db.nombre||'')||/^root@/i.test(db.usuario||''))throw Error('Base no permitida');
@@ -43,9 +44,10 @@ async function main(){
     server=crearApi({pool,publicUrl:config.publicUrl,soloLectura:config.soloLectura,revision:config.revision,operacionNativa:config.operacionNativa,gestorERP,erpCreacion:config.erpCreacion,centroHabilitado:config.centroHabilitado,claveCentro:process.env.IMS_CENTRO_CLAVE});
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(config.port,config.host,resolve);});
     console.log(`Centro de Mando candidato disponible en ${config.host}:${config.port}; modo ${config.soloLectura?'solo lectura':'operativo de ensayo'}.`);
+    if(config.centroHabilitado)cerrarOcupacion=iniciarOcupacionAutomatica({pool,clave:process.env.IMS_CENTRO_CLAVE,actorId:process.env.IMS_CENTRO_ADMIN_ID});
     if(config.centroHabilitado)trabajador=iniciarTrabajadorCentro({pool,clave:process.env.IMS_CENTRO_CLAVE,actorAutomatico:process.env.IMS_CENTRO_ADMIN_ID});
     let cerrando=false;
-    const cerrar=()=>{if(cerrando)return;cerrando=true;server.close(async()=>{await trabajador?.cerrar();await pool.end();process.exitCode=0;});};
+    const cerrar=()=>{if(cerrando)return;cerrando=true;cerrarOcupacion?.();server.close(async()=>{await trabajador?.cerrar();await pool.end();process.exitCode=0;});};
     process.once('SIGTERM',cerrar);process.once('SIGINT',cerrar);
   }catch{if(server)server.close();await pool.end();console.error('No se inició la API candidata. Revisa configuración y esquema de su base exclusiva.');process.exitCode=1;}
 }

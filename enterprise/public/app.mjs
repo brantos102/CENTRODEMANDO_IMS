@@ -1,10 +1,12 @@
+import {guardarBorrador,leerBorradores,retirarBorrador,sumarLectura} from './borradores-wms.mjs';
 import {iniciarCamara} from './camara.mjs';
 import {cantidadNormalizada,siguienteEtapa,acuseValido,validarPagina,validarResumen,mostrarEntero} from './modelo.mjs';
 import {formatearCantidad as mostrarCantidad} from './cantidades.mjs';
 import {listarPendientes,guardarPendiente,confirmarPendiente} from './pendientes.mjs';
 const $=id=>document.getElementById(id);
-const state={usuario:null,csrf:null,epoch:0,inventarios:[],lineas:[],inv:null,pendientes:[],almacen:false,sync:false,formulario:false,cursorInv:null,cursorLineas:null};
-let seqInv=0,seqLineas=0,seqPendientes=0;
+const state={usuario:null,csrf:null,epoch:0,inventarios:[],lineas:[],inv:null,pendientes:[],almacen:false,sync:false,formulario:false,scanOcupado:false,cargandoLineas:false,bloquearScope:false,scopeLineas:null,cursorInv:null,cursorLineas:null};
+document.addEventListener('ims:solicitar-contexto',()=>{if(state.inv)document.dispatchEvent(new CustomEvent('ims:inventario',{detail:{id:state.inv.id,inventario:{...state.inv},centro:state.centroDisponible,usuario:state.usuario,csrf:state.csrf}}));});
+let seqInv=0,seqLineas=0,seqPendientes=0;let borradores=new Map(),elegidas=new Set(),escriturasBorrador=new Map();
 let seqResumen=0,seqWms=0,seqBusqueda=0;
 const sinFiltros=()=>({buscar:'',cliente:'',sede:''});
 let verificandoSesion=true;
@@ -26,7 +28,7 @@ async function api(path,{method='GET',body,csrf=state.csrf}={}){
 }
 function mostrarAcceso(message=''){
   document.dispatchEvent(new Event('ims:sesion-cerrada'));
-  state.epoch++;state.usuario=null;state.csrf=null;state.inv=null;state.lineas=[];state.inventarios=[];state.pendientes=[];
+  borradores.clear();elegidas.clear();state.epoch++;state.usuario=null;state.csrf=null;state.inv=null;state.lineas=[];state.inventarios=[];state.pendientes=[];
   $('operacion').hidden=true;$('acceso').hidden=false;$('contrasena').value='';$('login-error').textContent=message;
   $('lista-inventarios').replaceChildren();$('lineas').replaceChildren();$('lista-pendientes').replaceChildren();
   $('modal-conteo').close();$('form-conteo').reset();aviso();
@@ -127,12 +129,12 @@ async function cargarInventarios(mas=false,filtros=state.filtrosInv||sinFiltros(
 }
 async function seleccionar(inv){
   $('resumen-desplegable').open=false;$('modo-nativo').hidden=true;if(matchMedia('(max-width:700px)').matches)$('inventarios-desplegable').open=false;
-  state.epoch++;state.inv=inv;state.lineas=[];state.cursorLineas=null;document.dispatchEvent(new CustomEvent('ims:inventario',{detail:{id:inv.id,inventario:{...inv},centro:state.centroDisponible}}));$('wms-avance').hidden=true;$('wms-acciones').hidden=true;$('wms-contexto').hidden=true;
+  state.epoch++;state.inv=inv;state.lineas=[];state.scopeLineas=null;state.bloquearScope=false;borradores=new Map();elegidas=new Set();state.cursorLineas=null;document.dispatchEvent(new CustomEvent('ims:inventario',{detail:{id:inv.id,inventario:{...inv},centro:state.centroDisponible,usuario:state.usuario,csrf:state.csrf}}));$('wms-avance').hidden=true;$('wms-acciones').hidden=true;$('wms-contexto').hidden=true;
   state.busquedaLineas='';state.posicionLineas='';$('ims-posicion-activa').hidden=true;$('form-lineas').reset();$('ean-coincidencias').replaceChildren();
   $('seleccion-vacia').hidden=true;$('detalle').hidden=false;
   $('codigo').textContent=inv.codigo_operativo;$('sede').textContent='SEDE '+inv.sede;
   $('estado-inventario').textContent=inv.estado.replaceAll('_',' ')+(inv.estado==='EN_PROCESO'?' · Captura por etapas':' · Consulta');
-  pintarInventarios();pintarLineas();await cargarLineas();
+  const contextoB=contexto();try{const ds=state.almacen?await leerBorradores(state.usuario.actorId,inv.id):[];if(actual(contextoB))borradores=new Map(ds.map(d=>[d.lineaId,d]));}catch(e){if(actual(contextoB))aviso(e.message,true);}pintarInventarios();pintarLineas();await cargarLineas();
 }
 function pintarLineas(){
   const tbody=$('lineas');tbody.replaceChildren();
@@ -146,28 +148,29 @@ function pintarLineas(){
     const action=el('td'),etapa=siguienteEtapa(row),pending=state.pendientes.some(p=>p.lineaId===row.id);
     if(pending)action.append(el('span','Por confirmar','pendiente-etiqueta'));
     else if(!state.soloLectura&&row.puede_contar&&state.inv?.estado==='EN_PROCESO'&&etapa&&state.almacen){
-      const b=el('button','Contar · '+etapa,'primario');b.type='button';b.addEventListener('click',()=>abrirConteo(row));action.append(b);
+      const b=el('button','Contar · '+etapa,'primario');b.type='button';b.disabled=state.bloquearScope;b.addEventListener('click',()=>abrirConteo(row));action.append(b);const elegir=el('input');elegir.type='checkbox';elegir.disabled=state.bloquearScope;elegir.checked=elegidas.has(row.id);elegir.dataset.elegir=row.id;elegir.setAttribute('aria-label','Seleccionar '+row.sku+' en '+row.posicion);elegir.onchange=()=>elegir.checked?elegidas.add(row.id):elegidas.delete(row.id);action.prepend(elegir);const draft=borradores.get(row.id),input=el('input');input.dataset.borrador=row.id;input.inputMode='decimal';input.placeholder='C'+etapa;input.setAttribute('aria-label','Cantidad '+row.sku+' en '+row.posicion);input.value=draft?.cantidad||'';input.disabled=state.bloquearScope||!!draft&&draft.version!==row.version;input.onchange=()=>void encolarBorrador(row,input.value).catch(()=>{});action.append(input);if(draft&&draft.version!==row.version){action.append(el('small','La línea cambió. Borrador: '+draft.cantidad+'. Revisa sus capturas antes de continuar.','error'));const descartar=el('button','Descartar borrador');descartar.type='button';descartar.onclick=async()=>{const c=contexto(),id=state.inv.id;try{await retirarBorrador(c.actorId,id,row.id);if(actual(c)&&state.inv?.id===id){borradores.delete(row.id);elegidas.delete(row.id);pintarLineas();}}catch(e){errorActual(e,c);}};action.append(descartar);}
     }else action.append(el('small',state.soloLectura||!row.puede_contar?'Solo lectura':!state.almacen?'Captura no disponible':etapa?'Consulta':'Etapas completas o por revisar'));
     tr.append(action);tbody.append(tr);
   }
+  $('ims-borradores-estado').textContent=borradores.size+' borradores resguardados para este inventario.';
   $('resumen-lineas').textContent=state.lineas.length+' línea(s) cargada(s).'+(state.busquedaLineas?' Búsqueda: '+state.busquedaLineas+'.':'')+(state.cursorLineas?' Hay más líneas disponibles.':'');
   $('mas-lineas').hidden=!state.cursorLineas;
 }
 async function cargarLineas(mas=false,buscar=state.busquedaLineas||''){
-  if(!state.inv||!state.usuario)return;const c=contexto(),id=state.inv.id,seq=++seqLineas;
+  if(!state.inv||!state.usuario)return;const c=contexto(),id=state.inv.id,seq=++seqLineas,scope=JSON.stringify([state.posicionLineas||'',buscar]);
   $('actualizar-lineas').disabled=true;$('mas-lineas').disabled=true;
-  $('filtros-lineas').disabled=true;
+  $('filtros-lineas').disabled=true;state.cargandoLineas=true;state.bloquearScope=state.scopeLineas!==scope;$('lineas').setAttribute('aria-busy','true');if(state.bloquearScope)for(const e of document.querySelectorAll('#lineas button,#lineas input,#ims-scan-form button,#ims-guardar-masivo'))e.disabled=true;
   try{
     const q=new URLSearchParams({limite:'50'});if(buscar)q.set('buscar',buscar);if(state.posicionLineas)q.set('posicion',state.posicionLineas);if(mas&&state.cursorLineas)q.set('cursor',state.cursorLineas);
     const data=await api('/api/inventarios/'+id+'/lineas?'+q);
     if(!actual(c)||state.inv?.id!==id||seq!==seqLineas)return;validarPagina(data,'lineas');
-    state.busquedaLineas=buscar;state.lineas=mas?[...state.lineas,...data.datos]:data.datos;state.cursorLineas=data.siguiente;pintarLineas();void actualizarWms();
+    state.scopeLineas=scope;state.busquedaLineas=buscar;state.lineas=mas?[...state.lineas,...data.datos]:data.datos;state.cursorLineas=data.siguiente;pintarLineas();void actualizarWms();
   }catch(e){errorActual(e,c);}
-  finally{if(seq===seqLineas){$('filtros-lineas').disabled=false;$('actualizar-lineas').disabled=false;$('mas-lineas').disabled=false;}}
+  finally{if(seq===seqLineas){state.cargandoLineas=false;state.bloquearScope=state.scopeLineas!==scope;$('lineas').setAttribute('aria-busy','false');for(const e of document.querySelectorAll('#ims-scan-form button,#ims-guardar-masivo'))e.disabled=state.bloquearScope;pintarLineas();$('filtros-lineas').disabled=false;$('actualizar-lineas').disabled=false;$('mas-lineas').disabled=false;}}
 }
 let seleccion;
 function abrirConteo(row){
-  const etapa=siguienteEtapa(row);if(!etapa||!state.usuario||state.formulario)return;
+  const etapa=siguienteEtapa(row);if(!etapa||!state.usuario||state.formulario||state.bloquearScope)return;
   seleccion={row:{...row},inv:{...state.inv},contexto:contexto(),etapa};
   $('form-conteo').reset();$('conteo-error').textContent='';$('conteo-titulo').textContent=etapa===3?'Registrar conteo final':'Registrar conteo '+etapa;
   $('producto-conteo').textContent=row.sku+' · '+(row.posicion||'Sin posición')+' · '+row.cliente;
@@ -178,7 +181,7 @@ async function enviar(record,c){
   if(state.usuario?.actorId!==record.actorId)throw Error('Inicia sesión con la cuenta que capturó este envío.');
   const data=await api('/api/conteos',{method:'POST',body:record.solicitud,csrf:state.csrf});
   if(!acuseValido(data,record.solicitud))throw Error('La respuesta no confirma esta captura. Conservamos el envío para revisión.');
-  await confirmarPendiente(record.actorId,record.operacionId);document.dispatchEvent(new CustomEvent('ims:captura-confirmada',{detail:{id:record.solicitud.inventarioId}}));
+  await confirmarPendiente(record.actorId,record.operacionId);try{await retirarBorrador(record.actorId,record.solicitud.inventarioId,record.lineaId);}catch{if(actual(c))aviso('Captura confirmada. El borrador local requiere revisión al actualizar.');}if(actual(c)){borradores.delete(record.lineaId);elegidas.delete(record.lineaId);}document.dispatchEvent(new CustomEvent('ims:captura-confirmada',{detail:{id:record.solicitud.inventarioId}}));
   if(actual(c))aviso(data.repetida?'La operación ya estaba guardada. Confirmación recuperada.':'Conteo guardado y confirmado.');
 }
 $('form-login').addEventListener('submit',async e=>{
@@ -263,6 +266,14 @@ async function buscarCodigo(){
 matchMedia('(max-width:700px)').addEventListener('change',e=>{if(e.matches&&state.inv)$('inventarios-desplegable').open=false;});
 
 // La ubicación proviene del mapa del inventario vigente, sin elegir una línea por SKU.
-document.addEventListener('ims:contar-posicion',e=>{if(!state.inv||e.detail?.inventarioId!==state.inv.id)return;state.posicionLineas=String(e.detail.posicion||'');$('buscar-lineas').value='';$('ims-posicion-activa').textContent='Ubicación: '+state.posicionLineas+' · Selecciona la línea que vas a contar. Usa Limpiar para volver a todas.';$('ims-posicion-activa').hidden=!state.posicionLineas;void cargarLineas(false,'');});
+document.addEventListener('ims:contar-posicion',e=>{if(!state.inv||e.detail?.inventarioId!==state.inv.id)return;state.posicionLineas=String(e.detail.posicion||'');$('ims-scan-coincidencias').replaceChildren();$('buscar-lineas').value='';$('ims-posicion-activa').textContent='Ubicación: '+state.posicionLineas+' · Selecciona la línea que vas a contar. Usa Limpiar para volver a todas.';$('ims-posicion-activa').hidden=!state.posicionLineas;void cargarLineas(false,'');});
 document.addEventListener('ims:buscar-producto',e=>{if(!state.inv||e.detail?.inventarioId!==state.inv.id)return;state.posicionLineas='';$('ims-posicion-activa').hidden=true;$('buscar-lineas').value=String(e.detail.codigo||'');void buscarCodigo();});
 document.addEventListener('ims:actualizar-capturas',()=>{if(state.inv)void cargarLineas();});
+
+function encolarBorrador(row,valor){const c=contexto(),id=state.inv?.id; elegidas.delete(row.id);const p=(escriturasBorrador.get(row.id)||Promise.resolve()).catch(()=>{}).then(()=>actual(c)&&state.inv?.id===id?cambiarBorrador(row,valor,{propagar:true}):undefined);escriturasBorrador.set(row.id,p);void p.finally(()=>{if(escriturasBorrador.get(row.id)===p)escriturasBorrador.delete(row.id);}).catch(()=>{});return p;}
+async function cambiarBorrador(row,valor,{propagar=false}={}){if(!state.inv||!state.usuario)return;const c=contexto(),id=state.inv.id;try{const d={actorId:c.actorId,inventarioId:id,lineaId:row.id,sku:row.sku,version:row.version,etapa:siguienteEtapa(row),cantidad:cantidadNormalizada(valor),observacion:row.observacion||'',nuevaPosicion:row.nueva_posicion||''};await guardarBorrador(d);if(!actual(c)||state.inv?.id!==id)return;borradores.set(row.id,d);elegidas.add(row.id);pintarLineas();}catch(e){errorActual(e,c);if(propagar)throw e;}}
+async function enviarBorrador(row,d,c){if(d.version!==row.version||d.etapa!==siguienteEtapa(row))throw Error('La línea cambió. Revisa la etapa y el borrador antes de guardar.');const solicitud={operacionId:crypto.randomUUID(),inventarioId:state.inv.id,lineaId:row.id,versionEsperada:row.version,etapa:d.etapa,cantidad:d.cantidad,observacion:d.observacion,nuevaPosicion:d.nuevaPosicion};const r=await guardarPendiente({operacionId:solicitud.operacionId,actorId:c.actorId,lineaId:row.id,solicitud,codigo:state.inv.codigo_operativo,sku:row.sku,creado:new Date().toISOString()});if(!r.nuevo)throw Error('La línea tiene un envío pendiente. Usa Reintentar envíos.');await enviar(r.registro,c);}
+$('ims-guardar-masivo').onclick=async()=>{if(state.formulario||state.bloquearScope||state.soloLectura||!state.almacen||!state.inv)return;const c=contexto();state.formulario=true;let confirmadas=0;try{await Promise.all([...escriturasBorrador.values()]);for(const row of state.lineas){if(!actual(c))break;if(!elegidas.has(row.id)||!borradores.has(row.id))continue;await enviarBorrador(row,borradores.get(row.id),c);confirmadas++;}if(actual(c)){aviso(confirmadas+' capturas confirmadas. Las demás conservan su borrador.');await cargarLineas();}}catch(e){errorActual(e,c);}finally{state.formulario=false;if(actual(c))await actualizarPendientes();}};
+$('ims-todas-filas').onchange=()=>{for(const e of document.querySelectorAll('[data-elegir]')){e.checked=$('ims-todas-filas').checked;e.checked?elegidas.add(e.dataset.elegir):elegidas.delete(e.dataset.elegir);}};
+$('ims-info-extra').onchange=()=>document.body.classList.toggle('ims-info-extra',$('ims-info-extra').checked);
+$('ims-scan-form').onsubmit=async e=>{e.preventDefault();if(state.formulario||state.bloquearScope||state.scanOcupado||!state.almacen||!state.inv||state.soloLectura)return;state.scanOcupado=true;const c=contexto(),id=state.inv.id,valor=$('ims-scan-codigo').value.trim(),etapa=Number($('ims-scan-etapa').value),cantidadEntrada=$('ims-scan-cantidad').value,posicionIntento=state.posicionLineas,rafaga=$('ims-scan-rafaga').checked;$('ims-scan-coincidencias').replaceChildren();try{let sku=valor;if(state.centroDisponible){const r=await api('/api/centro/ean?'+new URLSearchParams({inventario:id,codigo:valor}));if(!actual(c))return;if(r.ambigua)throw Error('EAN con varios productos: usa la búsqueda y selecciona una línea antes de contar.');if(r.coincidencias.length)sku=r.coincidencias[0].sku;}const q=new URLSearchParams({buscar:sku,limite:'100'});if(state.posicionLineas)q.set('posicion',state.posicionLineas);const r=await api('/api/inventarios/'+id+'/lineas?'+q);if(!actual(c))return;validarPagina(r,'lineas');const rs=r.datos.filter(l=>(l.sku.toUpperCase()===sku.toUpperCase()||l.serie?.toUpperCase()===valor.toUpperCase())&&l.puede_contar);if(r.siguiente)throw Error('Hay más coincidencias. Selecciona primero una ubicación exacta.');const aplicar=async row=>{if(!actual(c)||state.inv?.id!==id||state.posicionLineas!==posicionIntento)return;if(siguienteEtapa(row)!==etapa)throw Error('La etapa seleccionada ya fue guardada o no corresponde. Revisa C1/C2/C3 antes de continuar.');if(!state.lineas.some(l=>l.id===row.id))state.lineas=[row,...state.lineas];const cantidad=sumarLectura(borradores.get(row.id)?.cantidad,cantidadEntrada);await encolarBorrador(row,cantidad);if(rafaga){state.formulario=true;try{await enviarBorrador(row,borradores.get(row.id),c);await cargarLineas();}finally{state.formulario=false;await actualizarPendientes();}}$('ims-scan-codigo').value='';$('ims-scan-codigo').focus();};if(!rs.length)throw Error('No hay una línea autorizada para ese código en esta ubicación.');if(rs.length===1)await aplicar(rs[0]);else for(const row of rs){const b=el('button',row.sku+' · '+row.posicion+' · '+row.cliente,'secundario');b.type='button';b.onclick=async()=>{if(state.scanOcupado||state.formulario)return;state.scanOcupado=true;try{await aplicar(row);$('ims-scan-coincidencias').replaceChildren();}catch(e){errorActual(e,c);}finally{state.scanOcupado=false;}};$('ims-scan-coincidencias').append(b);}}catch(e){errorActual(e,c);}finally{state.scanOcupado=false;}};

@@ -18,6 +18,10 @@ _validacion=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(_val
 validar_zip,normal=_validacion.validar_zip,_validacion.normal
 
 CM_TABLES={
+ 'ims_cm_codigo_origen':'SELECT, INSERT',
+ 'ims_cm_layout':'SELECT, INSERT','ims_cm_layout_actual':'SELECT, INSERT, UPDATE',
+ 'ims_cm_ocupacion_corte':'SELECT, INSERT','ims_cm_ocupacion_fila':'SELECT, INSERT','ims_cm_ocupacion_actual':'SELECT, INSERT, UPDATE',
+ 'ims_cm_presencia':'SELECT, INSERT, UPDATE, DELETE',
  'ims_cm_catalogo_archivo':'SELECT, INSERT',
  'ims_cm_catalogo':'SELECT, INSERT','ims_cm_catalogo_fila':'SELECT, INSERT','ims_cm_catalogo_actual':'SELECT, INSERT, UPDATE',
  'ims_cm_conector':'SELECT, INSERT, UPDATE','ims_cm_archivo':'SELECT, INSERT, DELETE',
@@ -50,7 +54,7 @@ def preparar(repo,datos,revision):
     validar_privilegios()
     cfg=configuracion(datos);sol=json.loads(p.privado(datos/'piloto/solicitud.json').read_text());actor=sol['lector']['actorId']
     # DDL aditivo en la base propia; no cambia tablas operativas existentes.
-    sql=(repo/'enterprise/sql/013_centro_mando.sql').read_text()
+    sql=(repo/'enterprise/sql/013_centro_mando.sql').read_text()+'\n'+(repo/'enterprise/sql/015_layout_ocupacion.sql').read_text()
     p.exigir(all(t.startswith('ims_cm_') for t in re.findall(r'CREATE TABLE IF NOT EXISTS (\w+)',sql)),'Esquema incompatible.')
     p.admin_mysql('USE `'+op.DB+'`;\n'+sql)
     archivo=p.privado(datos/'entrada/ims-abiertos-f0799052d8b942138c0ac3106980d740.zip')

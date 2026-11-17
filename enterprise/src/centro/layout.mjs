@@ -1,0 +1,7 @@
+import {createHash} from 'node:crypto';
+import {validarPerfilLayout} from '../../public/layout-fisico.mjs';
+import {transaccionOperativa} from '../mysql/operacion-nativa.mjs';
+import {perfilCentro} from './servicio.mjs';
+import {exigir} from './dominio.mjs';
+export async function importarLayout(pool,p,perfil){const datos=JSON.stringify(validarPerfilLayout(perfil)),id=createHash('sha256').update(datos).digest('hex');return transaccionOperativa(pool,p,async c=>{const pf=await perfilCentro(c,p,true);exigir(pf.rol==='ADMIN'&&pf.sedes.includes(perfil.sede),'SIN_PERMISO','El layout se carga con administración de la sede.');await c.execute('INSERT IGNORE INTO ims_cm_layout(id,sede,almacen,nombre,datos,sha256_pdf,creado_por) VALUES (?,?,?,?,?,?,?)',[id,perfil.sede,perfil.almacen,perfil.nombre,datos,perfil.sha256Pdf,p.actorId]);await c.execute('INSERT INTO ims_cm_layout_actual VALUES (?,?,?) ON DUPLICATE KEY UPDATE layout_id=VALUES(layout_id)',[perfil.sede,perfil.almacen,id]);return {ok:true,layoutId:id,racks:perfil.racks.length,zonas:perfil.zonas.length,stockModificado:false};});}
+export async function consultarLayout(pool,p,q){return transaccionOperativa(pool,p,async c=>{const pf=await perfilCentro(c,p);exigir(pf.sedes.includes(q.sede),'SIN_PERMISO','Sede no autorizada.');const [[r]]=await c.execute('SELECT l.id,l.datos FROM ims_cm_layout_actual a JOIN ims_cm_layout l ON l.id=a.layout_id WHERE a.sede=? AND a.almacen=?',[q.sede,q.almacen]);return {layoutId:r?.id??null,perfil:r?JSON.parse(r.datos):null};});}

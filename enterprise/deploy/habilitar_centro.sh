@@ -31,5 +31,10 @@ if [ -f "$imsDatos/entrada/catalogos_ims_privados_20261116.zip" ]; then
 else
   echo '{"catalogos_privados":"ZIP_NO_RECIBIDO","accion":"CARGAR_POS_ITSANET_PARA_MAPA_REAL"}'
 fi
+if [ -f "$imsDatos/entrada/layout_bm_privado_20261117.zip" ]; then
+  python3 deploy/cargar_layout.py
+else
+  echo '{"layout_privado":"ZIP_NO_RECIBIDO","distribucion":"PROVISIONAL_SIN_PLANO"}'
+fi
 python3 deploy/actualizar_piloto.py --revision "$imsRevision" --conteos-esperados 352 --filas-esperadas 97822 --operacion-nativa --erp-consulta --erp-creacion --centro
 python3 deploy/activar_usuarios_centro.py
