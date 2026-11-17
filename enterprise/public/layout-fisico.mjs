@@ -20,24 +20,33 @@ export function validarPerfilLayout(p){
 }
 const claveCol=r=>r.tipoVisual==='PISO'?r.posicion:(r.columna||r.posicion)+(r.tipoVisual!=='GAVETA'&&r.profundidad?':'+r.profundidad:'');
 const max=(a,f,def=0)=>a.reduce((m,x)=>Math.max(m,f(x)),def);
+function prepararProvisionales(grupos,plano,anclas){
+ const bloques=new Map(),resultado=new Map();
+ for(const [key,rows]of grupos){const p=rows[0];if(p.sede==='UIO'&&p.almacen==='CD_QUITO1'&&anclas.has([p.nave,p.literalBase,p.piso].join(':')))continue;if(rows.every(r=>r.tipoVisual==='SIN_ASIGNAR_TIPO')){resultado.set(key,{x:0,y:0,eje:'Y',piso:p.piso});continue;}const k=JSON.stringify([p.sede,p.almacen,p.nave]);if(!bloques.has(k))bloques.set(k,[]);bloques.get(k).push([key,rows]);}
+ let origen=plano?plano.ancho+10:0;
+ for(const [,gs]of [...bloques].sort(([a],[b])=>cmp(a,b))){const literales=[...new Set(gs.map(([,r])=>r[0].literalBase))].sort((a,b)=>{const aa=/^[A-Z]+$/.test(a),bb=/^[A-Z]+$/.test(b);return aa&&bb?a.length-b.length||cmp(a,b):aa!==bb?(aa?-1:1):cmp(a,b);}),prof=max(gs,([,r])=>max(r,p=>Math.min(...p.dimensionesCm.slice(0,2))/100),1);let ancho=0;
+  for(const [key,rs]of gs){const l=rs[0].literalBase,indice=literales.indexOf(l);const x=indice===0?0:prof+2.4+Math.floor((indice-1)/2)*(2*prof+.12+2.4)+((indice-1)%2)*(prof+.12);resultado.set(key,{x:origen+x,y:3,eje:'Y',piso:rs[0].piso});ancho=Math.max(ancho,x+prof);}
+  origen+=ancho+10;
+ }
+ return resultado;
+}
 export function aplicarLayoutFisico(modelo,perfil=null){
  const plano=perfil?validarPerfilLayout(perfil):null,ps=modelo.posiciones.map(p=>({...p,...identificarEstructura(p),dimensionesCm:[...p.dimensionesCm]})),grupos=new Map(),anclas=new Map(plano?.racks.map(r=>[[r.nave,r.literal,r.piso].join(':'),r])||[]),marcos=[],zonas=plano?.zonas.map(z=>({...z}))||[],avisos=[];
  for(const p of ps){if(p.origenGeometria==='EXPLICITA')continue;const gk=JSON.stringify([p.sede,p.almacen,p.nave,p.literalBase,p.piso]);if(!grupos.has(gk))grupos.set(gk,[]);grupos.get(gk).push(p);}
- let provisionalX=plano?plano.ancho+42:35,provisionalY=0,alturaFila=0,indice=0;
+ const provisionales=prepararProvisionales(grupos,plano,anclas);
  for(const [key,rows]of [...grupos].sort(([a],[b])=>cmp(a,b))){const ref=rows[0],tipos=rows.filter(r=>r.tipoVisual!=='GAVETA'),ligero=['MZ','MZJV'].includes(ref.nave)||rows.some(r=>r.tipoVisual==='RACK_LIVIANO'),est=rows.every(r=>r.tipoVisual==='ESTANTERIA'),baseSpan=max(tipos,r=>Math.max(...r.dimensionesCm.slice(0,2))/100)||(ligero?2.4:est?1:1.2),baseProf=max(tipos,r=>Math.min(...r.dimensionesCm.slice(0,2))/100)||(ligero?.6:est?.4:1),h=max(tipos,r=>r.dimensionesCm[2]/100)||(ligero?.6:est?.35:1.35),columnas=[...new Set(rows.map(claveCol))].sort(cmp),anchos=new Map(),cols=new Map();
   for(const c of columnas){const rs=rows.filter(r=>claveCol(r)===c);anchos.set(c,max(rs.filter(r=>r.tipoVisual!=='GAVETA'),r=>Math.max(...r.dimensionesCm.slice(0,2))/100,baseSpan));}
   let total=0;for(const c of columnas){cols.set(c,total);total+=anchos.get(c);}
   let a=ref.sede==='UIO'&&ref.almacen==='CD_QUITO1'?anclas.get([ref.nave,ref.literalBase,ref.piso].join(':')):null;
   const anclado=!!a;
-  if(!a&&ref.nave==='B2'&&/^[A-G]$/.test(ref.literalBase)){const i=ref.literalBase.charCodeAt(0)-65;const offset=i===0?0:4+Math.floor((i-1)/2)*5+((i-1)%2)*1.2;a={x:(plano?plano.ancho+8:0)+offset,y:0,eje:'Y',piso:1};}
-  if(!a){if(indice&&indice%5===0){provisionalX=(plano?plano.ancho+42:35);provisionalY+=alturaFila+4;alturaFila=0;}a={x:provisionalX,y:provisionalY,eje:'Y',piso:ref.piso};provisionalX+=baseProf+3;alturaFila=Math.max(alturaFila,total);indice++;avisos.push({grupo:key,codigo:'SIN_ANCLA_EN_PLANO'});}
+  if(!a){a=provisionales.get(key);avisos.push({grupo:key,codigo:'SIN_ANCLA_EN_PLANO'});let distancia=0;for(const [i,c]of columnas.entries()){if(i&&i%12===0)distancia+=2.4;cols.set(c,distancia);distancia+=anchos.get(c);}total=distancia;}
   const zBase=ref.piso===2?(plano?.alturaEntrepiso||2.1):0,medidasCol=[];
   for(const c of columnas){const cr=rows.filter(r=>claveCol(r)===c),nivelMax=max(cr,r=>r.tipoVisual==='SIN_ASIGNAR_TIPO'?1:/^\d+$/.test(r.nivel)?Number(r.nivel):1,1),w=anchos.get(c),porFila=Math.max(1,Math.floor(w/.29)),alturas=Array.from({length:nivelMax},()=>h),limitePiso=plano?.alturaEntrepiso||2.1;
    if(['MZ','MZJV'].includes(ref.nave)&&h>=.6){let exceso=alturas.reduce((a,b)=>a+b,0)-limitePiso;for(let n=nivelMax-1;n>=0&&exceso>.001;n--){const gs=cr.filter(p=>p.tipoVisual==='GAVETA'&&Number(p.nivel)===n+1),necesario=max(gs,p=>{const cap=Math.max(1,Math.floor(w/(p.dimensionesCm[1]/100)));return Math.ceil(Math.max(1,Number(p.gaveta)||1)/cap)*p.dz;});const candidatas=[.3,.4].filter(v=>v>=necesario-.001&&v<alturas[n]-.001),objetivo=alturas[n]-exceso,preferidas=candidatas.filter(v=>v<=objetivo+.001),nueva=preferidas.length?Math.max(...preferidas):candidatas.length?Math.min(...candidatas):alturas[n];exceso-=alturas[n]-nueva;alturas[n]=nueva;}}
    const bases=alturas.map((_,i)=>alturas.slice(0,i).reduce((a,b)=>a+b,0));
    for(const p of cr){let span=Math.max(...p.dimensionesCm.slice(0,2))/100,prof=Math.min(...p.dimensionesCm.slice(0,2))/100,ox=0,oz=0;const nivel=p.tipoVisual==='SIN_ASIGNAR_TIPO'?1:/^\d+$/.test(p.nivel)?Math.max(1,Number(p.nivel)):1;
     if(p.tipoVisual==='GAVETA'){span=p.dimensionesCm[1]/100;prof=p.dimensionesCm[0]/100;const n=/^\d+$/.test(p.gaveta)?Math.max(1,Number(p.gaveta)):1,cap=Math.max(1,Math.floor(w/span));ox=((n-1)%cap)*span;oz=Math.floor((n-1)/cap)*p.dz;if(oz+p.dz>alturas[nivel-1]+.001){p.incompatibleHueco=true;avisos.push({posicion:p.posicion,codigo:'GAVETAS_SUPERAN_HUECO'});}}
-    const u=cols.get(c)+ox,v=0;p.x=a.x+(a.eje==='X'?u:v);p.y=a.y+(a.eje==='X'?v:u);p.dx=a.eje==='X'?span:prof;p.dy=a.eje==='X'?prof:span;p.z=zBase+bases[nivel-1]+oz;p.dz=p.dimensionesCm[2]/100;if(p.tipoVisual!=='GAVETA'&&alturas[nivel-1]<p.dz-.001){p.dz=alturas[nivel-1];p.alturaHuecoVisualCm=p.dz*100;p.alturaVisualProvisional=true;avisos.push({posicion:p.posicion,codigo:'ALTURA_SUPERIOR_AJUSTADA_PROVISIONAL'});}if(['MZ','MZJV'].includes(p.nave)&&p.z+p.dz-zBase>(plano?.alturaSegundaPlanta||plano?.alturaEntrepiso||2.1)+.001){p.incompatibleAltura=true;avisos.push({posicion:p.posicion,codigo:'ALTURA_SUPERA_PISO_MEZZANINE'});}p.layoutGrupo=key;p.origenGeometria=anclado?'PLANO_PDF_CM':'DISTRIBUCION_PROVISIONAL_CM';p.contenedor=p.tipoVisual!=='GAVETA'&&cr.some(r=>r.tipoVisual==='GAVETA'&&r.nivel===p.nivel);
+    const u=cols.get(c)+ox,v=0;p.ejeEstructura=a.eje;p.frenteEstructura={x:a.x+(a.eje==='X'?cols.get(c):0),y:a.y+(a.eje==='Y'?cols.get(c):0),dx:a.eje==='X'?w:baseProf,dy:a.eje==='Y'?w:baseProf};p.x=a.x+(a.eje==='X'?u:v);p.y=a.y+(a.eje==='X'?v:u);p.dx=a.eje==='X'?span:prof;p.dy=a.eje==='X'?prof:span;p.z=zBase+bases[nivel-1]+oz;p.dz=p.dimensionesCm[2]/100;if(p.tipoVisual!=='GAVETA'&&alturas[nivel-1]<p.dz-.001){p.dz=alturas[nivel-1];p.alturaHuecoVisualCm=p.dz*100;p.alturaVisualProvisional=true;avisos.push({posicion:p.posicion,codigo:'ALTURA_SUPERIOR_AJUSTADA_PROVISIONAL'});}if(['MZ','MZJV'].includes(p.nave)&&p.z+p.dz-zBase>(plano?.alturaSegundaPlanta||plano?.alturaEntrepiso||2.1)+.001){p.incompatibleAltura=true;avisos.push({posicion:p.posicion,codigo:'ALTURA_SUPERA_PISO_MEZZANINE'});}p.layoutGrupo=key;p.origenGeometria=anclado?'PLANO_PDF_CM':'DISTRIBUCION_PROVISIONAL_CM';p.contenedor=p.tipoVisual!=='GAVETA'&&cr.some(r=>r.tipoVisual==='GAVETA'&&r.nivel===p.nivel);
     if(p.tipoVisual==='PISO'){p.z=zBase;p.areaPiso=true;}
    }
    const altoMarco=['MZ','MZJV'].includes(ref.nave)?Math.min(limitePiso,alturas.reduce((a,b)=>a+b,0)):alturas.reduce((a,b)=>a+b,0);medidasCol.push({inicio:cols.get(c),ancho:w,alto:altoMarco,niveles:bases.filter(z=>z<altoMarco-.001)});
@@ -49,5 +58,5 @@ export function aplicarLayoutFisico(modelo,perfil=null){
  const sinTipo=ps.filter(p=>p.tipoVisual==='SIN_ASIGNAR_TIPO'&&p.origenGeometria!=='EXPLICITA'),sx=max(sinTipo,p=>p.dx)+.4,sy=max(sinTipo,p=>p.dy)+.4;
  for(const [i,p]of sinTipo.entries()){p.x=(plano?.ancho||25)+160+(i%20)*sx;p.y=Math.floor(i/20)*sy;p.z=0;p.estructuraSinConfirmar=true;p.layoutGrupo='TIPO_FISICO_PARA_REVISION';p.origenGeometria='DISTRIBUCION_PROVISIONAL_CM';avisos.push({posicion:p.posicion,codigo:'TIPO_FISICO_NO_CONFIRMADO'});}
  const limites=ps.reduce((b,p)=>({minX:Math.min(b.minX,p.x),minY:Math.min(b.minY,p.y),minZ:0,maxX:Math.max(b.maxX,p.x+p.dx),maxY:Math.max(b.maxY,p.y+p.dy),maxZ:Math.max(b.maxZ,p.z+p.dz)}),{minX:0,minY:0,maxX:plano?.ancho||0,maxY:plano?.fondo||0,maxZ:0});
- return {...modelo,version:'ims-layout-fisico-v2',posiciones:ps,marcos,zonas,plano,avisos,limites,excluidas:modelo.excluidas.map(p=>({...p,...identificarEstructura(p)}))};
+ return {...modelo,version:'ims-layout-fisico-v3',pasilloProvisionalCm:240,cruceProvisionalCadaColumnas:12,posiciones:ps,marcos,zonas,plano,avisos,limites,excluidas:modelo.excluidas.map(p=>({...p,...identificarEstructura(p)}))};
 }

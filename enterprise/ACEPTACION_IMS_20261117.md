@@ -49,3 +49,20 @@ Pendientes externos: nombre de base/usuario SQL de lectura, cliente OAuth y cons
 | Cuenta reemplazable | Nueva cuenta conserva archivos antiguos y genera su propia jerarquía |
 
 No se ha realizado envío real a Google ni lectura real de la base empresarial desde el entorno de desarrollo. Confirmarlos en el servidor es parte de estas pruebas finales.
+
+## Alcance de ocupación y recorrido entre pasillos
+
+| Caso | Resultado esperado |
+|---|---|
+| Centro / inventario | Con 15 posiciones en la sede y dos en el documento, Centro presenta 15 e IMS únicamente dos |
+| Posiciones compartidas | Dos clientes en una posición ocupada no duplican el total físico |
+| Permisos de ocupación | Operador de un cliente no recibe posiciones de otro cliente ni el total del corte global desde la consulta del inventario |
+| Coincidencia exacta | Solicitar A-01 no incorpora A-010; las posiciones sin SQL quedan Sin dato |
+| Bloqueo | Una disponible bloqueada conserva ambos indicadores; una ocupada bloqueada también |
+| Movimiento continuo | Mantener una dirección mueve el avatar; soltarla lo detiene, sin atravesar racks |
+| Ruta automática | Seleccionar otro hueco en recorrido calcula una ruta, completa sus esquinas y llega a las coordenadas del pasillo de destino |
+| Cámara | Al caminar no entra en la estructura situada detrás del avatar |
+| Bodegas sin plano | Orden A, B/C, D/E, pasillos de 240 cm, cruces cada doce columnas y piso visible |
+| Presentación | Los totales del documento quedan encima del mapa, sin taparse con el panel lateral; comprobar escritorio y móvil |
+
+La validación de rutas usa geometría sintética. La ocupación empresarial actual requiere configurar y probar la conexión SQL de solo lectura en el servidor.

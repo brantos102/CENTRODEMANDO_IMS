@@ -71,3 +71,19 @@ Hasta autorizar Google, la copia confirmada se conserva en el servidor y el env�
 ## Conexiones pendientes de operación
 
 La ocupación dispone de consulta fija de solo lectura para SQL Server DEPOTWMS; requiere configurar la cuenta autorizada en el servidor y comprobar un corte real. Los EAN siguen siendo datos internos de lectura de productos. Su actualización desde SQL requiere identificar la consulta o vista empresarial antes de implementarla; el catálogo privado vigente sigue disponible.
+
+## Ocupación total y ocupación del documento
+
+**Centro de Control → Ubicaciones** presenta el total de la sede según el último corte SQL: posiciones físicas únicas, ocupadas, disponibles, bloqueadas, sin dato y porcentaje de ocupación confirmada. Varios clientes en la misma posición no duplican el total. El resumen de posiciones visibles cambia con los filtros; el total de la sede se conserva. Si aún no existe conexión SQL, se identifica expresamente el catálogo importado como fuente.
+
+**ITSANET IMS** muestra solo las posiciones autorizadas del inventario abierto. La ocupación se consulta con el identificador del inventario y se filtra en el servidor por sus posiciones y permisos de cliente. Una posición sin coincidencia SQL queda **Sin dato**, aunque el catálogo anterior la indicara disponible. El bloqueo se identifica por separado y puede coexistir con ocupación o disponibilidad. Las estructuras vecinas se dibujan como contexto para caminar; sus productos y capturas no aparecen en el documento.
+
+## Caminar entre racks y estanterías
+
+Selecciona una ubicación del documento y pulsa **Recorrer pasillo**. Mantén W/S para avanzar o retroceder, A/D para desplazarte lateralmente y Q/E o flechas izquierda/derecha para girar. Las flechas arriba/abajo avanzan/retroceden. También puedes mantener los botones de dirección en pantalla. Arrastrar la cámara cambia la dirección de mirada; la cámara de recorrido evita atravesar los racks.
+
+Al seleccionar otro hueco durante el recorrido se calcula una ruta libre alrededor de las estructuras. **Caminar a selección** sigue esa ruta; **Posicionarme aquí** sitúa directamente el avatar frente al hueco seleccionado. Las rutas no atraviesan racks ni cortan sus esquinas. El doble clic abre los productos autorizados de esa posición; Esc detiene el movimiento. Cambiar a conteo, series u otra pestaña pausa el recorrido.
+
+La figura representa una posición virtual en el mapa. No confirma presencia física ni GPS.
+
+Hasta recibir los planos de las otras bodegas, el orden provisional sigue la lógica de Quito: fila A, parejas B/C, D/E y siguientes, pasillos de 240 cm y un cruce cada doce columnas. Los huecos mantienen sus medidas originales en cm. En mezzanine las dos plantas quedan a 210 cm y tienen una plataforma de recorrido; las distribuciones sin plano se identifican como provisionales. Las anclas confirmadas del PDF de BM se conservan.

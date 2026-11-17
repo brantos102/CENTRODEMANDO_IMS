@@ -203,6 +203,7 @@ def comprobar_interfaz(transporte, release):
                 ('/assets/vendor/three.module.min.js','vendor/three.module.min.js'),
                 ('/assets/vendor/OrbitControls.js','vendor/OrbitControls.js'),
                 ('/assets/navegacion-almacen.mjs','navegacion-almacen.mjs'),
+                ('/assets/ocupacion-resumen.mjs','ocupacion-resumen.mjs'),
                 ('/assets/evidencias-ui.mjs','evidencias-ui.mjs'),('/assets/ruta-destino.mjs','ruta-destino.mjs'),
                 ('/catalogos','catalogos.html'),('/assets/catalogos.mjs','catalogos.mjs')]
     for ruta, nombre in archivos:

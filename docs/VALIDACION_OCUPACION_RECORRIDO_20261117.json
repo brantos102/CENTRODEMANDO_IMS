@@ -1,0 +1,68 @@
+{
+  "ok": true,
+  "fecha_ecuador": "2026-11-17",
+  "revision_base": "7d01997456f6fef7c52a058f886c97dd9ea25954",
+  "ocupacion": {
+    "centro": "SEDE_COMPLETA_Y_POSICIONES_VISIBLES",
+    "ims": "POSICIONES_AUTORIZADAS_DEL_INVENTARIO",
+    "filtro_en_base_de_datos": true,
+    "posiciones_compartidas_deduplicadas": true,
+    "bloqueo_independiente": true,
+    "ausencia_sql": "SIN_DATO",
+    "fechas_del_corte": "UTC_ISO_MOSTRADAS_EN_ECUADOR"
+  },
+  "recorrido": {
+    "movimiento_continuo": true,
+    "obstaculos_y_camara": true,
+    "rutas_por_pasillos": true,
+    "llegada_en_coordenadas_verificada": true,
+    "frente_de_mueble_para_gavetas": true,
+    "distribucion_sin_plano": "PROVISIONAL_ESTILO_QUITO",
+    "pasillo_provisional_cm": 240,
+    "cruce_cada_columnas": 12,
+    "anclas_pdf_bm_conservadas": true
+  },
+  "pruebas": {
+    "node22": {
+      "correctas": 242,
+      "fallidas": 0
+    },
+    "python": {
+      "correctas": 168,
+      "fallidas": 0
+    },
+    "mysql": {
+      "correctas": 43,
+      "fallidas": 0,
+      "centro": 38,
+      "alcance_mapa_inventario": 5
+    },
+    "chromium_centro_ims": {
+      "correctas": 15,
+      "fallidas": 0,
+      "repetidas_por_ajuste_de_frente": 2
+    }
+  },
+  "catalogos_privados_comprobados": [
+    {
+      "sede": "UIO",
+      "posiciones_con_medidas": 18386,
+      "geometria_finita": true,
+      "muestras_de_frente": 10,
+      "frentes_accesibles": 10
+    },
+    {
+      "sede": "GYE",
+      "posiciones_con_medidas": 12365,
+      "geometria_finita": true,
+      "muestras_de_frente": 10,
+      "frentes_accesibles": 10
+    }
+  ],
+  "conexion_sql_empresarial_real_verificada": false,
+  "datos_operativos_reales_modificados": false,
+  "credenciales_exportadas": false,
+  "nueva_extraccion_google": false,
+  "apache_modificado": false,
+  "produccion_activada": false
+}

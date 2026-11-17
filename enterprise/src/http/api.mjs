@@ -3,7 +3,7 @@ import {guardarEvidencia,listarEvidencias,leerEvidencia} from '../centro/evidenc
 import {resguardarCodigoOrigen} from '../centro/codigo-origen.mjs';
 import {pdfAnalisis,pdfEtiqueta} from '../centro/pdf.mjs';
 import {presenciaInventario,rankingInventario} from '../centro/presencia.mjs';
-import {consultarOcupacion,actualizarOcupacion} from '../centro/ocupacion.mjs';
+import {consultarOcupacion,consultarOcupacionInventario,actualizarOcupacion} from '../centro/ocupacion.mjs';
 import {consultarLayout} from '../centro/layout.mjs';
 import {consultarMapaInventario} from '../centro/mapa-inventario.mjs';
 import {iniciarGoogleOAuth,completarGoogleOAuth,callbackGoogle} from '../centro/google-oauth.mjs';
@@ -139,6 +139,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         if(perfil.perfil.cambiar_clave&&!['perfil','clave'].includes(ruta))throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
         if(req.method==='POST'&&ruta==='presencia')return json(res,200,await presenciaInventario(pool,principal,await leerJson(req),{guardar:true}));
         if(req.method==='GET'&&ruta==='ranking')return json(res,200,await rankingInventario(pool,principal,opciones(url,['inventario']).inventario));
+        if(req.method==='GET'&&ruta==='ocupacion-inventario')return json(res,200,await consultarOcupacionInventario(pool,principal,opciones(url,['inventario']).inventario));
         if(req.method==='GET'&&ruta==='ocupacion')return json(res,200,await consultarOcupacion(pool,principal,opciones(url,['sede']).sede));
         if(req.method==='POST'&&ruta==='ocupacion/actualizar'){const body=await leerJson(req);if(Object.keys(body).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La consulta SQL es fija y se configura en el servidor.',400);return json(res,200,await actualizarOcupacion(pool,principal,claveCentro));}
         if(req.method==='GET'&&ruta==='layout')return json(res,200,await consultarLayout(pool,principal,opciones(url,['sede','almacen'])));
