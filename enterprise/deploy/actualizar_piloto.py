@@ -180,6 +180,35 @@ def esperar(transporte, revision=None):
     raise p.PilotoError('No respondió la revisión esperada por HTTPS.')
 
 
+def preparar_verificacion_operativa(release, entorno, conteos, filas, comprobar_node=None):
+    import preparar_operacion as operacion
+    comprobar_node = comprobar_node or operacion.node
+    def verificar():
+        resultado = comprobar_node(release, '--verificar', {'config': dict(l.split('=', 1) for l in entorno.splitlines())})
+        exigir(resultado.get('historico') == {'conteos': conteos, 'filas': filas}, 'El histórico no coincide con los totales esperados.')
+        return resultado
+    try:
+        resultado = verificar()
+    except operacion.PerfilOperativoOcupado:
+        # El proceso anterior puede conservar las cinco conexiones. El nuevo
+        # reserva una; la comprobación sigue siendo obligatoria antes de confirmar.
+        print(json.dumps({'verificacion_perfil':'DIFERIDA_POR_CONEXIONES_OCUPADAS','datos_inventario_modificados':False}),flush=True)
+        return verificar
+    return lambda: resultado
+
+
+def comprobar_interfaz(transporte, release):
+    archivos = [('/ims','index.html'),('/assets/ims.mjs','ims.mjs'),('/assets/ims.css','ims.css'),
+                ('/assets/visor-almacen-3d.mjs','visor-almacen-3d.mjs'),
+                ('/assets/vendor/three.module.min.js','vendor/three.module.min.js'),
+                ('/assets/vendor/OrbitControls.js','vendor/OrbitControls.js')]
+    for ruta, nombre in archivos:
+        status, _, raw = transporte('GET',ruta)
+        exigir(status == 200 and sha(raw) == sha((Path(release)/'enterprise/public'/nombre).read_bytes()),
+               'La interfaz servida no coincide con la revisión preparada: '+ruta+'.')
+    return {'interfaz_actualizada':True,'visor':'WEBGL_3D','archivos_interfaz_verificados':len(archivos)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--revision', required=True)
@@ -243,6 +272,7 @@ def main():
                                   "await import('mysql2/promise'); await import('./src/http/api.mjs');"],
                                  cwd=release / 'enterprise', capture_output=True, text=True, timeout=30)
         exigir(modulos.returncode == 0, 'No se pudieron cargar los módulos de la versión preparada; el piloto actual se conserva.')
+        verificar_perfil = None
         if args.operacion_nativa:
             import preparar_operacion as operacion
             op = p.privado(datos / 'operacion', True)
@@ -256,8 +286,7 @@ def main():
             else:
                 operacion.grants(erp_extras=operacion.ERP_TABLES if args.erp_creacion else ())
             operacion.triggers(repo, series=True)
-            verificado = operacion.node(release, '--verificar', {'config': dict(l.split('=',1) for l in entorno.splitlines())})
-            exigir(verificado.get('historico') == {'conteos': args.conteos_esperados, 'filas': args.filas_esperadas}, 'El histórico no coincide con los totales esperados.')
+            verificar_perfil = preparar_verificacion_operativa(release, entorno, args.conteos_esperados, args.filas_esperadas)
         erp_meta=None
         if args.erp_consulta:
             exigir(args.operacion_nativa, 'ERP requiere el perfil operativo propio.')
@@ -277,10 +306,13 @@ def main():
             p.escribir(copia_anterior, actual['contenido'])
         def probar():
             esperar(transporte, args.revision)
+            if verificar_perfil:
+                verificar_perfil()
+            interfaz = comprobar_interfaz(transporte, release) if args.centro else {}
             if args.operacion_nativa:
                 from comprobar_operacion import comprobar
-                return comprobar(transporte, s['lector'], args.conteos_esperados, args.filas_esperadas, erp_conexiones=erp_meta['conexiones'] if erp_meta else None,erp_creacion=args.erp_creacion,centro=args.centro,
-                                 progreso=lambda dato: print(json.dumps({'comprobacion_despliegue': dato}), flush=True))
+                return {**interfaz,'perfil_operacion_verificado':True,**comprobar(transporte, s['lector'], args.conteos_esperados, args.filas_esperadas, erp_conexiones=erp_meta['conexiones'] if erp_meta else None,erp_creacion=args.erp_creacion,centro=args.centro,
+                                 progreso=lambda dato: print(json.dumps({'comprobacion_despliegue': dato}), flush=True))}
             return https.comprobar_acceso(transporte, s['lector'], args.conteos_esperados,
                                          filas_esperadas=args.filas_esperadas)
         def recuperar():

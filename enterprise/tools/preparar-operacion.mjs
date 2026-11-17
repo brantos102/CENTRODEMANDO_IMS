@@ -2,6 +2,9 @@ import {pathToFileURL} from 'node:url';
 import {readFile} from 'node:fs/promises';
 import {databaseConfig} from './importar-snapshot.mjs';
 import {correoCanonico} from '../src/auth/credenciales.mjs';
+const CODIGOS_SQL=new Set(['ER_USER_LIMIT_REACHED','ER_TOO_MANY_USER_CONNECTIONS','ER_ACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_TABLEACCESS_DENIED_ERROR','ER_BAD_DB_ERROR','ER_NO_SUCH_TABLE','ER_BAD_FIELD_ERROR','ER_HOST_NOT_PRIVILEGED','ER_CON_COUNT_ERROR','PROTOCOL_CONNECTION_LOST','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','PERFIL_OPERACION_INCOMPATIBLE']);
+export function diagnosticoOperacion(error,etapa){const recurso=error?.code==='ER_USER_LIMIT_REACHED'?String(error.message||'').match(/'(max_user_connections|max_connections|max_questions|max_updates)'/)?.[1]:null;return {ok:false,formato:'ims-perfil-operacion-diagnostico-v1',etapa:['CONFIGURACION','CONEXION','VERIFICACION','PREPARACION'].includes(etapa)?etapa:'CONFIGURACION',codigo_error:CODIGOS_SQL.has(error?.code)?error.code:'VERIFICACION_NO_CONFIRMADA',...(recurso?{recurso_limite:recurso}:{}),datos_inventario_modificados:false};}
+let etapa='CONFIGURACION';
 export async function prepararAdministrador(c,{actorId,correo}){
  if(!/^[a-f0-9-]{36}$/.test(actorId))throw Error('Actor incompatible.');correo=correoCanonico(correo);
  const [[db]]=await c.query('SELECT DATABASE() AS nombre,CURRENT_USER() AS usuario');
@@ -21,7 +24,7 @@ export async function prepararAdministrador(c,{actorId,correo}){
 }
 export async function verificarRuntime(c){
  const [[db]]=await c.query('SELECT DATABASE() AS nombre,CURRENT_USER() AS usuario');
- if(db.nombre!=='centromando_ims_ensayo'||db.usuario!=='ims_cm_operacion@127.0.0.1')throw Error('Perfil de operación incompatible.');
+ if(db.nombre!=='centromando_ims_ensayo'||db.usuario!=='ims_cm_operacion@127.0.0.1')throw Object.assign(Error('Perfil de operación incompatible.'),{code:'PERFIL_OPERACION_INCOMPATIBLE'});
  await c.query('SELECT id FROM ims_nat_serie LIMIT 0');await c.query('SELECT id FROM ims_nat_hallazgo LIMIT 0');
  const [[r]]=await c.query(`SELECT COUNT(DISTINCT i.id) AS conteos,COUNT(l.id) AS filas FROM ims_op_inventario i
   LEFT JOIN ims_op_linea l ON l.inventario_id=i.id LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE n.inventario_id IS NULL`);
@@ -32,7 +35,7 @@ async function main(){
  let raw='';for await(const b of process.stdin){raw+=b;if(raw.length>16384)throw Error('Solicitud excesiva.');}
  const s=JSON.parse(raw),mysql=await import('mysql2/promise'),cfg=databaseConfig(s.config);
  if(cfg.database!=='centromando_ims_ensayo'||cfg.user!==(process.argv[2]==='--preparar'?'ims_cm_migracion':'ims_cm_operacion'))throw Error('Perfil incompatible.');
- const c=await mysql.createConnection(cfg);
+ etapa='CONEXION';const c=await mysql.createConnection(cfg);etapa=process.argv[2]==='--verificar'?'VERIFICACION':'PREPARACION';
  try{console.log(JSON.stringify(process.argv[2]==='--preparar'?await prepararAdministrador(c,s):await verificarRuntime(c)));}finally{await c.end();}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(()=>{console.error('Preparación operativa detenida. No se muestran credenciales ni SQL.');process.exitCode=1;});
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(e=>{console.log(JSON.stringify(diagnosticoOperacion(e,etapa)));process.exitCode=1;});

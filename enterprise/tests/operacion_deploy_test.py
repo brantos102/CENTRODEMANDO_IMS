@@ -6,8 +6,44 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'deploy'))
 import preparar_operacion as op
 import actualizar_piloto as actualizar
 from comprobar_operacion import comprobar
+from unittest.mock import patch
+import io
+from contextlib import redirect_stdout
+from types import SimpleNamespace
 
 class OperacionDeployTests(unittest.TestCase):
+ def test_limite_de_conexiones_se_difiere_sin_ocultar_otros_errores(self):
+  fallo=SimpleNamespace(returncode=1,stdout=json.dumps({'ok':False,'etapa':'CONEXION','codigo_error':'ER_USER_LIMIT_REACHED','recurso_limite':'max_user_connections'}),stderr='CLAVE_PRIVADA_NO_MOSTRAR')
+  with patch.object(op.subprocess,'run',return_value=fallo):
+   with self.assertRaises(op.PerfilOperativoOcupado):op.node(Path('/repo'),'--verificar',{'config':{'MYSQL_PASSWORD':'CLAVE_PRIVADA_NO_MOSTRAR'}})
+  fallo.stdout=json.dumps({'ok':False,'etapa':'CONEXION','codigo_error':'ER_ACCESS_DENIED_ERROR','mensaje':'CLAVE_PRIVADA_NO_MOSTRAR'})
+  out=io.StringIO()
+  with patch.object(op.subprocess,'run',return_value=fallo),redirect_stdout(out):
+   with self.assertRaisesRegex(op.p.PilotoError,'ER_ACCESS_DENIED_ERROR'):op.node(Path('/repo'),'--verificar',{})
+  self.assertNotIn('CLAVE_PRIVADA_NO_MOSTRAR',out.getvalue())
+  for recurso in ['max_connections',None]:
+   fallo.stdout=json.dumps({'ok':False,'etapa':'CONEXION','codigo_error':'ER_USER_LIMIT_REACHED','recurso_limite':recurso})
+   with patch.object(op.subprocess,'run',return_value=fallo),redirect_stdout(out):
+    with self.assertRaises(op.p.PilotoError) as err:op.node(Path('/repo'),'--verificar',{})
+   self.assertNotIsInstance(err.exception,op.PerfilOperativoOcupado)
+
+ def test_comprobacion_diferida_es_obligatoria_y_conserva_totales(self):
+  calls=[]
+  def verificar(*args):
+   calls.append(args)
+   if len(calls)==1:raise op.PerfilOperativoOcupado('ER_USER_LIMIT_REACHED')
+   return {'ok':True,'historico':{'conteos':352,'filas':97822}}
+  with redirect_stdout(io.StringIO()):pendiente=actualizar.preparar_verificacion_operativa(Path('/repo'),'MYSQL_USER=ims_cm_operacion\n',352,97822,verificar)
+  self.assertEqual(len(calls),1)
+  self.assertTrue(pendiente()['ok']);self.assertEqual(len(calls),2)
+  self.assertEqual(calls[1][1],'--verificar')
+ def test_cuenta_invalida_no_se_difiere_y_comprobacion_exitosa_no_se_repite(self):
+  def fallo(*_):raise op.p.PilotoError('ER_ACCESS_DENIED_ERROR')
+  with self.assertRaises(op.p.PilotoError):actualizar.preparar_verificacion_operativa(Path('/repo'),'',352,97822,fallo)
+  calls=[]
+  def correcto(*_):calls.append(1);return {'historico':{'conteos':352,'filas':97822}}
+  hecho=actualizar.preparar_verificacion_operativa(Path('/repo'),'',352,97822,correcto)
+  hecho();self.assertEqual(calls,[1])
  def test_perfil_fijo_y_unidad_limitada(self):
   env=op.entorno('a'*64)
   for item in ['IMS_PORT=3003\n','IMS_OPERACION_NATIVA=1\n','MYSQL_DATABASE=centromando_ims_ensayo\n','IMS_SOLO_LECTURA=0\n']:self.assertIn(item,env)

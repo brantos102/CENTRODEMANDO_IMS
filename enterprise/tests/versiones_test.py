@@ -11,6 +11,7 @@ DEPLOY = Path(__file__).parents[1] / 'deploy'
 sys.path.insert(0, str(DEPLOY))
 import actualizar_piloto as up
 import unidad_piloto_root as root
+import preparar_operacion as op
 sys.path.remove(str(DEPLOY))
 
 
@@ -62,6 +63,22 @@ class VersionesTest(unittest.TestCase):
         self.assertFalse((self.raiz / 'multi-user.target.wants' / root.NOMBRE).exists())
         self.assertEqual(self.calls.count('restart:' + root.NOMBRE), 2)
         self.assertEqual(self.ajeno.read_text(), 'Unidad ajena sin cambios')
+
+    def test_perfil_diferido_incorrecto_restaura_la_unidad(self):
+        from contextlib import redirect_stdout
+        import io
+        calls=[]
+        def verificar(*_):
+            calls.append(1)
+            if len(calls)==1:
+                raise op.PerfilOperativoOcupado('ER_USER_LIMIT_REACHED')
+            return {'historico':{'conteos':351,'filas':97822}}
+        with redirect_stdout(io.StringIO()):
+            pendiente=up.preparar_verificacion_operativa(self.base,'',352,97822,verificar)
+        with self.assertRaisesRegex(up.p.PilotoError,'restaurada/verificada'):
+            up.activar(self.s,self.anterior,self.nueva,pendiente,lambda:None,lambda _:self.fail('No confirmar un perfil incorrecto'))
+        self.assertEqual(self.unidad.read_text(),self.anterior)
+        self.assertEqual(self.ajeno.read_text(),'Unidad ajena sin cambios')
 
     def test_fallo_al_confirmar_restaura_unidad_y_retira_solo_el_enlace_nuevo(self):
         def fallo(_):
@@ -167,6 +184,19 @@ class ReleaseGitTest(unittest.TestCase):
         enlace.symlink_to(self.destino, target_is_directory=True)
         with self.assertRaises(up.p.PilotoError):
             up.preparar_release(self.repo, self.new, enlace, lambda _: None)
+
+    def test_interfaz_https_debe_coincidir_con_los_seis_archivos_preparados(self):
+        nombres={'/ims':'index.html','/assets/ims.mjs':'ims.mjs','/assets/ims.css':'ims.css','/assets/visor-almacen-3d.mjs':'visor-almacen-3d.mjs','/assets/vendor/three.module.min.js':'vendor/three.module.min.js','/assets/vendor/OrbitControls.js':'vendor/OrbitControls.js'}
+        for n in nombres.values():
+            f=self.repo/'enterprise/public'/n;f.parent.mkdir(parents=True,exist_ok=True);f.write_text('NUEVA '+n)
+        calls=[]
+        def request(method,path):
+            calls.append((method,path));return 200,{},(self.repo/'enterprise/public'/nombres[path]).read_bytes()
+        r=up.comprobar_interfaz(request,self.repo)
+        self.assertTrue(r['interfaz_actualizada']);self.assertEqual(r['visor'],'WEBGL_3D');self.assertEqual(len(calls),6)
+        def anterior(method,path):return (200,{},b'INTERFAZ_ANTERIOR')
+        with self.assertRaisesRegex(up.p.PilotoError,'no coincide'):
+            up.comprobar_interfaz(anterior,self.repo)
 
 
 if __name__ == '__main__':

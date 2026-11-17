@@ -1,0 +1,56 @@
+{
+  "fecha": "2026-11-17",
+  "formato": "ims-correccion-actualizacion-validacion-v1",
+  "revision_base": "db44c04f5a362af89fcb762cbd50d04dda558d1a",
+  "evidencia_del_usuario": {
+    "layout_cargado": true,
+    "activacion_detenida_en_perfil_operativo": true,
+    "interfaz_anterior_visible": true,
+    "causa_sql_exacta_en_servidor_aun_no_confirmada": true
+  },
+  "correccion": {
+    "pool_operativo_conexiones": 4,
+    "limite_cuenta_mysql_conservado": 5,
+    "max_idle": 2,
+    "idle_timeout_ms": 1000,
+    "solo_se_difiere_limite_de_conexiones_concurrentes": true,
+    "perfil_y_totales_obligatorios_antes_de_confirmar": true,
+    "errores_de_credenciales_no_se_omiten": true,
+    "comprobacion_https_interfaz_por_sha256": 6,
+    "comandos_guia_sin_marcadores": true
+  },
+  "pruebas": {
+    "node": {
+      "tests": 228,
+      "pass": 228,
+      "fail": 0
+    },
+    "python": {
+      "tests": 168,
+      "pass": 168,
+      "fail": 0
+    },
+    "mysql_seleccion": {
+      "tests": 45,
+      "pass": 44,
+      "fail": 0,
+      "skipped": 1
+    },
+    "regresion_limite_mysql_final": {
+      "tests": 1,
+      "pass": 1,
+      "fail": 0,
+      "quinta_peticion_del_pool_encolada": true,
+      "conexion_verificador_disponible": true
+    },
+    "archivos_web_servidos_por_http": 6,
+    "restauracion_ante_perfil_incorrecto": true,
+    "datos_sinteticos": true
+  },
+  "remoto": {
+    "servidor_del_usuario_actualizado_desde_esta_sesion": false,
+    "inventarios_modificados": false,
+    "apache_modificado": false,
+    "otros_servicios_modificados": false
+  }
+}

@@ -6,7 +6,9 @@ function exigir(ok,codigo,mensaje){if(!ok)throw new ErrorConteo(codigo,mensaje);
 export async function crearPoolConteos(env){
   const {databaseConfig}=await import('../../tools/importar-snapshot.mjs');
   const mysql=await import('mysql2/promise');
-  return mysql.createPool({...databaseConfig(env),connectionLimit:5,queueLimit:50,waitForConnections:true});
+  // La cuenta propia permite cinco conexiones. Una queda disponible para
+  // verificar una actualización mientras el servicio atiende solicitudes.
+  return mysql.createPool({...databaseConfig(env),connectionLimit:4,maxIdle:2,idleTimeout:1000,queueLimit:50,waitForConnections:true});
 }
 
 /** Módulo interno, NO endpoint HTTP. principal debe venir de la sesión validada

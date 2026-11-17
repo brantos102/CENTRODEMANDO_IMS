@@ -46,11 +46,26 @@ def entorno(clave):
             f'IMS_HOST=127.0.0.1\nIMS_PORT=3003\nIMS_PUBLIC_URL={p.URL}\n')
 
 
+class PerfilOperativoOcupado(p.PilotoError):
+    """El servicio conserva todas las conexiones permitidas de su cuenta."""
+
+
 def node(repo, modo, solicitud):
     r = subprocess.run(['/usr/bin/node', str(repo / 'enterprise/tools/preparar-operacion.mjs'), modo],
                        input=json.dumps(solicitud), capture_output=True, text=True, timeout=90)
-    p.exigir(r.returncode == 0, 'No se confirmó el perfil de operación. El piloto actual se conserva.')
-    data = json.loads(r.stdout)
+    try:
+        data = json.loads(r.stdout)
+    except (ValueError, TypeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    if r.returncode != 0:
+        codigos = {'ER_USER_LIMIT_REACHED','ER_TOO_MANY_USER_CONNECTIONS','ER_ACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_TABLEACCESS_DENIED_ERROR','ER_BAD_DB_ERROR','ER_NO_SUCH_TABLE','ER_BAD_FIELD_ERROR','ER_HOST_NOT_PRIVILEGED','ER_CON_COUNT_ERROR','PROTOCOL_CONNECTION_LOST','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','PERFIL_OPERACION_INCOMPATIBLE'}
+        codigo = data.get('codigo_error') if data.get('codigo_error') in codigos else 'VERIFICACION_NO_CONFIRMADA'
+        if modo == '--verificar' and data.get('etapa') == 'CONEXION' and (codigo == 'ER_TOO_MANY_USER_CONNECTIONS' or codigo == 'ER_USER_LIMIT_REACHED' and data.get('recurso_limite') == 'max_user_connections'):
+            raise PerfilOperativoOcupado(codigo)
+        print(json.dumps({'ok':False,'formato':'ims-perfil-operacion-diagnostico-v1','codigo_error':codigo,'datos_inventario_modificados':False}),flush=True)
+        raise p.PilotoError('No se confirmó el perfil de operación ('+codigo+'). El piloto actual se conserva.')
     p.exigir(data.get('ok') is True, 'Respuesta incompatible.')
     return data
 

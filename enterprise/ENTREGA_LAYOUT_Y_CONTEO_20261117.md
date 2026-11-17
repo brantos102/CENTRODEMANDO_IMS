@@ -6,29 +6,49 @@ Esta entrega integra el visor WebGL propio, la captura rápida y masiva, PDF de 
 
 Ejecutar en la terminal SSH de `enicolalde@apps`, dentro de `/home/enicolalde/bryan/centro_mando_ims`. No hace falta SCP de Windows.
 
-La revisión exacta se indica en el mensaje de entrega. Reemplazar `REVISION_PUBLICADA` por ese SHA completo. La clave es la misma del paquete privado de catálogos entregado anteriormente; se introduce oculta y no se añade al historial.
+La revisión se obtiene del commit recién descargado de GitHub. El bloque se copia completo; no contiene marcadores que deban reemplazarse. La clave es la misma del paquete privado de catálogos entregado anteriormente; se introduce oculta y no se añade al historial.
 
 ```bash
-git fetch origin migracion/mysql-candidata-20261104
-imsRevision='REVISION_PUBLICADA'
-git merge-base --is-ancestor "$imsRevision" FETCH_HEAD && (
-  read -r -s -p 'Clave privada del paquete de catálogos: ' IMS_CATALOGOS_CLAVE </dev/tty
-  export IMS_CATALOGOS_CLAVE
-  git show "$imsRevision:enterprise/tools/recibir-catalogos-github.mjs" |
-    node --input-type=module - "$imsRevision" todos
+(
+  set -euo pipefail
+  cd /home/enicolalde/bryan/centro_mando_ims
+  git fetch origin migracion/mysql-candidata-20261104
+  imsRevision="$(git rev-parse --verify 'FETCH_HEAD^{commit}')"
+  (
+    read -r -s -p 'Clave privada del paquete de catálogos: ' IMS_CATALOGOS_CLAVE </dev/tty
+    export IMS_CATALOGOS_CLAVE
+    git show "$imsRevision:enterprise/tools/recibir-catalogos-github.mjs" |
+      node --input-type=module - "$imsRevision" todos
+  )
+  git show "$imsRevision:enterprise/deploy/habilitar_centro.sh" |
+    bash -s -- "$imsRevision"
 )
 ```
 
-El receptor autentica y verifica cada paquete y conserva cualquier ZIP existente diferente. En GitHub están cifrados; no se publican CSV, plano, coordenadas privadas ni la clave. Los archivos descifrados quedan en el directorio privado `centro_mando_ims_datos/entrada`.
-
-Después de recibir ambos paquetes correctamente:
-
-```bash
-git show "$imsRevision:enterprise/deploy/habilitar_centro.sh" |
-  bash -s -- "$imsRevision"
-```
+El receptor autentica y verifica cada paquete y conserva cualquier ZIP existente diferente. En GitHub están cifrados; no se publican CSV, plano, coordenadas privadas ni la clave. Los archivos descifrados quedan en el directorio privado `centro_mando_ims_datos/entrada`. Al terminar la recepción, se ejecuta el instalador de esa misma revisión.
 
 El instalador crea su propia versión aislada, ejecuta verificaciones, prepara las tablas y permisos propios, importa los catálogos y el layout y actualiza únicamente `centro-mando-ims-ensayo.service`. Conserva el acceso HTTPS por `8445` y el backend local por `3003`. Verifica el histórico esperado y revierte la versión del servicio si la actualización no se confirma. Las migraciones aditivas y los catálogos versionados se conservan durante esa reversión.
+
+## Si el layout se cargó pero sigue la interfaz anterior
+
+La carga de catálogos y layout precede a la activación de la revisión. Un resumen con `yaImportado: true` no acredita que el servicio se actualizó. Si la comprobación del perfil se detiene, la versión anterior continúa sirviendo sus pantallas.
+
+Una vez recibidos los paquetes, reintentar solamente la actualización desde SSH:
+
+```bash
+(
+  set -euo pipefail
+  cd /home/enicolalde/bryan/centro_mando_ims
+  git fetch origin migracion/mysql-candidata-20261104
+  imsRevision="$(git rev-parse --verify 'FETCH_HEAD^{commit}')"
+  git show "$imsRevision:enterprise/deploy/habilitar_centro.sh" |
+    bash -s -- "$imsRevision"
+)
+```
+
+El pool operativo reserva una de las cinco conexiones de su cuenta para comprobaciones. Si el servicio anterior ocupa las cinco, solo ese error de capacidad difiere la comprobación hasta el reinicio propio; los errores de credenciales, permisos o histórico siguen deteniendo la actualización. La revisión no se confirma sin completar la verificación.
+
+El resumen correcto debe incluir `perfil_operacion_verificado: true`, `interfaz_actualizada: true`, `visor: "WEBGL_3D"`, `archivos_interfaz_verificados: 6` y la revisión instalada. Se comparan las huellas de HTML, JS, CSS y bibliotecas 3D servidas por HTTPS con los archivos de la revisión. Si hay una discrepancia o falla el perfil, se restaura la unidad anterior. Después del resultado correcto, recargar IMS con Ctrl+Shift+R.
 
 ## Layout físico y alcance de las medidas
 
