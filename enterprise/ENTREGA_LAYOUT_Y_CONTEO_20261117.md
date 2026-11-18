@@ -48,7 +48,7 @@ Una vez recibidos los paquetes, reintentar solamente la actualización desde SSH
 
 El pool operativo reserva una de las cinco conexiones de su cuenta para comprobaciones. Si el servicio anterior ocupa las cinco, solo ese error de capacidad difiere la comprobación hasta el reinicio propio; los errores de credenciales, permisos o histórico siguen deteniendo la actualización. La revisión no se confirma sin completar la verificación.
 
-El resumen correcto debe incluir `perfil_operacion_verificado: true`, `interfaz_actualizada: true`, `visor: "WEBGL_3D"`, `archivos_interfaz_verificados: 12` y la revisión instalada. Se comparan las huellas de HTML, JS, CSS y bibliotecas 3D servidas por HTTPS con los archivos de la revisión. Si hay una discrepancia o falla el perfil, se restaura la unidad anterior. Después del resultado correcto, recargar IMS con Ctrl+Shift+R.
+El resumen correcto debe incluir `perfil_operacion_verificado: true`, `interfaz_actualizada: true`, `visor: "WEBGL_3D"`, `archivos_interfaz_verificados: 16` y la revisión instalada. Se comparan las huellas de HTML, JS, CSS y bibliotecas 3D servidas por HTTPS con los archivos de la revisión. Si hay una discrepancia o falla el perfil, se restaura la unidad anterior. Después del resultado correcto, recargar IMS con Ctrl+Shift+R.
 
 ## Layout físico y alcance de las medidas
 
@@ -125,3 +125,11 @@ Para ocupación, configurar la conexión de solo lectura a SQL Server `192.168.4
 El nuevo módulo de ocupación separa el total de la sede y la consulta del inventario. La ruta `/api/centro/ocupacion-inventario` filtra por inventario y cliente en la base propia, sin devolver el número de filas del corte global. Conserva las posiciones sin coincidencia como Sin dato. El indicador de bloqueo es independiente de la ocupación. La lectura empresarial y sus credenciales se mantienen en el conector ya preparado.
 
 El avatar dispone de movimiento continuo, giro, cámara con obstáculos y rutas por pasillos. Las bodegas sin plano siguen una distribución provisional ordenada al estilo de Quito, con pasillos de 240 cm y cruces; BM conserva las anclas del PDF. Esta actualización modifica la representación y las consultas de lectura; no cambia cantidades, capturas ni coordenadas originales del catálogo almacenado. No requiere una nueva extracción de Google ni volver a enviar los paquetes privados.
+
+## Actualización de tabla, permisos y selección
+
+La nueva revisión incorpora contornos y rótulos para las ubicaciones del documento, contexto atenuado, avatar articulado y recorrido automático al seleccionar otra ubicación transitable. Centro abre IMS en una pestaña independiente. La tabla completa permite filtros en el servidor sobre todas las líneas autorizadas; el análisis ciego conserva avance y pendientes. Solo ADMIN/COORDINADOR del Centro con supervisión del inventario habilitan cantidades o registran ajustes.
+
+La comprobación HTTPS de la actualización verifica 16 archivos, incluyendo los módulos de avatar, presentación de conteo, aplicación y navegación. Una instalación no se da por confirmada con archivos antiguos servidos. Se utiliza el mismo instalador de la revisión anterior y se conserva el corte importado.
+
+En Conexiones se incluyeron los pasos para crear el cliente OAuth web y copiar la URI exacta del servidor. Google Cloud y el consentimiento siguen pendientes. La ocupación real requiere guardar y probar el usuario SQL de solo lectura en el servidor; la integración EAN SQL requiere además la vista autorizada. Estas conexiones externas no se presentan como probadas por las pruebas sintéticas.

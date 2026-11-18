@@ -115,7 +115,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         }finally{loginsEnCurso--;}
       }
       if(!url.pathname.startsWith('/api/'))return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
-      const principal=await autenticar(pool,tokenDeCookie(req.headers.cookie));
+      const principal=await autenticar(pool,tokenDeCookie(req.headers.cookie));principal.centroHabilitado=centroHabilitado;
       if(req.method==='GET'&&url.pathname==='/api/sesion')return json(res,200,{usuario:principal.usuario,csrf:principal.csrf,soloLectura,operacionNativa,erpDisponible:!!gestorERP,erpCreacionDisponible:erpCreacion,centroDisponible:centroHabilitado});
       if(centroHabilitado&&!url.pathname.startsWith('/api/centro/')&&url.pathname!=='/api/sesion/cerrar'){
         const perfil=await consultarCentro(pool,principal,'perfil');
@@ -266,7 +266,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       }
       if(req.method==='GET'&&url.pathname==='/api/inventarios')return json(res,200,await listarInventarios(pool,principal,opciones(url,['buscar','sede','cliente'])));
       const m=/^\/api\/inventarios\/([a-f0-9-]+)\/lineas$/.exec(url.pathname);
-      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url,['buscar','posicion']),{operacionNativa}));
+      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url,['buscar','posicion','cliente','sku','captura','resultado']),{operacionNativa}));
       return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
     }catch(e){
       if(e.status===413)res.setHeader('Connection','close');

@@ -1,0 +1,56 @@
+{
+  "ok": true,
+  "fecha_ecuador": "2026-11-17",
+  "revision_base": "ad075d0e9b32f76bf0b15d11f444a9f0a1480d7f",
+  "rama": "migracion/mysql-candidata-20261104",
+  "interfaz": {
+    "resaltado_de_ubicaciones_solicitadas": true,
+    "rotulos_agrupados_seleccionables": true,
+    "avatar_articulado": true,
+    "seleccion_inicia_recorrido_por_pasillos": true,
+    "doble_clic_estable_abre_posicion": true,
+    "centro_abre_ims_en_otra_pestana_sin_opener": true,
+    "tabla_completa_con_filtros_en_servidor": true,
+    "cero_distinto_de_ausencia_y_borrador": true,
+    "analisis_ciego_de_avance": true,
+    "interfaz_https_archivos_verificados_por_instalador": 16
+  },
+  "permisos": {
+    "habilitar_cantidades_y_ajustar": "ADMIN_O_COORDINADOR_DEL_CENTRO_CON_SUPERVISION_DEL_INVENTARIO",
+    "lider_no_eleva_su_rol_nativo": true,
+    "modo_ciego_no_expone_stock_ni_diferencias": true,
+    "filtro_resultado_y_pdf_comparativo_denegados_en_ciego": true,
+    "consulta_historica_sin_columnas_nativas": true,
+    "valores_cero_textuales_mysql_comprobados": true
+  },
+  "pruebas": {
+    "node22": {
+      "correctas": 245,
+      "fallidas": 0
+    },
+    "python": {
+      "correctas": 168,
+      "fallidas": 0
+    },
+    "mysql": {
+      "totales": 154,
+      "correctas": 150,
+      "fallidas": 0,
+      "omitidas": 4,
+      "motivo_omitidas": "Comprobaciones opcionales de perfiles SQL que requieren cuentas específicas."
+    },
+    "chromium": {
+      "correctas": 39,
+      "fallidas": 0,
+      "incluye_escritorio_y_movil": true
+    }
+  },
+  "cliente_oauth_web_creado": false,
+  "conexion_google_real_verificada": false,
+  "ocupacion_sql_empresarial_real_verificada": false,
+  "vista_ean_sql_pendiente": true,
+  "datos_operativos_reales_modificados": false,
+  "nueva_extraccion_google": false,
+  "apache_modificado": false,
+  "produccion_activada": false
+}

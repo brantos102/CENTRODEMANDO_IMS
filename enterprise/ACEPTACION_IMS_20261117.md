@@ -66,3 +66,20 @@ No se ha realizado envío real a Google ni lectura real de la base empresarial d
 | Presentación | Los totales del documento quedan encima del mapa, sin taparse con el panel lateral; comprobar escritorio y móvil |
 
 La validación de rutas usa geometría sintética. La ocupación empresarial actual requiere configurar y probar la conexión SQL de solo lectura en el servidor.
+
+## Resaltado, tabla y conteo ciego
+
+| Caso | Resultado esperado |
+|---|---|
+| Pestaña IMS | Abrir desde el menú del Centro conserva el panel en su pestaña y abre IMS sin acceso a window.opener |
+| Rótulos del mapa | Ubicaciones solicitadas contrastan con el contexto; un grupo de rótulos acerca las ubicaciones superpuestas |
+| Selección automática | Seleccionar otra ubicación de la misma bodega y piso inicia la ruta sin pulsar Caminar a selección |
+| Doble clic estable | El movimiento de cámara tras el primer clic no cambia la posición abierta por el segundo |
+| Tabla completa | Con más de 50 filas, un filtro encuentra también filas que no se habían descargado; resumen mantiene el total autorizado |
+| Borrador / confirmación | Leer cero prepara un borrador; solo una confirmación permite mostrar el resultado registrado |
+| Roles | LIDER con SUPERVISOR nativo, OPERARIO y AUDITOR no habilitan cantidades ni registran ajustes |
+| Coordinador | ADMIN/COORDINADOR con supervisión autorizada puede habilitar cantidades y ajustar con motivo y justificación |
+| Modo ciego | Respuestas de líneas no contienen teórico ni diferencias; no permite filtrarlas por resultado ni generar análisis comparativo o PDF |
+| Deshabilitar cantidades | Actualizar oculta resultados, columnas y filtros comparativos; un filtro previamente autorizado no conserva filas sensibles si el servidor lo rechaza |
+| Análisis ciego | Muestra avance y pendientes sin exactitud, faltantes o sobrantes |
+| OAuth pendiente | Guía disponible con URI exacta; no se declara conectado antes del consentimiento y verificación |

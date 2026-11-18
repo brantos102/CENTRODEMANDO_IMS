@@ -8,7 +8,7 @@ export async function api(path,body){
 }
 export function fallo(e){aviso(e.message,true);if(e.status===401)$('login')?.removeAttribute('hidden');if(e.codigo==='CAMBIAR_CLAVE')window.location.href='/centro#perfil';}
 export function boton(t,fn,cls=''){const b=nodo('button',t,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve().then(fn).catch(fallo));return b;}
-export function enlace(t,url,cls=''){const a=nodo('a',t,cls);a.href=url;return a;}
+export function enlace(t,url,cls=''){const a=nodo('a',t,cls);a.href=url;if(/^\/(ims|inventarios)(?:[?#]|$)/.test(url)){a.target='_blank';a.rel='noopener noreferrer';}return a;}
 export function opciones(select,items,vacio){select.replaceChildren(...(vacio?[new Option(vacio,'')]:[]),...items.map(x=>new Option(x.nombre??x.label??x,x.id??x.value??x)));}
 let dbPromesa;
 function basePendientes(){return dbPromesa??=new Promise((resolve,reject)=>{const r=indexedDB.open('ims_centro_mando',1);r.onupgradeneeded=()=>r.result.createObjectStore('pendientes',{keyPath:'actor'});r.onsuccess=()=>resolve(r.result);r.onerror=r.onblocked=()=>reject(Error('No se pudo abrir el resguardo de guardados. La consulta sigue disponible.'));});}

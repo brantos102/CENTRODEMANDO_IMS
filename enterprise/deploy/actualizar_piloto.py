@@ -204,6 +204,9 @@ def comprobar_interfaz(transporte, release):
                 ('/assets/vendor/OrbitControls.js','vendor/OrbitControls.js'),
                 ('/assets/navegacion-almacen.mjs','navegacion-almacen.mjs'),
                 ('/assets/ocupacion-resumen.mjs','ocupacion-resumen.mjs'),
+                ('/assets/avatar-operario.mjs','avatar-operario.mjs'),
+                ('/assets/presentacion-conteo.mjs','presentacion-conteo.mjs'),
+                ('/assets/app.mjs','app.mjs'),('/assets/interfaz.mjs','interfaz.mjs'),
                 ('/assets/evidencias-ui.mjs','evidencias-ui.mjs'),('/assets/ruta-destino.mjs','ruta-destino.mjs'),
                 ('/catalogos','catalogos.html'),('/assets/catalogos.mjs','catalogos.mjs')]
     for ruta, nombre in archivos:

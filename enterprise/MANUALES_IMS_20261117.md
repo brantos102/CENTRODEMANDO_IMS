@@ -7,7 +7,7 @@
 3. Buscar por EAN, SKU o serie. Si hay varias coincidencias, seleccionar expresamente la línea correcta. Un EAN identifica el producto; la cantidad de presentación del catálogo no multiplica automáticamente el conteo.
 4. Para una captura individual, pulsar **Contar · C1/C2/C3**, introducir la cantidad, observación o nueva posición y guardar. Cero es un conteo válido; vacío significa ausencia de captura.
 5. Para captura masiva, introducir cantidades en las filas autorizadas, seleccionar las filas y pulsar **GUARDAR MASIVO**. Cada línea conserva su confirmación y auditoría. Si falla una línea, revisar los envíos pendientes y los borradores antes de repetir.
-6. El campo rápido usa una etapa explícita. Cantidad 1 acumula una unidad en el borrador; otra cantidad explícita reemplaza la del borrador. Ráfaga envía la línea resuelta mediante el mismo mecanismo de confirmación. Una lectura repetida de C1 no avanza automáticamente a C2.
+6. El campo rápido usa una etapa explícita. Cantidad 1 acumula una unidad en el borrador; otra cantidad explícita reemplaza la del borrador. **Guardar cada lectura** envía la línea resuelta mediante el mismo mecanismo de confirmación. Una lectura repetida de C1 no avanza automáticamente a C2.
 7. Los borradores se conservan en ese navegador por usuario e inventario. No representan una captura del servidor hasta recibir confirmación. Si cambió la versión de una línea, revisar el conteo actual y descartar el borrador obsoleto antes de continuar.
 8. Si se pierde la respuesta, usar **Reintentar envíos**: conserva el identificador original de la operación y evita duplicados. No borrar datos del navegador con capturas por confirmar.
 
@@ -54,7 +54,7 @@ Para instalación y conexiones, consultar [la guía de entrega](ENTREGA_LAYOUT_Y
 
 **Ubicaciones** y la terminal IMS utilizan el mismo visor WebGL. En Ubicaciones se muestra BM inicialmente; selecciona B2 en **Bodega / nave** para ver Bodega 2 sobre su propio piso. Las áreas sin ancla confirmada continúan identificadas como provisionales.
 
-Un clic selecciona el hueco y sitúa tu avatar en el pasillo contiguo. Selecciona **Recorrer pasillo** y usa W/A/S/D, las flechas o los botones de dirección; arrastrar sigue permitiendo girar la cámara. El recorrido evita los volúmenes de las estanterías y los límites del piso. En planta alta se limita al mezzanine. La figura representa tu selección virtual, no ubicación física mediante GPS.
+Un clic selecciona el hueco. La primera selección sitúa tu avatar en el pasillo contiguo; las siguientes inician el recorrido automático cuando existe una ruta libre en la misma bodega y planta. Selecciona **Recorrer pasillo** y usa W/A/S/D, las flechas o los botones de dirección; arrastrar sigue permitiendo girar la cámara. El recorrido evita los volúmenes de las estanterías y los límites del piso. En planta alta se limita al mezzanine. La figura representa tu selección virtual, no ubicación física mediante GPS.
 
 El doble clic abre el conteo de los productos autorizados de esa posición. Desde Ubicaciones se necesita haber abierto el mapa con un inventario; la vista general no asigna permisos de captura. **Posición anterior / Siguiente posición** permite avanzar por las ubicaciones del inventario conservando los borradores locales.
 
@@ -82,8 +82,28 @@ La ocupación dispone de consulta fija de solo lectura para SQL Server DEPOTWMS;
 
 Selecciona una ubicación del documento y pulsa **Recorrer pasillo**. Mantén W/S para avanzar o retroceder, A/D para desplazarte lateralmente y Q/E o flechas izquierda/derecha para girar. Las flechas arriba/abajo avanzan/retroceden. También puedes mantener los botones de dirección en pantalla. Arrastrar la cámara cambia la dirección de mirada; la cámara de recorrido evita atravesar los racks.
 
-Al seleccionar otro hueco durante el recorrido se calcula una ruta libre alrededor de las estructuras. **Caminar a selección** sigue esa ruta; **Posicionarme aquí** sitúa directamente el avatar frente al hueco seleccionado. Las rutas no atraviesan racks ni cortan sus esquinas. El doble clic abre los productos autorizados de esa posición; Esc detiene el movimiento. Cambiar a conteo, series u otra pestaña pausa el recorrido.
+Al seleccionar otro hueco durante el recorrido se calcula una ruta libre alrededor de las estructuras. El recorrido comienza automáticamente; **Caminar a selección** permite reanudarlo; **Posicionarme aquí** sitúa directamente el avatar frente al hueco seleccionado. Las rutas no atraviesan racks ni cortan sus esquinas. El doble clic abre los productos autorizados de esa posición; Esc detiene el movimiento. Cambiar a conteo, series u otra pestaña pausa el recorrido.
 
 La figura representa una posición virtual en el mapa. No confirma presencia física ni GPS.
 
 Hasta recibir los planos de las otras bodegas, el orden provisional sigue la lógica de Quito: fila A, parejas B/C, D/E y siguientes, pasillos de 240 cm y un cruce cada doce columnas. Los huecos mantienen sus medidas originales en cm. En mezzanine las dos plantas quedan a 210 cm y tienen una plataforma de recorrido; las distribuciones sin plano se identifican como provisionales. Las anclas confirmadas del PDF de BM se conservan.
+
+## Tabla completa y señales de captura
+
+El menú **ITSANET IMS** del Centro abre una pestaña independiente y conserva el panel principal. Dentro del inventario, **Tabla del inventario** o **Ver inventario completo** muestra todas las líneas autorizadas, con páginas de 50 filas y **Cargar más líneas**. Los filtros de cliente, SKU, posición exacta y captura se aplican a todo el inventario en el servidor, incluyendo filas todavía no cargadas. El orden visual se aplica a las filas cargadas. El resumen mantiene el total autorizado del inventario aunque se filtre una sola ubicación.
+
+**Falta contar**, **Conteo registrado**, **Recuento pendiente** y **Revisar historial** describen las capturas. Un borrador local sigue pendiente hasta la confirmación del servidor. **Correcto**, **Faltante** y **Sobrante**, las columnas Teórico/Físico/Diferencia y su filtro aparecen únicamente cuando la cuenta puede consultar cantidades. En modo ciego, Análisis presenta avance y pendientes sin revelar existencias ni diferencias. Un cero confirmado cuenta como captura.
+
+Solo ADMIN o COORDINADOR del Centro con permisos de supervisor sobre el inventario pueden habilitar cantidades o registrar ajustes. El rol de líder o supervisor nativo por sí solo no concede esas acciones. Habilitar cantidades permite consultar resultados a los usuarios autorizados de ese inventario; deshabilitarlas vuelve a ocultarlos. Las API aplican los mismos permisos que la pantalla.
+
+Los huecos solicitados llevan contorno amarillo y rótulos seleccionables sobre el mapa; las estructuras del contexto quedan atenuadas. Cuando varios rótulos se superponen, pulsa el grupo de ubicaciones para acercar la cámara. Un doble clic abre el conteo de la posición seleccionada. El avatar con casco y chaleco anima brazos y piernas al caminar. Su posición es virtual; cambia de planta o bodega mediante selección y sigue los pasillos cuando la geometría permite calcular una ruta.
+
+## Crear el cliente OAuth web
+
+1. Entrar a Google Cloud, seleccionar el proyecto de la organización y habilitar Gmail API y Google Calendar API. Habilitar Google Drive API para carpetas y fotos.
+2. Configurar Google Auth Platform, correo de soporte y audiencia. Si la aplicación está en pruebas, añadir `bespinoza@itsanet.com` como usuario de prueba.
+3. Crear un cliente OAuth de tipo **Aplicación web**. Desde **Conexiones → Cliente OAuth de la organización**, copiar la URI de retorno que muestra el servidor y registrarla exactamente en Google Cloud, incluyendo HTTPS, puerto y ruta.
+4. Introducir ID y secreto exclusivamente en el formulario privado de Conexiones. Elegir cuenta, calendario y permisos necesarios; guardar y autorizar con Google.
+5. Verificar cuenta autorizada y realizar una prueba de Calendar y correo a destinatario elegido. El mismo formulario permite sustituir la cuenta temporal por la oficial.
+
+La creación del cliente y el consentimiento siguen pendientes en Google Cloud. La conexión SQL real de ocupación se configura en el formulario privado de Conexiones: servidor `192.168.4.12`, puerto `1433`, usuario de solo lectura y base de datos autorizada; si se deja la base vacía se utiliza la predeterminada de ese usuario. No introducir secretos en el chat ni en GitHub. La consulta EAN empresarial todavía requiere una vista autorizada; hasta entonces continúa el catálogo importado.

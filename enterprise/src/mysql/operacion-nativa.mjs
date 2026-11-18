@@ -1,3 +1,4 @@
+import {politicaConteo} from './politica-conteo.mjs';
 import {serieYaCapturada,entregarCronograma} from '../centro/legado.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 import {ErrorConteo} from '../dominio/conteo.mjs';
@@ -99,6 +100,7 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s,conex
   if(['crear','usuario'].includes(tipo))await ambito(c,p,s.sede,tipo==='usuario');
   else n=await acceso(c,p,s.inventarioId,['serie','hallazgo'].includes(tipo)?null:SUPER,!['serie','hallazgo'].includes(tipo),true);
   if(['serie','hallazgo'].includes(tipo))exigir(n.perfiles.some(r=>r.cliente_id===s.clienteId&&Number(r.puede_contar)===1&&['SUPERVISOR','OPERADOR'].includes(r.rol)),'SIN_PERMISO','Cliente no autorizado para captura.');
+  if(['depot','ajustar'].includes(tipo)){const permisos=await politicaConteo(c,p,n);exigir(tipo==='depot'?permisos.puedeConfigurarCantidades:permisos.puedeAjustar,'SIN_PERMISO','Solo los coordinadores de inventarios autorizados pueden habilitar cantidades o registrar ajustes.');}
   const [[prev]]=await c.execute('SELECT tipo,payload_sha256,resultado FROM ims_nat_evento WHERE actor_id=? AND operacion_id=? FOR SHARE',[p.actorId,s.operacionId]);
   if(prev){
    exigir(prev.tipo===tipo&&prev.payload_sha256===digest,'OPERACION_REUTILIZADA','El identificador ya pertenece a otra solicitud.');
@@ -238,7 +240,7 @@ export async function consultarOperacion(pool,p,id,{analisis=false,cursor=''}={}
  if(cursor)uuid(cursor);
  return transaccion(pool,p,async c=>{
   const n=await acceso(c,p,id);
-  const ciego=n.perfiles.some(r=>r.rol==='OPERADOR')&&!n.mostrar_depot;
+  const politica=await politicaConteo(c,p,n),ciego=politica.conteoCiego;
   const parametros=[p.actorId,id];
   const base=`FROM ims_op_linea l JOIN ims_nat_linea x ON x.linea_id=l.id JOIN ims_op_detalle_linea d ON d.linea_id=l.id
    JOIN ims_nat_perfil p ON p.inventario_id=l.inventario_id AND p.cliente_id=l.cliente_id AND p.actor_id=?
@@ -258,7 +260,7 @@ export async function consultarOperacion(pool,p,id,{analisis=false,cursor=''}={}
   const siguiente=lineas.length===51?lineas[49].id:null;
   return {inventario:{id,estado:n.estado,sede:n.sede,codigo:n.codigo_operativo,version:n.version,borrador:!!n.borrador,
    fechaInicio:n.fecha_inicio,fechaEntrega:n.fecha_entrega,fechaProgramada:n.fecha_programada,responsable:n.responsable,
-   mostrarDepot:!!n.mostrar_depot,perfiles:n.perfiles},
+   mostrarDepot:!!n.mostrar_depot,perfiles:n.perfiles,...politica},
    lineas:lineas.slice(0,50).map(r=>({...r,version:String(r.version),...(!ciego?resultadoWms(r):{})})),siguiente};
  });
 }
@@ -285,4 +287,4 @@ export async function historialCapturas(pool,p,id,{clienteId,cursor='',tipo='ser
  });
 }
 
-export async function avanceOperacion(pool,p,id){return transaccion(pool,p,async c=>{const n=await acceso(c,p,id);const [[a]]=await c.execute(`SELECT COUNT(*) lineas,SUM(l.conteo_1 IS NOT NULL) c1,SUM(l.conteo_2 IS NOT NULL) c2,SUM(l.conteo_final IS NOT NULL) c3,SUM(l.conteo_1 IS NULL) pendientesC1 FROM ims_op_linea l JOIN ims_nat_perfil p ON p.inventario_id=l.inventario_id AND p.cliente_id=l.cliente_id AND p.actor_id=? WHERE l.inventario_id=?`,[p.actorId,id]);return {inventarioId:id,estado:n.estado,borrador:!!n.borrador,puedeSupervisar:n.perfiles.every(x=>x.rol==='SUPERVISOR'),conteoCiego:n.perfiles.some(x=>x.rol==='OPERADOR')&&!n.mostrar_depot,totales:Object.fromEntries(Object.entries(a).map(([k,v])=>[k,String(v||0)]))};});}
+export async function avanceOperacion(pool,p,id){return transaccion(pool,p,async c=>{const n=await acceso(c,p,id),politica=await politicaConteo(c,p,n);const [[a]]=await c.execute(`SELECT COUNT(*) lineas,SUM(l.conteo_1 IS NOT NULL) c1,SUM(l.conteo_2 IS NOT NULL) c2,SUM(l.conteo_final IS NOT NULL) c3,SUM(l.conteo_1 IS NULL) pendientesC1 FROM ims_op_linea l JOIN ims_nat_perfil p ON p.inventario_id=l.inventario_id AND p.cliente_id=l.cliente_id AND p.actor_id=? WHERE l.inventario_id=?`,[p.actorId,id]);return {inventarioId:id,estado:n.estado,borrador:!!n.borrador,puedeSupervisar:n.perfiles.every(x=>x.rol==='SUPERVISOR'),...politica,totales:Object.fromEntries(Object.entries(a).map(([k,v])=>[k,String(v||0)]))};});}

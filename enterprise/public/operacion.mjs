@@ -55,7 +55,7 @@ async function detalle(mas=false){
  actualizarSeries();
  const n=state.inv,supervisor=n.perfiles.length&&n.perfiles.every(p=>p.rol==='SUPERVISOR');
  $('op-supervision').hidden=!supervisor;$('op-cargar').hidden=!n.borrador;$('op-activar').hidden=!n.borrador;
- $('op-depot').checked=n.mostrarDepot;
+ $('op-depot').checked=n.mostrarDepot;for(const e of [$('op-depot').closest('label'),$('op-depot-guardar')])e.hidden=!n.puedeConfigurarCantidades;$('op-ajustar').closest('details').hidden=!n.puedeAjustar;
  $('op-detalle').textContent=n.codigo+' · '+n.estado+' · versión '+n.version+(n.borrador?' · Stock por activar':'');
  const clientes=n.perfiles.map(p=>{const c=state.contexto.clientes.find(c=>c.id===p.cliente_id);return new Option(c?.nombre||p.cliente_id,p.cliente_id);});
  $('op-cliente-csv').replaceChildren(...clientes.map(o=>o.cloneNode(true)));$('op-cli-permiso').replaceChildren(...clientes);
@@ -64,7 +64,7 @@ async function detalle(mas=false){
   const erp=procedencias.get(l.id);
   celda(tr,l.numero+' · '+l.sku);celda(tr,l.cliente+' · '+(l.posicion||'—')+(erp?'\nCuenta ERP: '+erp.etiqueta+' · '+erp.codigo_cliente_erp:''));
   celda(tr,[l.conteo_1,l.conteo_2,l.conteo_final].map(formatearCantidad).join(' / '));
-  celda(tr,Object.hasOwn(l,'depot')?[l.depot,l.fisico,l.desfase].map(formatearCantidad).join(' / '):'Conteo ciego');const accion=document.createElement('td'),version=document.createElement('small');version.textContent='Versión '+l.version;accion.append(version);if(supervisor&&['EN_PROCESO','EN_VALIDACION'].includes(n.estado)){const b=document.createElement('button');b.type='button';b.textContent='Revisar ajuste';b.onclick=()=>{$('op-linea-ajuste').value=l.id;$('op-version-ajuste').value=l.version;$('op-ajuste-contexto').textContent=l.sku+' · '+(l.posicion||'Sin posición')+' · '+l.cliente;$('op-cantidad-ajuste').value=String(l.ajuste||'0').replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,'');$('op-motivo').value=l.motivo||'';$('op-justificacion').value=l.justificacion||'';$('op-ajustar').closest('details').open=true;$('op-ajustar').scrollIntoView({block:'center'});};accion.append(b);}tr.append(accion);$('op-lineas').append(tr);
+  celda(tr,Object.hasOwn(l,'depot')?[l.depot,l.fisico,l.desfase].map(formatearCantidad).join(' / '):'Conteo ciego');const accion=document.createElement('td'),version=document.createElement('small');version.textContent='Versión '+l.version;accion.append(version);if(n.puedeAjustar&&['EN_PROCESO','EN_VALIDACION'].includes(n.estado)){const b=document.createElement('button');b.type='button';b.textContent='Revisar ajuste';b.onclick=()=>{$('op-linea-ajuste').value=l.id;$('op-version-ajuste').value=l.version;$('op-ajuste-contexto').textContent=l.sku+' · '+(l.posicion||'Sin posición')+' · '+l.cliente;$('op-cantidad-ajuste').value=String(l.ajuste||'0').replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,'');$('op-motivo').value=l.motivo||'';$('op-justificacion').value=l.justificacion||'';$('op-ajustar').closest('details').open=true;$('op-ajustar').scrollIntoView({block:'center'});};accion.append(b);}tr.append(accion);$('op-lineas').append(tr);
  }
  $('op-mas').hidden=!state.cursor;
 }

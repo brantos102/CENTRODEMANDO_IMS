@@ -1,3 +1,5 @@
+import {politicaConteo} from './politica-conteo.mjs';
+import {resultadoWms} from '../dominio/analisis-wms.mjs';
 import {ErrorAuth} from '../auth/credenciales.mjs';
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 function paginacion({cursor='',limite='50'}={}){
@@ -29,27 +31,25 @@ export async function listarInventarios(pool,principal,opciones){
   return resultado(rows,limite);
 }
 export async function listarLineas(pool,principal,inventarioId,opciones,{operacionNativa=false}={}){
-  if(!UUID.test(inventarioId))throw new ErrorAuth('SOLICITUD_INVALIDA','Inventario inválido.',400);
-  const {cursor,limite}=paginacion(opciones);
-  const buscar=textoBusqueda(opciones?.buscar),params=[principal.actorId,inventarioId,cursor];let filtro='';
-  if(buscar){
-    filtro=" AND (l.sku COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.descripcion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.posicion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.serie COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.lote COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!')";
-    params.push(...Array(5).fill(patron(buscar)));
-  }
-  const posicion=textoBusqueda(opciones?.posicion);if(posicion){filtro+=' AND TRIM(d.posicion)=?';params.push(posicion);}
-  const scope=alcance(principal),[[acceso]]=await pool.execute('SELECT 1 AS permitido FROM ims_op_permiso p JOIN ims_op_inventario i ON i.id=p.inventario_id WHERE p.actor_id=? AND p.inventario_id=?'+scope.sql+' LIMIT 1',[principal.actorId,inventarioId,...scope.params]);
-  if(!acceso)throw new ErrorAuth('SIN_PERMISO','Acceso no autorizado.',403);
-  const permiso=operacionNativa?"(p.puede_contar=1 AND n.borrador=0 AND z.rol IN ('SUPERVISOR','OPERADOR'))":'p.puede_contar';
-  const joins=operacionNativa?' LEFT JOIN ims_nat_inventario n ON n.inventario_id=l.inventario_id LEFT JOIN ims_nat_perfil z ON z.actor_id=p.actor_id AND z.inventario_id=p.inventario_id AND z.cliente_id=p.cliente_id ':'';
-  const [rows]=await pool.execute(`SELECT l.id,l.inventario_id,l.cliente_id,l.sku,l.version,l.conteo_1,l.conteo_2,l.conteo_final,
-    l.observacion,l.nueva_posicion,${permiso} AS puede_contar,c.nombre AS cliente,
-    d.posicion,d.descripcion,d.serie,d.lote,d.unidad FROM ims_op_linea l
-    JOIN ims_op_permiso p ON p.inventario_id=l.inventario_id AND p.cliente_id=l.cliente_id AND p.actor_id=?
-    JOIN ims_op_actor a ON a.id=p.actor_id AND a.activo=1
-    JOIN ims_op_cliente c ON c.id=l.cliente_id
-    LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id ${joins}
-    WHERE l.inventario_id=? AND l.id>? ${filtro} ORDER BY l.id LIMIT ${limite+1}`,params);
-  return resultado(rows.map(r=>({...r,version:String(r.version),puede_contar:!!r.puede_contar})),limite);
+ if(!UUID.test(inventarioId))throw new ErrorAuth('SOLICITUD_INVALIDA','Inventario inválido.',400);
+ const {cursor,limite}=paginacion(opciones),scope=alcance(principal),cabecera=operacionNativa?'n.inventario_id nativo,n.mostrar_depot':'0 nativo,0 mostrar_depot',joinN=operacionNativa?'LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id':'';
+ const [[h]]=await pool.execute(`SELECT i.sede,${cabecera} FROM ims_op_inventario i ${joinN} WHERE i.id=? AND EXISTS(SELECT 1 FROM ims_op_permiso p WHERE p.actor_id=? AND p.inventario_id=i.id) ${scope.sql}`,[inventarioId,principal.actorId,...scope.params]);
+ if(!h)throw new ErrorAuth('SIN_PERMISO','Acceso no autorizado.',403);
+ const nativo=operacionNativa&&typeof h.nativo==='string'&&UUID.test(h.nativo);
+ const [roles]=nativo?await pool.execute('SELECT rol FROM ims_nat_perfil WHERE inventario_id=? AND actor_id=?',[inventarioId,principal.actorId]):[[]],politica=await politicaConteo(pool,principal,{perfiles:roles,mostrar_depot:h.mostrar_depot,esNativo:nativo}),visible=politica.puedeVerTeorico;
+ const buscar=textoBusqueda(opciones?.buscar),posicion=textoBusqueda(opciones?.posicion),sku=textoBusqueda(opciones?.sku),cliente=opciones?.cliente||'',captura=opciones?.captura||'',res=opciones?.resultado||'';
+ if(cliente&&!UUID.test(cliente)||!['','POR_CONTAR','CONTADO','RECUENTO','HEREDADO'].includes(captura)||!['','PENDIENTE','CORRECTO','FALTANTE','SOBRANTE'].includes(res))throw new ErrorAuth('SOLICITUD_INVALIDA','Filtro de tabla inválido.',400);
+ if(res&&!visible)throw new ErrorAuth('SIN_PERMISO','El conteo ciego no permite filtrar por diferencias contra el stock.',403);
+ const fisico="((CASE WHEN l.conteo_1 IS NULL THEN NULL WHEN l.conteo_2 IS NULL OR l.conteo_final IS NULL OR l.conteo_1=l.conteo_2 THEN l.conteo_1 ELSE l.conteo_final END)+COALESCE(x.ajuste,0))",estado=operacionNativa?`CASE WHEN ${fisico} IS NULL OR x.depot IS NULL THEN 'PENDIENTE' WHEN ${fisico}=x.depot THEN 'CORRECTO' WHEN ${fisico}>x.depot THEN 'SOBRANTE' ELSE 'FALTANTE' END`:"'PENDIENTE'";
+ const base=`FROM ims_op_linea l JOIN ims_op_permiso p ON p.inventario_id=l.inventario_id AND p.cliente_id=l.cliente_id AND p.actor_id=? JOIN ims_op_actor a ON a.id=p.actor_id AND a.activo=1 JOIN ims_op_cliente c ON c.id=l.cliente_id LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id ${operacionNativa?'LEFT JOIN ims_nat_inventario n ON n.inventario_id=l.inventario_id LEFT JOIN ims_nat_perfil z ON z.actor_id=p.actor_id AND z.inventario_id=p.inventario_id AND z.cliente_id=p.cliente_id LEFT JOIN ims_nat_linea x ON x.linea_id=l.id':''} WHERE l.inventario_id=?`,params=[principal.actorId,inventarioId],fs=[];
+ if(buscar){fs.push("(l.sku COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.descripcion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.posicion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.serie COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.lote COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!')");params.push(...Array(5).fill(patron(buscar)));}
+ if(posicion){fs.push('TRIM(d.posicion)=?');params.push(posicion);}if(sku){fs.push("l.sku COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!'");params.push(patron(sku));}if(cliente){fs.push('l.cliente_id=?');params.push(cliente);}
+ if(captura==='POR_CONTAR')fs.push('l.conteo_1 IS NULL');if(captura==='CONTADO')fs.push('l.conteo_1 IS NOT NULL');if(captura==='RECUENTO')fs.push('l.conteo_1 IS NOT NULL AND l.conteo_2 IS NOT NULL AND l.conteo_1<>l.conteo_2 AND l.conteo_final IS NULL');if(captura==='HEREDADO')fs.push('((l.conteo_1 IS NULL AND (l.conteo_2 IS NOT NULL OR l.conteo_final IS NOT NULL)) OR (l.conteo_2 IS NULL AND l.conteo_final IS NOT NULL))');if(res){fs.push(`(${estado})=?`);params.push(res);}
+ const filtro=fs.length?' AND '+fs.map(f=>'('+f+')').join(' AND '):'',permiso=operacionNativa?"(p.puede_contar=1 AND n.borrador=0 AND z.rol IN ('SUPERVISOR','OPERADOR'))":'p.puede_contar';
+ const [rows]=await pool.execute(`SELECT l.id,l.inventario_id,l.cliente_id,l.sku,l.version,l.conteo_1,l.conteo_2,l.conteo_final,l.observacion,l.nueva_posicion,${permiso} puede_contar,c.nombre cliente,d.posicion,d.descripcion,d.serie,d.lote,d.unidad ${visible?',x.depot,x.ajuste,x.categoria':''} ${base} ${filtro} AND l.id>? ORDER BY l.id LIMIT ${limite+1}`,[...params,cursor]);
+ const [[t]]=await pool.execute(`SELECT COUNT(*) lineas,SUM(l.conteo_1 IS NOT NULL) contadas,SUM(l.conteo_1 IS NULL) pendientes,SUM(l.conteo_2 IS NOT NULL) c2,SUM(l.conteo_final IS NOT NULL) c3,SUM(l.conteo_1 IS NOT NULL AND l.conteo_2 IS NOT NULL AND l.conteo_1<>l.conteo_2 AND l.conteo_final IS NULL) recuentos ${visible?`,SUM((${estado})='CORRECTO') correctas,SUM((${estado}) IN ('FALTANTE','SOBRANTE')) diferencias`:''} ${base}`,[principal.actorId,inventarioId]);
+ const [[filtradas]]=filtro?await pool.execute(`SELECT COUNT(*) total ${base} ${filtro}`,params):[[{total:t.lineas}]], [clientes]=await pool.execute(`SELECT DISTINCT c.id,c.nombre ${base} ORDER BY c.nombre,c.id`,[principal.actorId,inventarioId]);
+ return {...resultado(rows.map(r=>({...r,version:String(r.version),puede_contar:!!r.puede_contar,...(visible?resultadoWms(r):{})})),limite),...politica,totales:Object.fromEntries(Object.entries(t).map(([k,v])=>[k,Number(v||0)])),filtradas:Number(filtradas.total),clientes};
 }
 
 /** Cifras del histórico autorizado, sin leer staging ni calcular KPI de negocio. */
