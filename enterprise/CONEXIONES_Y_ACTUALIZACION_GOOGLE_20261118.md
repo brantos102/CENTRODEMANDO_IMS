@@ -77,3 +77,28 @@ Los operadores terminan a las 17:30 de Ecuador y `dash_consolidarAuditoria` se e
 ## Resumen que puede compartirse
 
 Compartir solamente la revisión instalada, el texto de verificación de ocupación, si Google muestra cuenta/Sheets autorizados y los conteos de inventarios/capturas/incidencias del resultado. No compartir contraseña SQL, secreto OAuth, tokens, contenido de planes cifrados ni archivos privados completos.
+
+## Si el retorno de Google no autoriza
+
+La corrección de OAuth del 18 de noviembre elimina una comparación de vencimiento dependiente de la zona horaria de MySQL. La prueba reprodujo una solicitud vigente rechazada desde una conexión `-05:00`; con la corrección, la misma situación funciona. Esto confirma un defecto del código anterior, pero no permite atribuirle cualquier rechazo real que solo mostraba el mensaje genérico.
+
+Después de instalar la corrección, abrir **Centro → Conexiones** y comenzar una autorización nueva. No recargar ni reutilizar la URL del retorno anterior: el estado y el código son de un solo uso. El cliente y el secreto existentes se conservan; no hace falta regenerarlos para instalar esta corrección.
+
+Si falla, el retorno presenta **Etapa**, **Código**, **HTTP** cuando existe y un diagnóstico para compartir. También puede consultarse en **Conexiones → Diagnóstico de autorización Google → Actualizar diagnóstico**. El botón de copia genera un resumen sin código de autorización, estado secreto, access token, refresh token ni secreto OAuth.
+
+| Código | Acción |
+|---|---|
+| ESTADO_VENCIDO_O_USADO | Iniciar otra autorización desde Conexiones y completarla en menos de diez minutos |
+| CLIENTE_RECHAZADO | Comprobar ID y secreto del mismo cliente de tipo Aplicación web en el formulario privado |
+| REDIRECCION_DISTINTA | Registrar exactamente la URI que muestra Conexiones, con HTTPS, puerto y ruta |
+| API_DESHABILITADA en CALENDARIO | Habilitar Google Calendar API en el proyecto del cliente OAuth |
+| PERMISOS_INCOMPLETOS | Volver a autorizar los servicios indicados como faltantes |
+| CUENTA_DISTINTA | Revisar dirección principal, alias y correo configurado; la cuenta debe coincidir |
+| GOOGLE_ACCESO_DENEGADO | Revisar API habilitada, permisos del recurso y políticas de Workspace |
+| GOOGLE_RED_NO_DISPONIBLE / GOOGLE_TIEMPO_AGOTADO | Comprobar salida HTTPS del servidor a Google |
+| GOOGLE_CERTIFICADO_RECHAZADO | Revisar certificados o proxy HTTPS con TI, conservando la validación TLS |
+| GUARDADO_NO_CONFIRMADO | Comprobar primero el estado de Conexiones; el guardado podría haberse completado |
+
+Si Google omite `scope` en el canje, la aplicación verifica los permisos reales del token en Google; no presume que se concedió lo solicitado. Acepta permisos equivalentes más amplios ya concedidos, sin solicitarlos adicionalmente. Los permisos de solo lectura no sustituyen a los de escritura necesarios para correo y Calendar.
+
+Los intentos antiguos que no guardaron detalle aparecen como **INTENTO_ANTERIOR_SIN_DETALLE**. Se necesita un intento nuevo para diagnosticar su etapa real. Ante un fallo se conserva la conexión anterior; un resultado de guardado incierto se presenta como tal. La corrección no cambia inventarios, capturas ni fotos.

@@ -1,3 +1,4 @@
+import {diagnosticoOAuth} from '../centro/google-diagnostico.mjs';
 import {sincronizarEvidencia} from '../centro/drive-evidencias.mjs';
 import {guardarEvidencia,listarEvidencias,leerEvidencia} from '../centro/evidencias.mjs';
 import {resguardarCodigoOrigen} from '../centro/codigo-origen.mjs';
@@ -6,7 +7,7 @@ import {presenciaInventario,rankingInventario} from '../centro/presencia.mjs';
 import {consultarOcupacion,consultarOcupacionInventario,actualizarOcupacion} from '../centro/ocupacion.mjs';
 import {consultarLayout} from '../centro/layout.mjs';
 import {consultarMapaInventario} from '../centro/mapa-inventario.mjs';
-import {iniciarGoogleOAuth,completarGoogleOAuth,callbackGoogle} from '../centro/google-oauth.mjs';
+import {iniciarGoogleOAuth,completarGoogleOAuth,callbackGoogle,consultarDiagnosticoGoogle} from '../centro/google-oauth.mjs';
 import {consultarCatalogos,importarCatalogo,resolverEAN,previsualizarCatalogo,originalCatalogo} from '../centro/catalogos.mjs';
 import {createServer} from 'node:http';
 import {consultarCentro,mutarCentro} from '../centro/servicio.mjs';
@@ -92,9 +93,9 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
     try{
       const url=new URL(req.url,origin);
       if(req.method==='GET'&&url.pathname==='/api/centro/google/callback'&&centroHabilitado){
-        let texto='La autorización no se confirmó. La conexión anterior se conserva. Vuelve al Centro para intentarlo de nuevo.',status=400;
-        try{if(['state','code','error'].some(k=>url.searchParams.getAll(k).length>1))throw Error();await completarGoogleOAuth(pool,{estado:url.searchParams.get('state'),codigo:url.searchParams.get('code'),denegado:url.searchParams.has('error')},claveCentro,fetchGoogle);texto='Cuenta Google autorizada. Correo y calendario ya están conectados con la cuenta elegida.';status=200;}catch{}
-        res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});return res.end('<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conexión Google · ITSANET</title><link rel="stylesheet" href="/assets/centro.css"><main><section class="panel"><h1>Conexión con Google</h1><p>'+texto+'</p><a class="boton principal" href="/centro#conexiones">Volver al Centro de Mando</a></section></main></html>');
+        const escapar=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let texto='Cuenta Google autorizada. Correo y calendario ya están conectados con la cuenta elegida.',detalle='',status=200;
+        try{if(['state','code','error'].some(k=>url.searchParams.getAll(k).length>1))throw Error();await completarGoogleOAuth(pool,{estado:url.searchParams.get('state'),codigo:url.searchParams.get('code'),denegado:url.searchParams.has('error')},claveCentro,fetchGoogle);}catch(e){const d=diagnosticoOAuth(e);status=400;texto=d.mensaje;detalle='<p>'+escapar(d.accion)+'</p><p><strong>Etapa:</strong> '+escapar(d.etapa)+' · <strong>Código:</strong> '+escapar(d.codigo)+(d.http?' · HTTP '+d.http:'')+'</p>'+(d.codigo==='GUARDADO_NO_CONFIRMADO'?'':'<p>La conexión anterior se conserva.</p>')+'<details open><summary>Diagnóstico para compartir</summary><textarea readonly rows="12" aria-label="Diagnóstico OAuth sin secretos">'+escapar(JSON.stringify(d,null,2))+'</textarea></details>';}
+        res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});return res.end('<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conexión Google · ITSANET</title><link rel="stylesheet" href="/assets/centro.css"><main><section class="panel"><h1>Conexión con Google</h1><p>'+escapar(texto)+'</p>'+detalle+'<a class="boton principal" href="/centro#conexiones">Volver al Centro de Mando</a></section></main></html>');
       }
       if(req.headers.origin&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
       if(req.method==='POST'&&req.headers.origin!==origin)throw new ErrorAuth('ORIGEN_INVALIDO','Origen no permitido.',403);
@@ -159,6 +160,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         const evidencia=/^evidencias\/([a-f0-9-]+)$/.exec(ruta);
         if(req.method==='GET'&&evidencia){const r=await leerEvidencia(pool,principal,evidencia[1]);res.writeHead(200,{'Content-Type':r.mime,'Content-Disposition':'inline; filename="evidencia.'+(r.mime==='image/png'?'png':'jpg')+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"});return res.end(r.contenido);}
         if(req.method==='GET'&&ruta==='ean')return json(res,200,await resolverEAN(pool,principal,opciones(url,['inventario','codigo'])));
+        if(req.method==='GET'&&ruta==='google/diagnostico')return json(res,200,await consultarDiagnosticoGoogle(pool,principal));
         if(req.method==='GET'&&ruta==='google/configuracion'){const r=await consultarConectores(pool,principal,claveCentro);return json(res,200,{...r,callback:callbackGoogle(origin)});}
         if(req.method==='POST'&&ruta==='google/iniciar'){const b=await leerJson(req);if(Object.keys(b).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La cuenta se elige en Conexiones.',400);return json(res,200,await iniciarGoogleOAuth(pool,principal,claveCentro,origin));}
         if(req.method==='POST'&&ruta==='codigo-origen'){const body=await leerJson(req);if(Object.keys(body).length)throw new ErrorAuth('SOLICITUD_INVALIDA','Los proyectos permitidos ya están registrados.',400);return json(res,200,await resguardarCodigoOrigen(pool,principal,claveCentro,{fetchImpl:fetchGoogle}));}

@@ -1,0 +1,34 @@
+{
+  "formato": "ims-google-oauth-correccion-validacion-v1",
+  "fecha_ecuador": "2026-11-18",
+  "revision_base": "c78fc299ec0fdd73e4fb3bf1990776656263fd5a",
+  "defecto_reproducido": "Una solicitud OAuth vigente se rechaza como vencida al comparar TIMESTAMP de una sesión MySQL -05:00 con UTC_TIMESTAMP.",
+  "regresion_falla_antes_de_corregir": true,
+  "regresion_pasa_con_hora_mysql_menos_05": true,
+  "correccion": "Comparar la vigencia con CURRENT_TIMESTAMP(6), en la misma zona de la sesión SQL.",
+  "diagnostico": {
+    "por_etapa": true,
+    "codigos_y_mensajes_permitidos": true,
+    "consulta_privada_administrador_solo_intentos_propios": true,
+    "errores_originales_de_google_no_expuestos": true,
+    "secretos_y_tokens_no_expuestos": true,
+    "permisos_reales_verificados": true,
+    "estado_uso_unico_y_pkce_conservados": true
+  },
+  "pruebas": {
+    "node": {"aprobadas": 257, "fallidas": 0},
+    "python": {"aprobadas": 168, "fallidas": 0},
+    "mysql_centro_y_delta_google": {"aprobadas": 49, "fallidas": 0},
+    "navegador_centro": {"aprobadas": 18, "fallidas": 0},
+    "google_simulado": true
+  },
+  "captura_sintetica": "docs/capturas/oauth-diagnostico-sintetico-20261118.png",
+  "causa_del_intento_real_confirmada": false,
+  "requiere_instalar_y_nueva_autorizacion_en_servidor": true,
+  "autorizacion_real_google_ejecutada_desde_desarrollo": false,
+  "datos_operativos_de_produccion_modificados": false,
+  "apache_modificado": false,
+  "zona_global_mysql_modificada": false,
+  "servicios_de_produccion_reiniciados_desde_desarrollo": false,
+  "correos_enviados_o_eventos_reales_creados_en_pruebas": false
+}
