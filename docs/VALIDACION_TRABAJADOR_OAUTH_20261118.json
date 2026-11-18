@@ -1,0 +1,30 @@
+{
+  "formato": "ims-google-oauth-trabajador-validacion-v1",
+  "fecha_ecuador": "2026-11-18",
+  "revision_base": "85acf2df3a48f0cae69eda0d1a484fe4738b137c",
+  "defecto_reproducido": "El trabajador en una sesión SQL -05:00 marca como ERROR una solicitud OAuth recién creada al comparar TIMESTAMP con UTC_TIMESTAMP.",
+  "regresion_falla_antes_de_corregir": true,
+  "regresion_pasa_despues_de_corregir": true,
+  "flujo_oauth_completo_con_trabajador_en_menos_05": true,
+  "correccion": {
+    "oauth_excluido_de_limpieza_general": true,
+    "trabajador_compara_y_escribe_timestamp_con_current_timestamp": true,
+    "limpieza_general_conserva_quince_minutos_reales": true,
+    "zonas_sql_comprobadas": ["-05:00", "+00:00", "+05:30"],
+    "retorno_oauth_conserva_vencimiento_diez_minutos": true,
+    "oauth_vencido_rechazado_antes_de_contactar_google": true,
+    "estado_de_un_solo_uso_pkce_y_sesion_conservados": true
+  },
+  "pruebas": {
+    "node_22": {"aprobadas": 257, "fallidas": 0},
+    "mysql_centro": {"aprobadas": 44, "fallidas": 0},
+    "mysql_delta_google": {"aprobadas": 7, "fallidas": 0},
+    "google_simulado": true
+  },
+  "capturas_inventarios_y_fotos_de_produccion_modificados_desde_desarrollo": false,
+  "cliente_oauth_o_secretos_de_produccion_modificados_desde_desarrollo": false,
+  "apache_o_zona_global_mysql_modificados": false,
+  "intentos_error_anteriores_reactivados": false,
+  "requiere_actualizacion_del_servicio_y_nueva_autorizacion_en_servidor": true,
+  "autorizacion_real_google_ejecutada_desde_desarrollo": false
+}

@@ -101,4 +101,13 @@ Si falla, el retorno presenta **Etapa**, **Código**, **HTTP** cuando existe y u
 
 Si Google omite `scope` en el canje, la aplicación verifica los permisos reales del token en Google; no presume que se concedió lo solicitado. Acepta permisos equivalentes más amplios ya concedidos, sin solicitarlos adicionalmente. Los permisos de solo lectura no sustituyen a los de escritura necesarios para correo y Calendar.
 
-Los intentos antiguos que no guardaron detalle aparecen como **INTENTO_ANTERIOR_SIN_DETALLE**. Se necesita un intento nuevo para diagnosticar su etapa real. Ante un fallo se conserva la conexión anterior; un resultado de guardado incierto se presenta como tal. La corrección no cambia inventarios, capturas ni fotos.
+Los intentos sin diagnóstico guardado aparecen como **INTENTO_ANTERIOR_SIN_DETALLE**. También puede ocurrir con solicitudes que el trabajador de fondo marcó prematuramente como error en las revisiones anteriores; no demuestra que se hayan rechazado permisos de Google. Ante un fallo se conserva la conexión anterior; un resultado de guardado incierto se presenta como tal. La corrección no cambia inventarios, capturas ni fotos.
+
+
+### Solicitud marcada como ERROR antes de regresar de Google
+
+Se reprodujo otro defecto en el trabajador de fondo: desde una sesión SQL `-05:00`, comparaba `actualizado_en` de tipo TIMESTAMP con UTC_TIMESTAMP y marcaba como ERROR una solicitud OAuth recién creada. El retorno entonces mostraba ESTADO_VENCIDO_O_USADO y el resumen privado no tenía diagnóstico por etapa. La corrección anterior del retorno por sí sola no cubría este proceso.
+
+El trabajador ahora excluye GOOGLE_OAUTH de la limpieza general y usa CURRENT_TIMESTAMP(6) en sus comparaciones y escrituras TIMESTAMP. El retorno conserva su vencimiento de diez minutos, estado de un solo uso, PKCE y validación de sesión. La limpieza de otros trabajos sigue venciendo a los quince minutos reales; se comprueba con sesiones -05:00, +00:00 y +05:30.
+
+Instalar la revisión que incluye esta corrección del trabajador y comenzar una autorización nueva desde Conexiones. No reactivar ni editar manualmente los intentos ERROR anteriores, ni volver a abrir sus retornos. No hace falta recrear el cliente OAuth o cambiar su secreto por este defecto. La confirmación real requiere completar un intento nuevo en el servidor actualizado.
