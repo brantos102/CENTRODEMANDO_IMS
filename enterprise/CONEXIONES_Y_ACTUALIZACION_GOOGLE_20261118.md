@@ -111,3 +111,35 @@ Se reprodujo otro defecto en el trabajador de fondo: desde una sesión SQL `-05:
 El trabajador ahora excluye GOOGLE_OAUTH de la limpieza general y usa CURRENT_TIMESTAMP(6) en sus comparaciones y escrituras TIMESTAMP. El retorno conserva su vencimiento de diez minutos, estado de un solo uso, PKCE y validación de sesión. La limpieza de otros trabajos sigue venciendo a los quince minutos reales; se comprueba con sesiones -05:00, +00:00 y +05:30.
 
 Instalar la revisión que incluye esta corrección del trabajador y comenzar una autorización nueva desde Conexiones. No reactivar ni editar manualmente los intentos ERROR anteriores, ni volver a abrir sus retornos. No hace falta recrear el cliente OAuth o cambiar su secreto por este defecto. La confirmación real requiere completar un intento nuevo en el servidor actualizado.
+
+
+## Diagnóstico de la conexión de ocupación SQL Server
+
+Una conexión que funciona en SQL Server Management Studio con servidor `IP\DEPOTWMS` no confirma que DEPOTWMS escuche en TCP 1433. El formulario utiliza IP y puerto TCP explícitos. Esta revisión también acepta IP\DEPOTWMS y normaliza el servidor a la IP; no descubre el puerto mediante SQL Browser ni ignora un nombre de instancia distinto. En revisiones anteriores era obligatorio introducir solamente la IP. MySQL almacena los datos de IMS; la ocupación se consulta en SQL Server con autenticación SQL Server.
+
+En la sesión de SQL Server que funciona, ejecutar esta SELECT para comprobar base, instancia y puerto sin compartir credenciales:
+
+```sql
+SELECT DB_NAME() AS base_actual,
+       SERVERPROPERTY('InstanceName') AS instancia,
+       CONNECTIONPROPERTY('local_tcp_port') AS puerto_reportado,
+       CASE WHEN CONVERT(int, CONNECTIONPROPERTY('local_tcp_port')) < 0
+            THEN CONVERT(int, CONNECTIONPROPERTY('local_tcp_port')) + 65536
+            ELSE CONVERT(int, CONNECTIONPROPERTY('local_tcp_port'))
+       END AS puerto_tcp;
+```
+
+Si el puerto alto aparece con signo negativo, se normaliza a su representación de 16 bits sin signo: por ejemplo, -16195 corresponde a 49341. Un resultado NULL no confirma un puerto TCP y debe revisarse con TI. Usar en IMS el puerto real y el nombre de base devuelto por DB_NAME(), conservando exactamente su escritura. La conectividad debe existir desde el servidor IMS, además de desde el PC del operador.
+
+Primero pulsar **Guardar conexión privada** y después **Consultar y actualizar ocupación ahora**. La consulta utiliza la configuración guardada. El fallo ahora presenta etapa, código y acción, además de un JSON en **Diagnóstico SQL para compartir**. Nunca muestra contraseña, consulta, respuesta original del servidor ni cadena de conexión. Antes, errores de dominio no registrados en el mapa HTTP quedaban ocultos bajo «No se pudo completar la solicitud».
+
+- SQL_RED_NO_DISPONIBLE / SQL_TIEMPO_AGOTADO: comprobar ruta y puerto desde IMS; un timeout en CONSULTA requiere revisar la duración de la vista.
+- SQL_AUTENTICACION_RECHAZADA: revisar usuario y contraseña en el formulario privado y que sean de la misma instancia.
+- SQL_BASE_NO_DISPONIBLE: revisar base y acceso de la cuenta; vacío usa su base predeterminada.
+- SQL_TLS_NO_CONFIRMADO: revisar certificado y compatibilidad TLS con TI. Se mantiene el cifrado.
+- INSTANCIA_SQL_NO_CONFIRMADA: el puerto respondió pero no corresponde a DEPOTWMS.
+- CUENTA_SQL_NO_LECTORA: utilizar SELECT sobre POSICION y view_web_estado_posicion, sin sysadmin, db_owner ni INSERT/UPDATE/DELETE sobre POSICION.
+- SQL_OBJETO_NO_DISPONIBLE / SQL_PERMISOS_INSUFICIENTES: revisar base, esquema y permisos de los dos objetos.
+- OCUPACION_SIN_CONFIGURAR: guardar la conexión privada antes de consultar.
+
+El corte anterior permanece si falla la lectura. No se modifican las existencias de SQL Server ni las capturas de los inventarios MySQL. No existe una conexión empresarial real desde las pruebas de desarrollo: el resultado final se comprueba en el servidor IMS.

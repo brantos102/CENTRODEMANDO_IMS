@@ -4,7 +4,7 @@ export function nodo(tag,txt,cls){const e=document.createElement(tag);if(txt!==u
 export function aviso(txt,error=false){const e=$('aviso');e.textContent=txt;e.className=error?'aviso error':'aviso';}
 export async function api(path,body){
  const r=await fetch(path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(120000),headers:body?{'Content-Type':'application/json','X-IMS-CSRF':estado.sesion?.csrf??''}:{},body:body?JSON.stringify(body):undefined});
- const d=await r.json();if(!r.ok)throw Object.assign(Error(d.mensaje||'No se completó la solicitud.'),{status:r.status,codigo:d.error});return d;
+ const d=await r.json();if(!r.ok)throw Object.assign(Error(d.mensaje||'No se completó la solicitud.'),{status:r.status,codigo:d.error,diagnostico:d.diagnostico});return d;
 }
 export function fallo(e){aviso(e.message,true);if(e.status===401)$('login')?.removeAttribute('hidden');if(e.codigo==='CAMBIAR_CLAVE')window.location.href='/centro#perfil';}
 export function boton(t,fn,cls=''){const b=nodo('button',t,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve().then(fn).catch(fallo));return b;}

@@ -1,3 +1,4 @@
+import {diagnosticoOcupacion} from '../centro/ocupacion-diagnostico.mjs';
 import {diagnosticoOAuth} from '../centro/google-diagnostico.mjs';
 import {sincronizarEvidencia} from '../centro/drive-evidencias.mjs';
 import {guardarEvidencia,listarEvidencias,leerEvidencia} from '../centro/evidencias.mjs';
@@ -78,10 +79,10 @@ function opciones(url,extras=[]){
 const STATUS={NO_AUTENTICADO:401,SIN_PERMISO:403,BASE_NO_PERMITIDA:503,SOLICITUD_INVALIDA:400,CANTIDAD_INVALIDA:400,
   VERSION_DESACTUALIZADA:409,ETAPA_COMPLETA:409,ETAPA_INVALIDA:409,OPERACION_REUTILIZADA:409,
   INVENTARIO_NO_EDITABLE:409,CONFIRMACION_REQUERIDA:409,SERIE_DUPLICADA:409,SERIE_SIMILAR:409,CONFIRMACION_PENDIENTE:503,GUARDADO_RECHAZADO:503,
-  ERP_CONSULTA_UTILIZADA:409,ERP_CLIENTE_PENDIENTE:409,CODIGO_EXISTENTE:409};
+  ACTUALIZACION_EN_CURSO:409,ERP_CONSULTA_UTILIZADA:409,ERP_CLIENTE_PENDIENTE:409,CODIGO_EXISTENTE:409};
 
 /** No instala esquema ni crea usuarios. Todas las rutas de datos exigen sesión. */
-export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision,gestorERP=null,erpCreacion=false,centroHabilitado=false,claveCentro,fetchGoogle=fetch}){
+export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false,revision,gestorERP=null,erpCreacion=false,centroHabilitado=false,claveCentro,fetchGoogle=fetch,leerOcupacion}){
   const origin=origenPublico(publicUrl);
   if(operacionNativa&&soloLectura)throw Error('Operación nativa incompatible con solo lectura.');
   if(gestorERP&&!operacionNativa)throw Error('ERP requiere operación nativa.');
@@ -142,7 +143,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         if(req.method==='GET'&&ruta==='ranking')return json(res,200,await rankingInventario(pool,principal,opciones(url,['inventario']).inventario));
         if(req.method==='GET'&&ruta==='ocupacion-inventario')return json(res,200,await consultarOcupacionInventario(pool,principal,opciones(url,['inventario']).inventario));
         if(req.method==='GET'&&ruta==='ocupacion')return json(res,200,await consultarOcupacion(pool,principal,opciones(url,['sede']).sede));
-        if(req.method==='POST'&&ruta==='ocupacion/actualizar'){const body=await leerJson(req);if(Object.keys(body).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La consulta SQL es fija y se configura en el servidor.',400);return json(res,200,await actualizarOcupacion(pool,principal,claveCentro));}
+        if(req.method==='POST'&&ruta==='ocupacion/actualizar'){const body=await leerJson(req);if(Object.keys(body).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La consulta SQL es fija y se configura en el servidor.',400);return json(res,200,await actualizarOcupacion(pool,principal,claveCentro,leerOcupacion?{leer:leerOcupacion}:{}));}
         if(req.method==='GET'&&ruta==='layout')return json(res,200,await consultarLayout(pool,principal,opciones(url,['sede','almacen'])));
         if(req.method==='GET'&&ruta==='mapa-inventario')return json(res,200,await consultarMapaInventario(pool,principal,opciones(url,['inventario'])));
         if(req.method==='GET'&&ruta==='catalogos')return json(res,200,await consultarCatalogos(pool,principal,opciones(url,['sede','tipo','desde','version'])));
@@ -272,6 +273,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
     }catch(e){
       if(e.status===413)res.setHeader('Connection','close');
+      if(e.diagnosticoOcupacion){const d=diagnosticoOcupacion(e);return json(res,d.codigo==='OCUPACION_SIN_CONFIGURAR'?409:503,{error:d.codigo,mensaje:d.mensaje+' '+d.accion,diagnostico:d});}
       if(e instanceof ErrorAuth)return json(res,e.status,{error:e.codigo,mensaje:e.message});
       if(e.name==='ErrorConteo'&&Object.hasOwn(STATUS,e.codigo))return json(res,STATUS[e.codigo],{error:e.codigo,mensaje:e.message});
       // No devolver mensajes SQL, contraseñas, cookies, hashes ni causas internas.

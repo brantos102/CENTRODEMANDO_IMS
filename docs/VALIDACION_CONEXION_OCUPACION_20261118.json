@@ -1,0 +1,31 @@
+{
+  "formato": "ims-ocupacion-conexion-validacion-v1",
+  "fecha_ecuador": "2026-11-18",
+  "revision_base": "f854c67cc7a67bb0495fc11fd77cfeb3504a6bd4",
+  "diagnostico_sql_por_etapa_sin_secretos": true,
+  "acepta_host_o_host_con_instancia_depotwms": true,
+  "puerto_tcp_explicito_e_instancia_verificada": true,
+  "reutiliza_secreto_para_servidor_equivalente": true,
+  "conserva_cifrado_y_perfil_de_lectura": true,
+  "conserva_corte_previo_si_falla": true,
+  "pruebas": {
+    "node_22": {
+      "aprobadas": 263,
+      "fallidas": 0
+    },
+    "mysql_centro": {
+      "aprobadas": 45,
+      "fallidas": 0
+    },
+    "browser_centro_existentes": {
+      "aprobadas": 18
+    },
+    "browser_diagnostico_repetido_tras_corregir_selector": {
+      "aprobadas": 1,
+      "fallidas": 0
+    }
+  },
+  "sql_server_real_contactado_desde_desarrollo": false,
+  "credenciales_o_datos_de_produccion_modificados_desde_desarrollo": false,
+  "apache_modificado": false
+}
