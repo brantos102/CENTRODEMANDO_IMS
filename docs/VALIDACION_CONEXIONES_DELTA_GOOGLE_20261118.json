@@ -1,0 +1,65 @@
+{
+  "ok": true,
+  "fecha_ecuador": "2026-11-18",
+  "revision_base": "38298798ac4ae27757649f8de621bba3272b7793",
+  "rama": "migracion/mysql-candidata-20261104",
+  "google": {
+    "permiso_nuevo": "spreadsheets.readonly",
+    "requiere_reautorizar": true,
+    "sede_segun_panel": true,
+    "sedes_soportadas": [
+      "UIO",
+      "GYE"
+    ],
+    "solo_archivos_referenciados_en_maestro": true,
+    "dos_lecturas_coincidentes_por_archivo": true,
+    "revision_sin_cambios_operativos": true,
+    "seleccion_explicita_para_aplicar": true,
+    "capturas_cero_conservadas": true,
+    "capturas_mysql_existentes_no_reemplazadas": true,
+    "stock_existente_no_modificado": true,
+    "textos_y_fotos_mysql_conservados": true,
+    "auditoria_importacion_por_etapa": true,
+    "conflictos_y_etapas_heredadas_para_revision": true,
+    "planes_cifrados_con_vigencia_aplicacion_horas": 2,
+    "reintentos_no_duplican": true,
+    "permisos_revalidados_por_actor_y_sede": true,
+    "sin_escrituras_en_fuentes_google": true
+  },
+  "instalador": {
+    "archivos_https_verificados": 18,
+    "incluye_centro_y_su_modulo": true,
+    "sin_ddl_nuevo": true,
+    "sin_privilegios_sql_nuevos": true
+  },
+  "pruebas": {
+    "node22": {
+      "correctas": 252,
+      "fallidas": 0
+    },
+    "python": {
+      "correctas": 168,
+      "fallidas": 0
+    },
+    "mysql": {
+      "correctas": 157,
+      "fallidas": 0,
+      "omitidas": 4,
+      "regresion_anterior": 150,
+      "google_delta_y_oauth": 7,
+      "nota": "Suite completa y verificación final del archivo de delta después de añadir el caso heredado."
+    },
+    "chromium": {
+      "correctas": 40,
+      "fallidas": 0,
+      "flujo_conexiones_y_delta_en_escritorio_y_movil": true
+    }
+  },
+  "cuenta_sql_empresarial_verificada_desde_este_entorno": false,
+  "oauth_corporativo_real_completado_desde_este_entorno": false,
+  "inventarios_reales_actualizados_desde_este_entorno": false,
+  "smtp_o_gmail_reales_utilizados_en_pruebas": false,
+  "apache_modificado": false,
+  "datos_reales_exportados": false,
+  "produccion_activada": false
+}

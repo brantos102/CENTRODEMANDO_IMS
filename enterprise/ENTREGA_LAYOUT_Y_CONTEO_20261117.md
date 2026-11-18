@@ -48,7 +48,7 @@ Una vez recibidos los paquetes, reintentar solamente la actualización desde SSH
 
 El pool operativo reserva una de las cinco conexiones de su cuenta para comprobaciones. Si el servicio anterior ocupa las cinco, solo ese error de capacidad difiere la comprobación hasta el reinicio propio; los errores de credenciales, permisos o histórico siguen deteniendo la actualización. La revisión no se confirma sin completar la verificación.
 
-El resumen correcto debe incluir `perfil_operacion_verificado: true`, `interfaz_actualizada: true`, `visor: "WEBGL_3D"`, `archivos_interfaz_verificados: 16` y la revisión instalada. Se comparan las huellas de HTML, JS, CSS y bibliotecas 3D servidas por HTTPS con los archivos de la revisión. Si hay una discrepancia o falla el perfil, se restaura la unidad anterior. Después del resultado correcto, recargar IMS con Ctrl+Shift+R.
+El resumen correcto debe incluir `perfil_operacion_verificado: true`, `interfaz_actualizada: true`, `visor: "WEBGL_3D"`, `archivos_interfaz_verificados: 18` y la revisión instalada. Se comparan las huellas de HTML, JS, CSS y bibliotecas 3D servidas por HTTPS con los archivos de la revisión. Si hay una discrepancia o falla el perfil, se restaura la unidad anterior. Después del resultado correcto, recargar IMS con Ctrl+Shift+R.
 
 ## Layout físico y alcance de las medidas
 
@@ -130,6 +130,10 @@ El avatar dispone de movimiento continuo, giro, cámara con obstáculos y rutas 
 
 La nueva revisión incorpora contornos y rótulos para las ubicaciones del documento, contexto atenuado, avatar articulado y recorrido automático al seleccionar otra ubicación transitable. Centro abre IMS en una pestaña independiente. La tabla completa permite filtros en el servidor sobre todas las líneas autorizadas; el análisis ciego conserva avance y pendientes. Solo ADMIN/COORDINADOR del Centro con supervisión del inventario habilitan cantidades o registran ajustes.
 
-La comprobación HTTPS de la actualización verifica 16 archivos, incluyendo los módulos de avatar, presentación de conteo, aplicación y navegación. Una instalación no se da por confirmada con archivos antiguos servidos. Se utiliza el mismo instalador de la revisión anterior y se conserva el corte importado.
+La comprobación HTTPS de la actualización verifica 18 archivos, incluyendo los módulos de avatar, presentación de conteo, aplicación y navegación. Una instalación no se da por confirmada con archivos antiguos servidos. Se utiliza el mismo instalador de la revisión anterior y se conserva el corte importado.
 
 En Conexiones se incluyeron los pasos para crear el cliente OAuth web y copiar la URI exacta del servidor. Google Cloud y el consentimiento siguen pendientes. La ocupación real requiere guardar y probar el usuario SQL de solo lectura en el servidor; la integración EAN SQL requiere además la vista autorizada. Estas conexiones externas no se presentan como probadas por las pruebas sintéticas.
+
+## Conexiones y novedades de Google
+
+La actualización del 18 de noviembre agrega lectura de Sheets y revisión de novedades para UIO/GYE, conservando las capturas de MySQL. Requiere nueva autorización del permiso de lectura de hojas. Consultar [la guía de conexiones y actualización](CONEXIONES_Y_ACTUALIZACION_GOOGLE_20261118.md) antes de aplicar el plan. La comprobación HTTPS incluye Centro y su módulo, para un total de 18 archivos.
