@@ -31,7 +31,7 @@ export function transicion(e,accion,p,actorId){
 }
 export const MESES=['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
 export function codigosDesdeFilas(filas,mesExplicito){
- exigir(Array.isArray(filas)&&filas.length>0&&filas.length<=1000);
+ exigir(Array.isArray(filas)&&filas.length>0&&filas.length<=20000);
  const h=filas[0].map(normal),mapMes=h.map(v=>MESES.indexOf(v)+1),tiene=mapMes.some(x=>x>0),out=[];
  const skuIndex=Math.max(0,h.findIndex(x=>['PRODUCTO','SKU','CODIGO','CODIGOPRODUCTO','PRODUCTOID'].includes(x.replace(/[^A-Z0-9]/g,'')))),abcIndex=h.indexOf('ABC');
  exigir(tiene||(Number.isInteger(mesExplicito)&&mesExplicito>=1&&mesExplicito<=12),'SOLICITUD_INVALIDA','Selecciona el mes cuando la tabla no tiene encabezados de meses.');

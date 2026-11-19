@@ -1,3 +1,4 @@
+import {instalarAyudaIMS} from './ayuda-ims.mjs';
 /** Navegación común: conserva el inventario seleccionado al pasar entre áreas. */
 const make=(tag,text,cls)=>{const e=document.createElement(tag);if(text)e.textContent=text;if(cls)e.className=cls;return e;};
 document.body.classList.add('suite-ims');
@@ -10,3 +11,5 @@ document.addEventListener('ims:inventario',e=>{const id=e.detail?.id;if(id&&/^[a
 window.addEventListener('storage',e=>{if(e.key==='ims_tema')document.body.classList.toggle('claro',e.newValue==='claro');});
 async function permisos(){try{const r=await fetch('/api/sesion',{credentials:'same-origin',cache:'no-store'});if(!r.ok)return;const s=await r.json();let crear=false;if(s.centroDisponible){const p=await fetch('/api/centro/perfil',{credentials:'same-origin',cache:'no-store'});if(p.ok)crear=(await p.json()).perfil?.permisos?.crear===true;}else if(s.operacionNativa){const p=await fetch('/api/operacion',{credentials:'same-origin',cache:'no-store'});if(p.ok)crear=(await p.json()).ambitos?.length>0;}for(const a of nav.querySelectorAll('a'))if(['/crear','/erp','/operacion'].includes(a.dataset.area))a.hidden=!crear;}catch{}}
 document.addEventListener('ims:sesion',()=>void permisos());void permisos();
+
+instalarAyudaIMS();

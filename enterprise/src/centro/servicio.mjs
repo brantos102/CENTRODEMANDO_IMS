@@ -1,3 +1,4 @@
+import {planificarCodigos} from './programacion-codigos.mjs';
 import {encolarCambioCalendario} from './agenda-automatica.mjs';
 import {monitorEnConexion} from './monitor.mjs';
 import {archivoLegado} from './legado.mjs';
@@ -22,7 +23,7 @@ async function cargarEventos(c,pf){
 }
 async function personas(c,pf){
  if(!pf.sedes.length)return [];
- const [ps]=await c.execute(`SELECT DISTINCT u.actor_id,u.correo,u.nombre,p.rol,p.rol_wms,a.activo,p.telefono FROM ims_auth_usuario u JOIN ims_op_actor a ON a.id=u.actor_id JOIN ims_cm_perfil p ON p.actor_id=u.actor_id JOIN ims_cm_acceso ac ON ac.actor_id=u.actor_id WHERE ac.sede IN (${marcador(pf.sedes)}) ORDER BY u.nombre,u.actor_id LIMIT 1000`,pf.sedes);
+ const [ps]=await c.execute(`SELECT DISTINCT u.actor_id,u.correo,u.nombre,p.rol,p.rol_wms,p.cambiar_clave,a.activo,p.telefono FROM ims_auth_usuario u JOIN ims_op_actor a ON a.id=u.actor_id JOIN ims_cm_perfil p ON p.actor_id=u.actor_id JOIN ims_cm_acceso ac ON ac.actor_id=u.actor_id WHERE ac.sede IN (${marcador(pf.sedes)}) ORDER BY u.nombre,u.actor_id LIMIT 1000`,pf.sedes);
  const [as]=await c.execute('SELECT actor_id,sede FROM ims_cm_acceso');return ps.map(x=>({...x,activo:!!x.activo,sedes:as.filter(a=>a.actor_id===x.actor_id).map(a=>a.sede)}));
 }
 export async function consultarCentro(pool,p,recurso,query={}){
@@ -76,8 +77,8 @@ export async function consultarCentro(pool,p,recurso,query={}){
  if(recurso==='codigos'){
   exigir(pf.sedes.includes(query.sede),'SIN_PERMISO','Sede no autorizada.');
   const q=texto(query.buscar??'',255),cli=texto(query.cliente??'',255),mes=query.mes?Number(query.mes):0;exigir(Number.isInteger(mes)&&mes>=0&&mes<=12);
-  const [cs]=await c.execute('SELECT id,cliente,sku,abc,meses FROM ims_cm_codigo WHERE sede=? AND (?=\'\' OR cliente=?) AND (?=\'\' OR LOCATE(?,sku)>0) ORDER BY cliente,sku LIMIT 5000',[query.sede,cli,cli,q,q]);
-  const datos=cs.map(x=>({...x,meses:parse(x.meses)}));return {datos:datos.filter(x=>!mes||x.meses.includes(mes)).slice(0,300),totalesPorMes:Array.from({length:12},(_,i)=>datos.filter(x=>x.meses.includes(i+1)).length),limite:300};
+  const [cs]=await c.execute('SELECT id,cliente,sku,abc,meses FROM ims_cm_codigo WHERE sede=? AND (?=\'\' OR cliente=?) AND (?=\'\' OR LOCATE(?,sku)>0) ORDER BY cliente,sku LIMIT 20001',[query.sede,cli,cli,q,q]);
+  exigir(cs.length<=20000,'SOLICITUD_INVALIDA','Hay más de 20.000 códigos; selecciona un cliente o filtra el SKU.');const datos=cs.map(x=>({...x,meses:parse(x.meses)}));return {datos:datos.filter(x=>!mes||x.meses.includes(mes)).slice(0,300),totalCoincidencias:datos.filter(x=>!mes||x.meses.includes(mes)).length,totalCodigos:datos.length,totalesPorMes:Array.from({length:12},(_,i)=>datos.filter(x=>x.meses.includes(i+1)).length),limite:300};
  }
  if(recurso==='archivo-legado'){const [[i]]=await c.execute('SELECT sede FROM ims_op_inventario WHERE id=?',[uuid(query.inventario)]);exigir(i&&pf.sedes.includes(i.sede),'SIN_PERMISO','Sede no autorizada.');return archivoLegado(c,p,query.inventario,query.hoja,Number(query.desde||0));}
  if(recurso==='legado'){
@@ -194,8 +195,10 @@ export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion,cl
    exigir(pf.rol==='ADMIN'&&s.actorId!==p.actorId&&typeof s.activo==='boolean','SIN_PERMISO','Solo el administrador modifica otras cuentas.');uuid(s.actorId);
    const [[u]]=await c.execute('SELECT actor_id FROM ims_cm_perfil WHERE actor_id=?',[s.actorId]);exigir(u,'SOLICITUD_INVALIDA','Cuenta no reconocida.');await c.execute('UPDATE ims_op_actor SET activo=? WHERE id=?',[s.activo?1:0,s.actorId]);await c.execute('UPDATE ims_auth_sesion SET revocada=1 WHERE actor_id=?',[s.actorId]);resultado={actorId:s.actorId,activo:s.activo};
   }else if(tipo==='codigos'){
-   exigir(pf.rol==='ADMIN'&&pf.sedes.includes(s.sede),'SIN_PERMISO','Carga de códigos reservada al administrador.');const cliente=texto(s.cliente,255,true),filas=codigosDesdeFilas(s.filas,s.mes);
-   for(const f of filas){const [[old]]=await c.execute('SELECT meses FROM ims_cm_codigo WHERE sede=? AND cliente=? AND sku=? FOR UPDATE',[s.sede,cliente,f.sku]);const meses=[...new Set([...(old?parse(old.meses):[]).filter(x=>!filas.mesesAfectados.includes(x)),...f.meses])].sort((a,b)=>a-b);await c.execute(`INSERT INTO ims_cm_codigo(id,sede,cliente,sku,abc,meses,origen) VALUES (?,?,?,?,?,?,'NATIVO') ON DUPLICATE KEY UPDATE abc=VALUES(abc),meses=VALUES(meses),origen='NATIVO'`,[randomUUID(),s.sede,cliente,f.sku,f.abc,JSON.stringify(meses)]);}resultado={cargados:filas.length};
+   exigir(pf.rol==='ADMIN'&&pf.sedes.includes(s.sede),'SIN_PERMISO','Carga de códigos reservada al administrador.');const cliente=texto(s.cliente,255,true);
+   if(s.alcance){const [actuales]=await c.execute('SELECT id,sku,abc,meses FROM ims_cm_codigo WHERE sede=? AND cliente=? ORDER BY sku FOR UPDATE',[s.sede,cliente]),plan=planificarCodigos({...s,cliente},actuales);exigir(plan.firma===s.firmaEsperada,'VERSION_DESACTUALIZADA','La programación o la tabla cambió. Revisa de nuevo la vista previa antes de aplicar.');for(const f of plan.propuestas)await c.execute(`INSERT INTO ims_cm_codigo(id,sede,cliente,sku,abc,meses,origen) VALUES (?,?,?,?,?,?,'NATIVO') ON DUPLICATE KEY UPDATE abc=VALUES(abc),meses=VALUES(meses),origen='NATIVO'`,[randomUUID(),s.sede,cliente,f.sku,f.abc,JSON.stringify(f.meses)]);resultado={...plan.resumen,cargados:plan.resumen.codigosCargados};antes={totalesPorMes:plan.resumen.antes};despues={totalesPorMes:plan.resumen.despues};}
+   else{const filas=codigosDesdeFilas(s.filas,s.mes);
+   for(const f of filas){const [[old]]=await c.execute('SELECT meses FROM ims_cm_codigo WHERE sede=? AND cliente=? AND sku=? FOR UPDATE',[s.sede,cliente,f.sku]);const meses=[...new Set([...(old?parse(old.meses):[]).filter(x=>!filas.mesesAfectados.includes(x)),...f.meses])].sort((a,b)=>a-b);await c.execute(`INSERT INTO ims_cm_codigo(id,sede,cliente,sku,abc,meses,origen) VALUES (?,?,?,?,?,?,'NATIVO') ON DUPLICATE KEY UPDATE abc=VALUES(abc),meses=VALUES(meses),origen='NATIVO'`,[randomUUID(),s.sede,cliente,f.sku,f.abc,JSON.stringify(meses)]);}resultado={cargados:filas.length};}
   }else exigir(false);
   if(['evento','accion','vincular'].includes(tipo)&&resultado.eventoId)await encolarCambioCalendario(c,resultado.eventoId,claveCentro);
   await c.execute('INSERT INTO ims_cm_auditoria(actor_id,operacion_id,tipo,hash,resultado,antes,despues) VALUES (?,?,?,?,?,?,?)',[p.actorId,s.operacionId,tipo,digest,JSON.stringify(resultado),JSON.stringify(antes),JSON.stringify(despues)]);
@@ -207,3 +210,5 @@ export async function accesoWmsNuevo(c,id){
  const [us]=await c.execute('SELECT p.actor_id,p.rol_wms,ic.cliente_id FROM ims_cm_perfil p JOIN ims_cm_acceso a ON a.actor_id=p.actor_id JOIN ims_op_inventario i ON i.sede=a.sede JOIN ims_op_inventario_cliente ic ON ic.inventario_id=i.id WHERE i.id=?',[id]);
  for(const u of us){const rol=u.rol_wms==='ADMIN'?'SUPERVISOR':u.rol_wms==='OPERADOR'?'OPERADOR':'AUDITOR';await c.execute('INSERT IGNORE INTO ims_op_permiso VALUES (?,?,?,?)',[u.actor_id,id,u.cliente_id,rol==='AUDITOR'?0:1]);await c.execute('INSERT IGNORE INTO ims_nat_perfil VALUES (?,?,?,?)',[u.actor_id,id,u.cliente_id,rol]);}
 }
+
+export async function previsualizarCodigos(pool,p,s){return transaccionOperativa(pool,p,async c=>{const pf=await perfilCentro(c,p);exigir(pf.rol==='ADMIN'&&pf.sedes.includes(s.sede),'SIN_PERMISO','La programación corresponde al administrador de la sede.');const cliente=texto(s.cliente,255,true),[actuales]=await c.execute('SELECT id,sku,abc,meses FROM ims_cm_codigo WHERE sede=? AND cliente=? ORDER BY sku',[s.sede,cliente]),plan=planificarCodigos({...s,cliente},actuales);return {firma:plan.firma,resumen:plan.resumen,muestra:plan.propuestas.slice(0,30)};});}

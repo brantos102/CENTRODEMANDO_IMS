@@ -1,0 +1,62 @@
+{
+  "formato": "ims-validacion-gantt-codigos-usuarios-v1",
+  "fecha": "2026-11-19",
+  "revision_base": "a22454e8ba161d0ad4a1368c40e9d5115da492ac",
+  "pruebas": {
+    "node": {
+      "total": 275,
+      "fallos": 0
+    },
+    "python": {
+      "total": 168,
+      "fallos": 0
+    },
+    "mysql": {
+      "centro": 52,
+      "google_delta": 7,
+      "fallos": 0
+    },
+    "navegador": {
+      "total": 24,
+      "fallos": 0
+    },
+    "navegador_ajuste_visual_final": {
+      "total": 2,
+      "fallos": 0
+    },
+    "archivos_https_verificados_por_instalador": 24
+  },
+  "funciones": {
+    "gantt_mensual_en_panel": true,
+    "gantt_anual": true,
+    "comentarios_y_ayuda_contextual": true,
+    "programacion_alcance_explicito": [
+      "MES",
+      "TABLA"
+    ],
+    "programacion_previsualizada_y_verificada": true,
+    "indicadores_k_m": true,
+    "maestro_cronograma": "UIO",
+    "usuarios_columnas_leidas": "A:H",
+    "contrasenas_google_leidas": false,
+    "cuentas_existentes_conservadas": true,
+    "cuentas_nuevas_inactivas_y_clave_temporal_requerida": true,
+    "revision_cifrada_y_vigencia_horas": 2,
+    "capturas_existentes_modificadas_por_migracion_centro": false,
+    "cambios_locales_conservados": true
+  },
+  "capturas_sinteticas": [
+    "docs/capturas/cronograma-codigos-grafico-sintetico-20261119.png",
+    "docs/capturas/ayuda-analisis-sintetico-20261119.png",
+    "docs/capturas/gantt-maestro-migrado-sintetico-20261119.png"
+  ],
+  "limites": {
+    "pruebas_con_datos_sinteticos": true,
+    "maestro_google_real_leido_desde_desarrollo": false,
+    "servidor_operativo_actualizado_desde_desarrollo": false,
+    "apache_modificado": false,
+    "puertos_abiertos": [],
+    "datos_empresariales_modificados": false,
+    "migracion_real_pendiente_de_revision_en_servidor": true
+  }
+}

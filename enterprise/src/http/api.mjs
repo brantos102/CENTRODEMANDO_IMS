@@ -12,7 +12,7 @@ import {consultarMapaInventario} from '../centro/mapa-inventario.mjs';
 import {iniciarGoogleOAuth,completarGoogleOAuth,callbackGoogle,consultarDiagnosticoGoogle} from '../centro/google-oauth.mjs';
 import {consultarCatalogos,importarCatalogo,resolverEAN,previsualizarCatalogo,originalCatalogo} from '../centro/catalogos.mjs';
 import {createServer} from 'node:http';
-import {consultarCentro,mutarCentro} from '../centro/servicio.mjs';
+import {consultarCentro,mutarCentro,previsualizarCodigos} from '../centro/servicio.mjs';
 import {crearDesdeCentro} from '../centro/crear.mjs';
 import {solicitarTrabajo,consultarTrabajo,descargarTrabajo} from '../centro/trabajos.mjs';
 import {consultarConectores,guardarConector} from '../centro/conectores.mjs';
@@ -194,7 +194,8 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           return json(res,200,await crearDesdeCentro({pool,principal,claveCentro,solicitud:await leerJson(req,32*1024*1024),obtenerVista:gestorERP?(actor,id)=>gestorERP.paraCrear(actor,id):undefined}));
         }
         if(req.method==='POST'&&ruta==='consolidar')return json(res,200,await consolidarCentro(pool,principal,await leerJson(req)));
-        if(req.method==='POST'&&['evento','accion','vincular','carpeta','archivar','perfil','clave','usuario','usuario-estado','usuario-clave','usuario-rol','codigos'].includes(ruta))return json(res,200,await mutarCentro({pool,principal,claveCentro,tipo:ruta,solicitud:await leerJson(req)}));
+        if(req.method==='POST'&&ruta==='codigos/previsualizar')return json(res,200,await previsualizarCodigos(pool,principal,await leerJson(req,4*1024*1024)));
+        if(req.method==='POST'&&['evento','accion','vincular','carpeta','archivar','perfil','clave','usuario','usuario-estado','usuario-clave','usuario-rol','codigos'].includes(ruta))return json(res,200,await mutarCentro({pool,principal,claveCentro,tipo:ruta,solicitud:await leerJson(req,ruta==='codigos'?4*1024*1024:undefined)}));
         return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
       }
       if(url.pathname.startsWith('/api/erp/')){
