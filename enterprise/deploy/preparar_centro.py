@@ -51,8 +51,19 @@ def validar_privilegios(admin=p.admin_mysql,completo=False):
     todos=admin(f'SHOW GRANTS FOR {op.ACCOUNT};')
     p.exigir(globales==[['USAGE']] and not esquemas and all(('`'+op.DB+'`.') in r[0] or r[0].startswith('GRANT USAGE ON *.*') for r in todos),'Privilegios fuera de la base propia.')
 
+def preparar_estado_sin_consolidar(admin=p.admin_mysql):
+    filas=admin("SELECT CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA='"+op.DB+"' AND CONSTRAINT_NAME='ck_ims_op_estado';")
+    p.exigir(len(filas)==1,'No se identificó la restricción de estados del inventario.')
+    estados=set(re.findall(r"'([A-Z_]+)'",filas[0][0]))
+    anteriores={'EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO'}
+    nuevos=anteriores|{'CERRADO_SIN_CONSOLIDAR'}
+    p.exigir(estados in (anteriores,nuevos),'La restricción de estados difiere del esquema autorizado.')
+    if estados==anteriores:
+        admin('ALTER TABLE `'+op.DB+"`.`ims_op_inventario` DROP CHECK ck_ims_op_estado, ADD CONSTRAINT ck_ims_op_estado CHECK (estado IN ('EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO','CERRADO_SIN_CONSOLIDAR'));")
+
 def preparar(repo,datos,revision):
     validar_privilegios()
+    preparar_estado_sin_consolidar()
     cfg=configuracion(datos);sol=json.loads(p.privado(datos/'piloto/solicitud.json').read_text());actor=sol['lector']['actorId']
     # DDL aditivo en la base propia; no cambia tablas operativas existentes.
     sql=(repo/'enterprise/sql/013_centro_mando.sql').read_text()+'\n'+(repo/'enterprise/sql/015_layout_ocupacion.sql').read_text()+'\n'+(repo/'enterprise/sql/016_evidencias_drive.sql').read_text()

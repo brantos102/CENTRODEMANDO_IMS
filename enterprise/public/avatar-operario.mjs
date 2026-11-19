@@ -22,3 +22,15 @@ export function crearOperario(){
  const sombra=new THREE.Mesh(new THREE.CircleGeometry(.34,24),new THREE.MeshBasicMaterial({color:0x172f54,transparent:true,opacity:.25,depthWrite:false}));sombra.position.z=.012;grupo.add(sombra);
  return {grupo,animar(distancia=0){const a=Math.sin(distancia*9)*.42;for(let i=0;i<2;i++){piernas[i].rotation.x=(i?-1:1)*a;brazos[i].rotation.x=(i?1:-1)*a*.7;}},reposar(){for(const m of [...piernas,...brazos])m.rotation.x=0;},destruir(){const geos=new Set(),mats=new Set();grupo.traverse(o=>{if(o.geometry&&!o.isSprite)geos.add(o.geometry);if(o.material)mats.add(o.material);});for(const g of geos)g.dispose();for(const m of mats){m.map?.dispose();m.dispose();}grupo.clear();}};
 }
+
+/** Escalera virtual de acceso: no altera la altura ni las medidas del catálogo. */
+export function crearEscalera(altura){
+ const h=Math.max(.4,Number(altura)||.4),grupo=new THREE.Group(),material=new THREE.MeshStandardMaterial({color:0x7f91a7,metalness:.7,roughness:.35}),amarillo=new THREE.MeshStandardMaterial({color:0xffcd29,roughness:.65});grupo.name='escalera-virtual';
+ function caja(w,d,z,x,y,alto,mat=material){const m=new THREE.Mesh(new THREE.BoxGeometry(w,d,z),mat);m.position.set(x,y,alto);grupo.add(m);return m;}
+ // Railings extend beyond the landing, with visible anti-slip steps.
+ for(const x of [-.29,.29]){caja(.045,.06,h+.85,x,0,(h+.85)/2);caja(.045,.04,h,x,-.43,h/2);}
+ const n=Math.ceil(h/.27);for(let i=1;i<=n;i++)caja(.55,.1,.035,0,0,i*h/n);
+ caja(.62,.55,.07,0,-.2,h,amarillo);for(const x of [-.32,.32]){caja(.025,.05,.8,x,-.43,h+.4);caja(.025,.45,.035,x,-.22,h+.8);}
+ for(const x of [-.29,.29])caja(.11,.17,.05,x,0,.025,amarillo);
+ return {grupo,altura:h,destruir(){grupo.traverse(o=>o.geometry?.dispose());material.dispose();amarillo.dispose();grupo.clear();}};
+}

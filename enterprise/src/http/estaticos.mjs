@@ -1,7 +1,7 @@
 import {readFile} from 'node:fs/promises';
 const ROOT=new URL('../../public/',import.meta.url);
 const FILES={
-  '/assets/ayuda-ims.mjs':['ayuda-ims.mjs','text/javascript; charset=utf-8'],
+  '/assets/monitor-filtros.mjs':['monitor-filtros.mjs','text/javascript; charset=utf-8'],'/assets/ayuda-ims.mjs':['ayuda-ims.mjs','text/javascript; charset=utf-8'],
   '/assets/avatar-operario.mjs':['avatar-operario.mjs','text/javascript; charset=utf-8'],
   '/assets/presentacion-conteo.mjs':['presentacion-conteo.mjs','text/javascript; charset=utf-8'],
   '/assets/ocupacion-resumen.mjs':['ocupacion-resumen.mjs','text/javascript; charset=utf-8'],

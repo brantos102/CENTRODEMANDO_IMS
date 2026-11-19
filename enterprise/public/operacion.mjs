@@ -56,6 +56,7 @@ async function detalle(mas=false){
  const n=state.inv,supervisor=n.perfiles.length&&n.perfiles.every(p=>p.rol==='SUPERVISOR');
  $('op-supervision').hidden=!supervisor;$('op-cargar').hidden=!n.borrador;$('op-activar').hidden=!n.borrador;
  $('op-depot').checked=n.mostrarDepot;for(const e of [$('op-depot').closest('label'),$('op-depot-guardar')])e.hidden=!n.puedeConfigurarCantidades;$('op-ajustar').closest('details').hidden=!n.puedeAjustar;
+ $('op-estado').hidden=n.estado==='CERRADO_SIN_CONSOLIDAR'&&!n.puedeCerrarSinConsolidar;for(const o of $('op-destino').options)o.hidden=o.value==='CERRADO_SIN_CONSOLIDAR'&&!n.puedeCerrarSinConsolidar;sincronizarCierre();
  $('op-detalle').textContent=n.codigo+' · '+n.estado+' · versión '+n.version+(n.borrador?' · Stock por activar':'');
  const clientes=n.perfiles.map(p=>{const c=state.contexto.clientes.find(c=>c.id===p.cliente_id);return new Option(c?.nombre||p.cliente_id,p.cliente_id);});
  $('op-cliente-csv').replaceChildren(...clientes.map(o=>o.cloneNode(true)));$('op-cli-permiso').replaceChildren(...clientes);
@@ -100,7 +101,9 @@ formulario('op-cargar',async()=>{
 });
 formulario('op-activar',async()=>{await mutar('activar',{...solicitud(),filasEsperadas:Number($('op-total-filas').value),depotEsperado:$('op-total-depot').value});await contexto();});
 formulario('op-asignar',async()=>{await mutar('asignar',{...solicitud(),actorId:$('op-actor').value,clienteId:$('op-cli-permiso').value,rol:$('op-rol').value});await detalle();});
-formulario('op-estado',async()=>{const b={...solicitud(),estado:$('op-destino').value};if(b.estado==='ENTREGADO'){b.fechaEntrega=$('op-entrega').value;b.confirmarIncompleto=$('op-incompleto').checked;}await mutar('estado',b);await contexto();});
+function sincronizarCierre(){const cerrado=state.inv?.estado==='CERRADO_SIN_CONSOLIDAR',cierre=cerrado||$('op-destino').value==='CERRADO_SIN_CONSOLIDAR';$('op-cierre-label').hidden=!cierre;$('op-cierre-nota').hidden=!cierre;$('op-cierre-motivo').required=cierre;if(cerrado)$('op-destino').value='EN_PROCESO';}
+$('op-destino').onchange=sincronizarCierre;
+formulario('op-estado',async()=>{const b={...solicitud(),estado:$('op-destino').value};if(b.estado==='CERRADO_SIN_CONSOLIDAR'||state.inv.estado==='CERRADO_SIN_CONSOLIDAR')b.motivo=$('op-cierre-motivo').value;if(b.estado==='ENTREGADO'){b.fechaEntrega=$('op-entrega').value;b.confirmarIncompleto=$('op-incompleto').checked;}await mutar('estado',b);await contexto();});
 formulario('op-ajustar',async()=>{await mutar('ajustar',{...solicitud(),lineaId:$('op-linea-ajuste').value,versionLinea:$('op-version-ajuste').value,ajuste:$('op-cantidad-ajuste').value,motivo:$('op-motivo').value,justificacion:$('op-justificacion').value});await detalle();});
 formulario('op-usuario-crear',async()=>{
  const body={sede:$('op-sede-cuenta').value,correo:$('op-correo-nuevo').value,nombre:$('op-nombre-nuevo').value,contrasena:$('op-clave-nueva').value};$('op-clave-nueva').value='';

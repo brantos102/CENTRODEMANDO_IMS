@@ -1,3 +1,4 @@
+import {encolarCambioCalendario} from '../centro/agenda-automatica.mjs';
 import {politicaConteo} from './politica-conteo.mjs';
 import {serieYaCapturada,entregarCronograma} from '../centro/legado.mjs';
 import {randomUUID,createHash} from 'node:crypto';
@@ -75,7 +76,7 @@ const CAMPOS={
  crear:['sede','codigo','clientes','fechaInicio','fechaProgramada','responsable'],
  lineas:['inventarioId','versionEsperada','filas'],activar:['inventarioId','versionEsperada','filasEsperadas','depotEsperado'],
  asignar:['inventarioId','versionEsperada','actorId','clienteId','rol'],
- estado:['inventarioId','versionEsperada','estado','confirmarIncompleto','fechaEntrega'],
+ estado:['inventarioId','versionEsperada','estado','confirmarIncompleto','fechaEntrega','motivo'],
  depot:['inventarioId','versionEsperada','visible'],
  ajustar:['inventarioId','versionEsperada','lineaId','versionLinea','ajuste','motivo','justificacion'],
  usuario:['sede','correo','nombre','contrasena'],
@@ -85,7 +86,7 @@ const CAMPOS={
 /** Todas las mutaciones se limitan a inventarios creados aquí, nunca al histórico migrado.
  * operacionId se conserva al reintentar, incluso si se pierde la respuesta de COMMIT.
  */
-export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s,conexion,legadoCentro=false}){
+export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s,conexion,legadoCentro=false,claveCentro}){
  exigir(Object.hasOwn(CAMPOS,tipo));campos(s,['operacionId',...CAMPOS[tipo]]);uuid(s.operacionId);
  const digest=hash({tipo,...s,...(tipo==='usuario'?{contrasena:undefined}:{})});
 
@@ -203,8 +204,9 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s,conex
    const captura=await prepararCaptura(c,n,p,s,tipo);result=captura.resultado;antes=captura.antes;persistir=captura.persistir;
   }else if(tipo==='estado'){
    exigir(!n.borrador,'INVENTARIO_NO_EDITABLE','Activa primero el stock.');
-   exigir(['EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO'].includes(s.estado));
-   const permitidos={EN_PROCESO:['EN_VALIDACION','CANCELADO'],EN_VALIDACION:['EN_PROCESO','ENTREGADO','CANCELADO'],ENTREGADO:[],CANCELADO:[]};
+   exigir(['EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO','CERRADO_SIN_CONSOLIDAR'].includes(s.estado));
+   const cierre=s.estado==='CERRADO_SIN_CONSOLIDAR'||n.estado==='CERRADO_SIN_CONSOLIDAR';if(cierre){await ambito(c,p,n.sede,true);texto(s.motivo,2000,true);exigir(s.motivo.trim().length>=10,'SOLICITUD_INVALIDA','Indica un motivo de al menos diez caracteres para cerrar sin consolidar o reabrir.');}
+   const permitidos={EN_PROCESO:['EN_VALIDACION','CANCELADO','CERRADO_SIN_CONSOLIDAR'],EN_VALIDACION:['EN_PROCESO','ENTREGADO','CANCELADO','CERRADO_SIN_CONSOLIDAR'],CERRADO_SIN_CONSOLIDAR:['EN_PROCESO'],ENTREGADO:[],CANCELADO:[]};
    exigir(permitidos[n.estado].includes(s.estado),'INVENTARIO_NO_EDITABLE','Transición no permitida. Los inventarios entregados quedan protegidos.');
    const [[av]]=await c.execute(`SELECT COUNT(*) AS total,SUM(l.conteo_1 IS NOT NULL OR l.conteo_2 IS NOT NULL OR l.conteo_final IS NOT NULL) AS contadas
     FROM ims_op_linea l JOIN ims_nat_linea x ON x.linea_id=l.id WHERE l.inventario_id=? AND TRIM(UPPER(x.categoria))<>'DIF_INV' AND TRIM(l.sku)<>''`,[n.id]);
@@ -215,8 +217,9 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s,conex
    }else exigir(s.confirmarIncompleto===undefined&&s.fechaEntrega===undefined);
    await c.execute('UPDATE ims_op_inventario SET estado=? WHERE id=?',[s.estado,n.id]);
    if(s.estado==='ENTREGADO')await c.execute('UPDATE ims_nat_inventario SET fecha_entrega=? WHERE inventario_id=?',[s.fechaEntrega,n.id]);
+   if(legadoCentro&&cierre&&claveCentro){const [vs]=await c.execute('SELECT evento_id FROM ims_cm_vinculo WHERE inventario_id=?',[n.id]);for(const v of vs)await encolarCambioCalendario(c,v.evento_id,claveCentro);}
    if(legadoCentro&&s.estado==='ENTREGADO')await entregarCronograma(c,{inventarioId:n.id,actorId:p.actorId,operacionId:s.operacionId});
-   result={inventarioId:n.id,estado:s.estado,fechaEntrega:s.fechaEntrega??null,incompleto,contadas:Number(av.contadas),total:Number(av.total),publicacionKpi:false,version:await nuevaVersion(c,n)};
+   result={inventarioId:n.id,estado:s.estado,...(cierre?{motivo:s.motivo.trim()}:{}),fechaEntrega:s.fechaEntrega??null,incompleto,contadas:Number(av.contadas),total:Number(av.total),publicacionKpi:false,version:await nuevaVersion(c,n)};
   }
   const salida={ok:true,operacionId:s.operacionId,...result};
   await c.execute('INSERT INTO ims_nat_evento(actor_id,operacion_id,tipo,inventario_id,payload_sha256,resultado,antes,despues) VALUES (?,?,?,?,?,?,?,?)',
@@ -258,7 +261,8 @@ export async function consultarOperacion(pool,p,id,{analisis=false,cursor=''}={}
   const [lineas]=await c.execute(`SELECT l.id,l.cliente_id,l.sku,l.version,l.conteo_1,l.conteo_2,l.conteo_final,l.observacion,l.nueva_posicion,
    d.posicion,d.descripcion,d.serie,d.lote,d.unidad,x.numero,x.categoria,cli.nombre AS cliente,p.rol ${select} ${base} AND l.id>? ORDER BY l.id LIMIT 51`,[...parametros,cursor]);
   const siguiente=lineas.length===51?lineas[49].id:null;
-  return {inventario:{id,estado:n.estado,sede:n.sede,codigo:n.codigo_operativo,version:n.version,borrador:!!n.borrador,
+  const [[adm]]=await c.execute('SELECT rol FROM ims_nat_ambito WHERE actor_id=? AND sede=?',[p.actorId,n.sede]);
+  return {inventario:{puedeCerrarSinConsolidar:adm?.rol==='ADMIN',id,estado:n.estado,sede:n.sede,codigo:n.codigo_operativo,version:n.version,borrador:!!n.borrador,
    fechaInicio:n.fecha_inicio,fechaEntrega:n.fecha_entrega,fechaProgramada:n.fecha_programada,responsable:n.responsable,
    mostrarDepot:!!n.mostrar_depot,perfiles:n.perfiles,...politica},
    lineas:lineas.slice(0,50).map(r=>({...r,version:String(r.version),...(!ciego?resultadoWms(r):{})})),siguiente};

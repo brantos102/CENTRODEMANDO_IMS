@@ -29,6 +29,9 @@ async function personas(c,pf){
 export async function consultarCentro(pool,p,recurso,query={}){
  return transaccionOperativa(pool,p,async c=>{
  let pf=await perfilCentro(c,p);if(['dashboard','eventos','analitica'].includes(recurso)&&query.sede){exigir(pf.sedes.includes(query.sede),'SIN_PERMISO','Sede no autorizada.');pf={...pf,sedes:[query.sede]};}
+ if(recurso==='sincronizacion'){
+  exigir(pf.rol==='ADMIN','SIN_PERMISO','El estado de fuentes corresponde al administrador.');const [jobs]=await c.execute("SELECT tipo,estado,resultado,actualizado_en,ultima_confirmacion FROM (SELECT tipo,estado,resultado,actualizado_en,ROW_NUMBER() OVER(PARTITION BY tipo ORDER BY actualizado_en DESC,id DESC) orden,MAX(CASE WHEN estado='COMPLETO' THEN actualizado_en END) OVER(PARTITION BY tipo) ultima_confirmacion FROM ims_cm_trabajo WHERE tipo IN ('GOOGLE_DELTA','GOOGLE_APLICAR','CENTRO_REVISION','CENTRO_APLICAR','CALENDARIO_CAMBIO','CALENDARIO_LOTE','REPORTES_CLIENTES')) j WHERE orden=1");const utc=v=>v instanceof Date?v.toISOString():v?String(v).replace(' ','T')+'Z':null;return {operaciones:jobs.map(j=>{let d={};try{d=parse(j.resultado);}catch{}return {tipo:j.tipo,estado:j.estado,ultimoIntento:utc(j.actualizado_en),ultimaConfirmacion:utc(j.ultima_confirmacion),incidencias:d.incidencias?.length||0,conflictos:(d.grupos||[]).reduce((n,g)=>n+Number(g.conflictos||0),0),gruposAplicables:(d.grupos||[]).filter(g=>g.aplicable).length,archivosConfirmados:d.archivosConfirmados??null,capturasAgregadas:d.capturasAgregadas??null};}),nota:'Leer no equivale a incorporar. Las capturas nuevas de Sheets requieren revisar y aplicar sus grupos; se conservan las capturas locales.'};
+ }
  if(recurso==='contexto'){
   const [clientes]=await c.execute('SELECT id,nombre FROM ims_op_cliente ORDER BY nombre');
   const [carpetas]=pf.sedes.length?await c.execute(`SELECT * FROM ims_cm_carpeta WHERE sede IN (${marcador(pf.sedes)}) ORDER BY nombre`,pf.sedes):[[]];
@@ -44,7 +47,7 @@ export async function consultarCentro(pool,p,recurso,query={}){
   const es=await cargarEventos(c,pf);
   const [eq]=pf.sedes.length?await c.execute(`SELECT q.*,u.nombre FROM ims_cm_equipo q JOIN ims_cm_evento e ON e.id=q.evento_id JOIN ims_auth_usuario u ON u.actor_id=q.actor_id WHERE e.eliminado=0 AND e.sede IN (${marcador(pf.sedes)})`,pf.sedes):[[]];
   const [vs]=pf.sedes.length?await c.execute(`SELECT v.*,i.codigo_operativo,i.estado,n.borrador,n.version FROM ims_cm_vinculo v JOIN ims_cm_evento e ON e.id=v.evento_id JOIN ims_op_inventario i ON i.id=v.inventario_id LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE e.sede IN (${marcador(pf.sedes)})`,pf.sedes):[[]];
-  for(const e of es){e.equipo=eq.filter(x=>x.evento_id===e.id);e.inventarios=vs.filter(x=>x.evento_id===e.id).map(x=>({...x,version:String(x.version??'0')}));}
+  for(const e of es){e.equipo=eq.filter(x=>x.evento_id===e.id);e.inventarios=vs.filter(x=>x.evento_id===e.id).map(x=>({...x,version:String(x.version??'0')}));e.cerradoSinConsolidar=e.inventarios.length>0&&e.inventarios.every(i=>i.estado==='CERRADO_SIN_CONSOLIDAR');}
   if(recurso==='eventos')return {eventos:query.desde?calendario(es,query.desde,query.hasta):es};
   if(recurso==='analitica'){
    exigir(pf.permisos.analitica,'SIN_PERMISO','Tu rol no consulta la analítica del equipo.');
@@ -60,12 +63,12 @@ export async function consultarCentro(pool,p,recurso,query={}){
   const [nombresClientes]=await c.execute('SELECT ic.inventario_id,c.nombre FROM ims_op_inventario_cliente ic JOIN ims_op_cliente c ON c.id=ic.cliente_id ORDER BY c.nombre');
   const grupos=new Map();for(const n of nativos){const key=n.archivo_drive||n.id;if(!grupos.has(key))grupos.set(key,[]);grupos.get(key).push(n);}
   for(const [key,ns] of grupos){const row=panel.find(r=>r.archivo_drive===key),m=ns[0];const total=ns.reduce((a,n)=>{const [v,f='']=String(n.unidades||'0').split('.');return a+BigInt(v+f.padEnd(9,'0'));},0n),unidades=String(total/1000000000n)+'.'+String(total%1000000000n).padStart(9,'0');
-   const vista={...(row||{id:m.id,archivo_drive:'',cliente:[...new Set(ns.flatMap(n=>nombresClientes.filter(c=>c.inventario_id===n.id).map(c=>c.nombre)))].join(' · '),sede:m.sede}),inventarios:ns.map(n=>({id:n.id,codigo:n.codigo_operativo,nativo:true})),fecha_inicio:row?.fecha_inicio||ns.map(n=>date(n.fecha_inicio)).sort()[0],fecha_fin:ns.every(n=>n.estado==='ENTREGADO')?ns.map(n=>date(n.fecha_entrega)).sort().at(-1):null,estado:ns.every(n=>n.estado==='ENTREGADO')?'Entregado':ns.every(n=>n.estado==='CANCELADO')?'Cancelado':'En proceso',responsable:m.responsable,unidades,referencias:Number(unicos.find(u=>u.grupo===key)?.referencias??0),posiciones:Number(unicos.find(u=>u.grupo===key)?.posiciones??0)};
+   const vista={...(row||{id:m.id,archivo_drive:'',cliente:[...new Set(ns.flatMap(n=>nombresClientes.filter(c=>c.inventario_id===n.id).map(c=>c.nombre)))].join(' · '),sede:m.sede}),inventarios:ns.map(n=>({id:n.id,codigo:n.codigo_operativo,nativo:true})),fecha_inicio:row?.fecha_inicio||ns.map(n=>date(n.fecha_inicio)).sort()[0],fecha_fin:ns.every(n=>n.estado==='ENTREGADO')?ns.map(n=>date(n.fecha_entrega)).sort().at(-1):null,estado:ns.every(n=>n.estado==='ENTREGADO')?'Entregado':ns.every(n=>n.estado==='CERRADO_SIN_CONSOLIDAR')?'Cerrado sin consolidar':ns.every(n=>n.estado==='CANCELADO')?'Cancelado':'En proceso',responsable:m.responsable,unidades,referencias:Number(unicos.find(u=>u.grupo===key)?.referencias??0),posiciones:Number(unicos.find(u=>u.grupo===key)?.posiciones??0)};
    if(row)Object.assign(row,vista);else panel.push(vista);
   }
   const [trabajos]=await c.execute('SELECT id,tipo,estado,progreso,resultado,actualizado_en FROM ims_cm_trabajo WHERE actor_id=? ORDER BY creado_en DESC LIMIT 10',[p.actorId]);
   const [[pub]]=await c.execute('SELECT COUNT(*) AS n FROM ims_cm_publicacion');
-  return {monitor:await monitorEnConexion(c,p,pf),indicadores:indicadores(es,panel),eventos:es,actualizadoEn:new Date().toISOString(),publicados:Number(pub.n),trabajos:trabajos.map(x=>({...x,resultado:parse(x.resultado)})),panel:panel.map(({datos,...r})=>r),kpiOrigen:'PANEL_DEL_CORTE_ELEGIDO'};
+  return {monitor:await monitorEnConexion(c,p,pf),indicadores:indicadores(es.filter(e=>!e.cerradoSinConsolidar),panel),eventos:es,actualizadoEn:new Date().toISOString(),publicados:Number(pub.n),trabajos:trabajos.map(x=>({...x,resultado:parse(x.resultado)})),panel:panel.map(({datos,...r})=>r),kpiOrigen:'PANEL_DEL_CORTE_ELEGIDO'};
  }
  if(recurso==='calidad'){
   exigir(pf.rol==='ADMIN','SIN_PERMISO','La revisión de datos corresponde al administrador.');
@@ -123,7 +126,7 @@ export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion,cl
   let resultado={},antes=null,despues=null;
   if(tipo==='evento'){
    exigir(pf.permisos.crear,'SIN_PERMISO','Tu rol no crea eventos.');const e=evento(s);exigir(pf.sedes.includes(e.sede),'SIN_PERMISO','Sede no autorizada.');
-   if(s.eventoId){uuid(s.eventoId);const [[old]]=await c.execute('SELECT * FROM ims_cm_evento WHERE id=? AND eliminado=0 FOR UPDATE',[s.eventoId]);exigir(old&&pf.sedes.includes(old.sede),'SIN_PERMISO','Evento no autorizado.');exigir(String(old.version)===String(s.version),'VERSION_DESACTUALIZADA','El evento cambió. Actualiza antes de guardar.');exigir(old.estado!=='Entregado','INVENTARIO_NO_EDITABLE','La entrega ya está registrada.');
+   if(s.eventoId){uuid(s.eventoId);const [[old]]=await c.execute('SELECT * FROM ims_cm_evento WHERE id=? AND eliminado=0 FOR UPDATE',[s.eventoId]);exigir(old&&pf.sedes.includes(old.sede),'SIN_PERMISO','Evento no autorizado.');exigir(['ADMIN','COORDINADOR'].includes(pf.rol)||old.responsable_id===p.actorId||!old.responsable_id&&pf.permisos.crear,'SIN_PERMISO','Solo la coordinación o el responsable puede modificar esta tarea y sus colaboradores.');exigir(String(old.version)===String(s.version),'VERSION_DESACTUALIZADA','El evento cambió. Actualiza antes de guardar.');exigir(old.estado!=='Entregado','INVENTARIO_NO_EDITABLE','La entrega ya está registrada.');
     if(old.sede!==e.sede||old.cliente!==e.cliente){const [[v]]=await c.execute('SELECT COUNT(*) n FROM ims_cm_vinculo WHERE evento_id=?',[s.eventoId]);exigir(Number(v.n)===0,'INVENTARIO_NO_EDITABLE','El evento vinculado conserva su sede y cliente. Crea otro evento para una operación distinta.');}
     if(!Object.hasOwn(s,'fechaFin'))e.fecha_fin=date(old.fecha_fin);
     antes=old;await c.execute(`UPDATE ims_cm_evento SET ${Object.keys(e).map(k=>'`'+k+'`=?').join(',')},version=version+1 WHERE id=?`,[...Object.values(e),s.eventoId]);resultado={eventoId:s.eventoId,version:String(BigInt(old.version)+1n)};
@@ -134,7 +137,7 @@ export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion,cl
    await permisosEquipo(c,resultado.eventoId);despues=e;
   }else if(tipo==='accion'){
    const [[e]]=await c.execute('SELECT * FROM ims_cm_evento WHERE id=? AND eliminado=0 FOR UPDATE',[uuid(s.eventoId)]);exigir(e,'SIN_PERMISO','Evento no disponible.');exigir(String(e.version)===String(s.version),'VERSION_DESACTUALIZADA','El evento cambió. Actualiza antes de continuar.');
-   const cambios=transicion(e,s.accion,pf,p.actorId);antes=e;
+   const cambios=transicion(e,s.accion,pf,p.actorId);if(cambios.responsable_id&&!e.responsable_id){const [[u]]=await c.execute('SELECT nombre FROM ims_auth_usuario WHERE actor_id=?',[cambios.responsable_id]);cambios.responsable_nombre=u?.nombre||e.responsable_nombre;}antes=e;
    if(s.accion==='apoyar')await asignarEquipo(c,e.id,p.actorId,'APOYO');
    if(s.accion==='finalizar'){
     const fin=fecha(s.fechaFin);exigir(fin>=date(e.fecha_inicio),'SOLICITUD_INVALIDA','La entrega no puede ser anterior al inicio.');cambios.fecha_fin=fin;

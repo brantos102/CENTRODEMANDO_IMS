@@ -1,3 +1,4 @@
+import {definirSedeArchivoGoogle} from '../centro/google-delta.mjs';
 import {datosReporteCliente,reporteClienteCSV} from '../centro/clientes-reportes.mjs';
 import {diagnosticoOcupacion} from '../centro/ocupacion-diagnostico.mjs';
 import {diagnosticoOAuth} from '../centro/google-diagnostico.mjs';
@@ -186,7 +187,8 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         if(req.method==='GET'&&reporte){
           const r=await reporteInventario(pool,principal,reporte[1],reporte[2]);res.writeHead(200,{'Content-Type':r.tipo,'Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);
         }
-        if(req.method==='GET'&&['contexto','perfil','usuarios','dashboard','eventos','analitica','codigos','auditoria','legado','archivo-legado','inventario','calidad'].includes(ruta)){
+        if(req.method==='POST'&&ruta==='google/sede-archivo')return json(res,200,await definirSedeArchivoGoogle(pool,principal,claveCentro,await leerJson(req)));
+        if(req.method==='GET'&&['sincronizacion','contexto','perfil','usuarios','dashboard','eventos','analitica','codigos','auditoria','legado','archivo-legado','inventario','calidad'].includes(ruta)){
           const q=opciones(url,['sede','cliente','buscar','mes','desde','hasta','fuente','inventario','hoja']);return json(res,200,await consultarCentro(pool,principal,ruta,q));
         }
         if(req.method==='POST'&&ruta==='inventarios'){
@@ -248,7 +250,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         if(req.method==='POST'&&op){
           if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Consulta tu sesión.',403);
           if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
-          return json(res,200,await ejecutarOperacion({pool,principal,tipo:op[1],solicitud:await leerJson(req),legadoCentro:centroHabilitado}));
+          return json(res,200,await ejecutarOperacion({pool,principal,tipo:op[1],solicitud:await leerJson(req),legadoCentro:centroHabilitado,claveCentro}));
         }
         if(req.method==='POST'&&url.pathname==='/api/operacion/serie/consultar'){
           const body=await leerJson(req);

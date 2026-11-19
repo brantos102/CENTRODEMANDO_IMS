@@ -48,3 +48,15 @@ class CentroDeployTest(unittest.TestCase):
   self.assertEqual(cm.CM_TABLES['ims_cm_catalogo'],'SELECT, INSERT')
   self.assertEqual(cm.CM_TABLES['ims_cm_catalogo_fila'],'SELECT, INSERT')
   self.assertEqual(cm.CM_TABLES['ims_cm_catalogo_actual'],'SELECT, INSERT, UPDATE')
+ def test_ampliacion_de_estados_es_idempotente_y_no_cambia_datos(self):
+  prev="(`estado` in (_utf8mb4'EN_PROCESO',_utf8mb4'EN_VALIDACION',_utf8mb4'ENTREGADO',_utf8mb4'CANCELADO'))"
+  llamadas=[]
+  def admin(q):
+   llamadas.append(q)
+   return [[prev]] if q.startswith('SELECT') else []
+  cm.preparar_estado_sin_consolidar(admin)
+  self.assertEqual(len(llamadas),2);self.assertIn('DROP CHECK',llamadas[1]);self.assertNotIn('UPDATE ',llamadas[1])
+  llamadas.clear();prev=prev.replace("'CANCELADO'", "'CANCELADO','CERRADO_SIN_CONSOLIDAR'")
+  cm.preparar_estado_sin_consolidar(admin);self.assertEqual(len(llamadas),1)
+  prev="estado IN ('OTRO_ESTADO')"
+  with self.assertRaises(op.p.PilotoError):cm.preparar_estado_sin_consolidar(admin)

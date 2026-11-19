@@ -1,0 +1,74 @@
+{
+  "formato": "ims-validacion-operacion-visual-v1",
+  "fecha": "2026-11-19",
+  "revision_base": "2fb207affb13f7973ba8ef261b109ecd536445e5",
+  "pruebas": {
+    "node": {
+      "total": 279,
+      "fallos": 0
+    },
+    "python": {
+      "total": 169,
+      "fallos": 0
+    },
+    "mysql": {
+      "centro": 54,
+      "google_delta": 9,
+      "fallos": 0
+    },
+    "navegador": {
+      "total": 27,
+      "fallos": 0
+    },
+    "navegador_revision_final_asistente": {
+      "total": 3,
+      "fallos": 0
+    },
+    "archivos_https_verificados_por_instalador": 28
+  },
+  "funciones": {
+    "conteo_compacto_con_captura_y_notas_en_linea": true,
+    "cantidad_vacia_no_es_cero": true,
+    "conteo_ciego_conservado": true,
+    "escalera_y_avatar_en_altura": true,
+    "monitor_periodos_dias": [
+      1,
+      7,
+      15,
+      30
+    ],
+    "monitor_periodo_inicial_dias": 15,
+    "estado_administrativo": "CERRADO_SIN_CONSOLIDAR",
+    "cierre_con_motivo_auditado_y_reapertura_administrativa": true,
+    "cierre_no_publica_consolidado": true,
+    "cierre_prepara_cambio_de_calendar": true,
+    "agenda_anual_modal": true,
+    "celdas_semanales_abren_tarea": true,
+    "crear_desde_tarea_existente": true,
+    "restriccion_servidor_edicion_por_rol": true,
+    "invitaciones_calendar_opcionales_y_sin_reenvio_si_no_cambia": true,
+    "remitente_reemplazable": true,
+    "estado_separado_lectura_e_incorporacion_sheets": true,
+    "lecturas_parciales_identificadas": true,
+    "asignacion_de_sede_google_desde_ims": true,
+    "filas_repetidas_solo_se_concilian_si_identidad_de_negocio_univoca": true
+  },
+  "capturas_sinteticas": [
+    "docs/capturas/ims-conteo-compacto-sintetico-20261119.png",
+    "docs/capturas/ims-escalera-nivel-alto-sintetico-20261119.png",
+    "docs/capturas/crear-desde-agenda-sintetico-20261119.png",
+    "docs/capturas/google-revision-parcial-sede-sintetico-20261119.png"
+  ],
+  "limites": {
+    "pruebas_desarrollo_con_datos_sinteticos": true,
+    "evidencia_de_lectura_real_proporcionada_por_usuario": "2026-11-19T14:37:57.595Z",
+    "evidencia_real_indica_lectura_parcial": true,
+    "incorporacion_real_google_confirmada": false,
+    "maestro_real_consultado_desde_desarrollo": false,
+    "despliegue_servidor_real_desde_desarrollo": false,
+    "apache_modificado": false,
+    "puertos_abiertos": [],
+    "datos_empresariales_modificados": false,
+    "aprobacion_produccion_pendiente_de_conciliacion_y_aceptacion": true
+  }
+}
