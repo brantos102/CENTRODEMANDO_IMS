@@ -106,4 +106,13 @@ Los huecos solicitados llevan contorno amarillo y rótulos seleccionables sobre 
 4. Introducir ID y secreto exclusivamente en el formulario privado de Conexiones. Elegir cuenta, calendario y permisos necesarios; guardar y autorizar con Google.
 5. Verificar cuenta autorizada y realizar una prueba de Calendar y correo a destinatario elegido. El mismo formulario permite sustituir la cuenta temporal por la oficial.
 
-La creación del cliente y el consentimiento siguen pendientes en Google Cloud. La conexión SQL real de ocupación se configura en el formulario privado de Conexiones: servidor `192.168.4.12`, puerto `1433`, usuario de solo lectura y base de datos autorizada; si se deja la base vacía se utiliza la predeterminada de ese usuario. No introducir secretos en el chat ni en GitHub. La consulta EAN empresarial todavía requiere una vista autorizada; hasta entonces continúa el catálogo importado.
+El estado real de la cuenta y su consentimiento se consulta en Conexiones. Si la cuenta ya está autorizada no hace falta crear otro cliente OAuth; los permisos adicionales de escritura de reportes se autorizan al activar esa opción. La conexión SQL real de ocupación se configura en el formulario privado de Conexiones: servidor `192.168.4.12`, puerto TCP real confirmado de DEPOTWMS (no suponer 1433), usuario de solo lectura y base de datos autorizada; si se deja la base vacía se utiliza la predeterminada de ese usuario. No introducir secretos en el chat ni en GitHub. La consulta EAN empresarial todavía requiere una vista autorizada; hasta entonces continúa el catálogo importado.
+
+
+## ITSANET IMS unificado · actualización 19 de noviembre
+
+El Centro de Mando incorpora Monitor operativo de hoy, matriz anual, próximos conteos, búsqueda de cuentas y reportes por cliente. Desde el monitor se abre la ventana de conteo en otra pestaña con la misma cuenta. Los indicadores se abrevian con K/M; los conteos, tablas y archivos conservan cantidades exactas.
+
+En conteo, Inicio contiene el mapa, Conteo físico permite escanear y registrar, Tabla del inventario permite consultar y filtrar todas las filas, y Series, Análisis y Adicionales conservan sus operaciones. Gestionar abre la supervisión únicamente con permiso. Las herramientas secundarias se agrupan en desplegables. Seleccionar una ubicación coloca el avatar inmediatamente; el doble clic abre el conteo autorizado de esa posición. Caminar desde la posición anterior es una opción manual, con un encuadre más amplio.
+
+La configuración completa, los horarios, el alcance de los reportes Sheets y las pruebas de aceptación se describen en ENTREGA_UNIFICACION_IMS_20261119.md y su PDF.

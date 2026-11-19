@@ -1,0 +1,75 @@
+{
+  "formato": "ims-unificacion-validacion-v1",
+  "fecha_ecuador": "2026-11-19",
+  "revision_base": "026eeea9ebf51527a5b8aace7f4cfa4c90acc53d",
+  "funcionalidades": {
+    "monitor_diario_por_acceso": true,
+    "ceros_confirmados_incluidos": true,
+    "k_m_solo_presentacion": true,
+    "conteo_a_ciegas_conservado": true,
+    "navegacion_duplicada_oculta_en_conteo": true,
+    "seleccion_avatar_inmediata": true,
+    "recorrido_manual_opcional": true,
+    "camara_encuadra_ubicacion_y_entorno": true,
+    "matriz_anual_cronograma": true,
+    "busqueda_y_filtro_cuentas": true,
+    "agenda_con_tarea_transaccional": true,
+    "avisos_proximos_conteos_en_ims": true,
+    "recordatorios_por_destinatario_evento_dia": true,
+    "csv_por_inventario_y_por_cliente": true,
+    "consulta_ims_estable_autenticada_por_cliente": true,
+    "reportes_sheets_mismos_archivos_uio": true,
+    "hojas_originales_y_permisos_drive_conservados": true,
+    "escritura_raw_verificada_antes_de_publicar": true,
+    "lectura_google_programada_con_aplicacion_revisada": true
+  },
+  "pruebas": {
+    "node_22": {
+      "aprobadas": 269,
+      "fallidas": 0
+    },
+    "python": {
+      "aprobadas": 168,
+      "fallidas": 0
+    },
+    "mysql_centro": {
+      "aprobadas": 50,
+      "fallidas": 0
+    },
+    "mysql_delta_google": {
+      "aprobadas": 7,
+      "fallidas": 0
+    },
+    "navegador_centro": {
+      "aprobadas": 21,
+      "fallidas": 0
+    },
+    "google_y_datos_sinteticos": true,
+    "archivos_verificados_por_https_en_instalador": 21
+  },
+  "horarios_ecuador": {
+    "publicacion_kpi": "18:30",
+    "preparar_revision_google_opcional": "18:45",
+    "reportes_sheets_opcional": "19:00",
+    "recordatorios_opcionales": "08:00–17:30; hoy y próximos tres días"
+  },
+  "configuracion_pendiente_en_servidor": {
+    "activar_opciones_que_se_usaran": true,
+    "nuevo_consentimiento_para_escritura_sheets": true,
+    "probar_calendar_y_reportes_reales": true,
+    "destinos_de_reportes_gye_requieren_historial_autorizado": true
+  },
+  "firebase": {
+    "evaluado": true,
+    "instalado": false,
+    "alternativa_actual": "Avisos internos, Gmail y Calendar"
+  },
+  "triggers_apps_script_modificados": false,
+  "envios_reales_o_publicaciones_empresariales_desde_desarrollo": false,
+  "datos_o_cuentas_de_produccion_modificados_desde_desarrollo": false,
+  "apache_modificado": false,
+  "capturas_sinteticas": [
+    "docs/capturas/monitor-unificado-sintetico-20261118.png",
+    "docs/capturas/seleccion-inmediata-3d-sintetico-20261119.png"
+  ]
+}

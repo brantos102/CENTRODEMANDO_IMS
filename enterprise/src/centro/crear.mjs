@@ -10,7 +10,7 @@ import {uuidEstable} from '../migracion/modelo.mjs';
 import {exigir,hash,uuid} from './dominio.mjs';
 /** Una sola transacción incluye stock, carpeta, evento, equipo y permisos.
  * El identificador se conserva en el navegador hasta confirmar su resultado. */
-export async function crearDesdeCentro({pool,principal:p,solicitud:s,obtenerVista}){
+export async function crearDesdeCentro({pool,principal:p,solicitud:s,obtenerVista,claveCentro}){
  uuid(s.operacionId);const digest=hash(s);
  return transaccionOperativa(pool,p,async c=>{
   const pf=await perfilCentro(c,p,true);exigir(pf.permisos.crear,'SIN_PERMISO','Tu rol no crea inventarios.');
@@ -36,11 +36,11 @@ export async function crearDesdeCentro({pool,principal:p,solicitud:s,obtenerVist
    }
   }
   let destino={carpetaId:s.carpetaId};if(s.destinoAutomatico===true){const [[i]]=await c.execute('SELECT sede FROM ims_op_inventario WHERE id=?',[resultado.inventarioId]);const clienteId=uuid(s.clientePrincipalId);const [[permitido]]=await c.execute('SELECT 1 n FROM ims_op_inventario_cliente WHERE inventario_id=? AND cliente_id=?',[resultado.inventarioId,clienteId]);exigir(permitido,'SIN_PERMISO','El cliente principal debe pertenecer al inventario.');destino=await asegurarDestino(c,{sede:i.sede,fechaInicio:s.fechaInicio,clienteId});}
-  await mutarCentro({pool,principal:p,conexion:c,tipo:'archivar',solicitud:{operacionId:op('carpeta'),inventarioId:resultado.inventarioId,carpetaId:destino.carpetaId}});
+  await mutarCentro({pool,principal:p,conexion:c,claveCentro,tipo:'archivar',solicitud:{operacionId:op('carpeta'),inventarioId:resultado.inventarioId,carpetaId:destino.carpetaId}});
   let eventoId;
-  if(s.vinculacion==='NUEVO'){const r=await mutarCentro({pool,principal:p,conexion:c,tipo:'evento',solicitud:{...s.evento,operacionId:op('evento')}});eventoId=r.eventoId;}
+  if(s.vinculacion==='NUEVO'){const r=await mutarCentro({pool,principal:p,conexion:c,claveCentro,tipo:'evento',solicitud:{...s.evento,operacionId:op('evento')}});eventoId=r.eventoId;}
   if(s.vinculacion==='EXISTENTE')eventoId=uuid(s.eventoId);
-  if(eventoId)await mutarCentro({pool,principal:p,conexion:c,tipo:'vincular',solicitud:{operacionId:op('vinculo'),eventoId,inventarioId:resultado.inventarioId}});
+  if(eventoId)await mutarCentro({pool,principal:p,conexion:c,claveCentro,tipo:'vincular',solicitud:{operacionId:op('vinculo'),eventoId,inventarioId:resultado.inventarioId}});
   await accesoWmsNuevo(c,resultado.inventarioId);
   resultado={...resultado,operacionId:s.operacionId,eventoId:eventoId??null,carpetaId:destino.carpetaId,rutaDestino:destino.ruta??null};
   await c.execute('INSERT INTO ims_cm_auditoria(actor_id,operacion_id,tipo,hash,resultado,antes,despues) VALUES (?,?,?,?,?,\'null\',?)',[p.actorId,s.operacionId,'crear-inventario',digest,JSON.stringify(resultado),JSON.stringify({fuente:s.fuente,eventoId:eventoId??null})]);return resultado;

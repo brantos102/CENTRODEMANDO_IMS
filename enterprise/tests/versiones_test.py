@@ -186,14 +186,14 @@ class ReleaseGitTest(unittest.TestCase):
             up.preparar_release(self.repo, self.new, enlace, lambda _: None)
 
     def test_interfaz_https_debe_coincidir_con_todos_los_modulos_preparados(self):
-        nombres={'/ims':'index.html','/assets/ims.mjs':'ims.mjs','/assets/ims.css':'ims.css','/assets/visor-almacen-3d.mjs':'visor-almacen-3d.mjs','/assets/vendor/three.module.min.js':'vendor/three.module.min.js','/assets/vendor/OrbitControls.js':'vendor/OrbitControls.js','/assets/navegacion-almacen.mjs':'navegacion-almacen.mjs','/assets/evidencias-ui.mjs':'evidencias-ui.mjs','/assets/ruta-destino.mjs':'ruta-destino.mjs','/assets/ocupacion-resumen.mjs':'ocupacion-resumen.mjs','/assets/avatar-operario.mjs':'avatar-operario.mjs','/assets/presentacion-conteo.mjs':'presentacion-conteo.mjs','/assets/app.mjs':'app.mjs','/assets/interfaz.mjs':'interfaz.mjs','/catalogos':'catalogos.html','/assets/catalogos.mjs':'catalogos.mjs','/centro':'centro.html','/assets/centro.mjs':'centro.mjs'}
+        nombres={'/ims':'index.html','/assets/ims.mjs':'ims.mjs','/assets/ims.css':'ims.css','/assets/visor-almacen-3d.mjs':'visor-almacen-3d.mjs','/assets/vendor/three.module.min.js':'vendor/three.module.min.js','/assets/vendor/OrbitControls.js':'vendor/OrbitControls.js','/assets/navegacion-almacen.mjs':'navegacion-almacen.mjs','/assets/evidencias-ui.mjs':'evidencias-ui.mjs','/assets/ruta-destino.mjs':'ruta-destino.mjs','/assets/ocupacion-resumen.mjs':'ocupacion-resumen.mjs','/assets/avatar-operario.mjs':'avatar-operario.mjs','/assets/presentacion-conteo.mjs':'presentacion-conteo.mjs','/assets/app.mjs':'app.mjs','/assets/interfaz.mjs':'interfaz.mjs','/catalogos':'catalogos.html','/assets/catalogos.mjs':'catalogos.mjs','/centro':'centro.html','/assets/centro.mjs':'centro.mjs','/assets/centro.css':'centro.css','/assets/cantidades.mjs':'cantidades.mjs','/assets/comun-centro.mjs':'comun-centro.mjs'}
         for n in nombres.values():
             f=self.repo/'enterprise/public'/n;f.parent.mkdir(parents=True,exist_ok=True);f.write_text('NUEVA '+n)
         calls=[]
         def request(method,path):
             calls.append((method,path));return 200,{},(self.repo/'enterprise/public'/nombres[path]).read_bytes()
         r=up.comprobar_interfaz(request,self.repo)
-        self.assertTrue(r['interfaz_actualizada']);self.assertEqual(r['visor'],'WEBGL_3D');self.assertEqual(len(calls),18)
+        self.assertTrue(r['interfaz_actualizada']);self.assertEqual(r['visor'],'WEBGL_3D');self.assertEqual(len(calls),21)
         def anterior(method,path):return (200,{},b'INTERFAZ_ANTERIOR')
         with self.assertRaisesRegex(up.p.PilotoError,'no coincide'):
             up.comprobar_interfaz(anterior,self.repo)

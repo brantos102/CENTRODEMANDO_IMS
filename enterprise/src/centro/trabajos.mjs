@@ -1,3 +1,4 @@
+import {publicarReportesClientes} from './reportes-google.mjs';
 import {prepararDeltaGoogle,aplicarDeltaGoogle} from './google-delta.mjs';
 import {cuentaCorreo,enviarCorreoConfigurado} from './google-oauth.mjs';
 import {randomUUID} from 'node:crypto';
@@ -11,8 +12,8 @@ import {zip} from './archivos.mjs';
 import {obtenerConector,sincronizarEventoGoogle} from './conectores.mjs';
 const parse=x=>typeof x==='string'?JSON.parse(x):x;
 export async function solicitarTrabajo(pool,p,s){
- uuid(s.operacionId);exigir(['AUDITORIA','PUBLICACION','RECORDATORIO','CALENDARIO','CALENDARIO_LOTE','ZIP','REPORTE','GOOGLE_DELTA','GOOGLE_APLICAR'].includes(s.tipo));
- return transaccionOperativa(pool,p,async c=>{const pf=await perfilCentro(c,p,true),per=pf.permisos;exigir(['AUDITORIA','PUBLICACION','GOOGLE_DELTA','GOOGLE_APLICAR'].includes(s.tipo)?pf.rol==='ADMIN':['ZIP','REPORTE'].includes(s.tipo)?per.exportar:per.recordatorios,'SIN_PERMISO','Tu rol no tiene este permiso.');
+ uuid(s.operacionId);exigir(['AUDITORIA','PUBLICACION','RECORDATORIO','CALENDARIO','CALENDARIO_LOTE','ZIP','REPORTE','GOOGLE_DELTA','GOOGLE_APLICAR','REPORTES_CLIENTES'].includes(s.tipo));
+ return transaccionOperativa(pool,p,async c=>{const pf=await perfilCentro(c,p,true),per=pf.permisos;exigir(['AUDITORIA','PUBLICACION','GOOGLE_DELTA','GOOGLE_APLICAR','REPORTES_CLIENTES'].includes(s.tipo)?pf.rol==='ADMIN':['ZIP','REPORTE'].includes(s.tipo)?per.exportar:per.recordatorios,'SIN_PERMISO','Tu rol no tiene este permiso.');
  if(s.tipo==='GOOGLE_DELTA')exigir(pf.sedes.some(s=>['UIO','GYE'].includes(s)),'SIN_PERMISO','Se requiere una sede autorizada.');if(s.tipo==='GOOGLE_APLICAR'){uuid(s.planId);exigir(pf.sedes.some(s=>['UIO','GYE'].includes(s))&&Array.isArray(s.grupos)&&s.grupos.length>0&&s.grupos.length<=1000&&s.grupos.every(x=>/^[a-f0-9]{64}$/.test(x)));}
  const d=hash(s),[[prev]]=await c.execute('SELECT hash,resultado FROM ims_cm_auditoria WHERE actor_id=? AND operacion_id=?',[p.actorId,s.operacionId]);if(prev){exigir(prev.hash===d,'OPERACION_REUTILIZADA','La operación corresponde a otra solicitud.');return parse(prev.resultado);}
  if(['RECORDATORIO','CALENDARIO'].includes(s.tipo)){uuid(s.eventoId);const [[e]]=await c.execute('SELECT sede FROM ims_cm_evento WHERE id=?',[s.eventoId]);exigir(e&&pf.sedes.includes(e.sede),'SIN_PERMISO','Evento no autorizado.');}
@@ -34,16 +35,7 @@ export function iniciarTrabajadorCentro({pool,clave,actorAutomatico,enviar,googl
  let ocupado=false,cerrado=false,enCurso=Promise.resolve(),ultimoPlan='';
  const ejecutar=async()=>{if(ocupado||cerrado)return;ocupado=true;
  try{
-  if(actorAutomatico){
-   const hoy=diaEcuador(),hora=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Guayaquil',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()),minuto=hoy+' '+hora;
-   if(minuto!==ultimoPlan){ultimoPlan=minuto;
-    if(hora>='18:30')await solicitarTrabajo(pool,{actorId:actorAutomatico},{operacionId:uuidEstable('cm-diario',[hoy,'18:30']),tipo:'PUBLICACION'});
-    if(hora>='08:00'&&hora<'17:30'){
-     let smtp=null;try{smtp=(await cuentaCorreo(pool,clave)).config;}catch{}
-     if(smtp?.automaticos){const [es]=await pool.execute("SELECT id FROM ims_cm_evento WHERE eliminado=0 AND estado<>'Entregado' AND fecha_inicio<=? AND fecha_inicio>=? ORDER BY fecha_inicio LIMIT 200",[sumarDias(hoy,3),sumarDias(hoy,-30)]);for(const e of es){const [us]=await pool.execute("SELECT DISTINCT u.correo FROM ims_cm_equipo q JOIN ims_auth_usuario u ON u.actor_id=q.actor_id JOIN ims_op_actor a ON a.id=u.actor_id WHERE q.evento_id=? AND q.estado='ACTIVO' AND a.activo=1",[e.id]);if(us.length)await solicitarTrabajo(pool,{actorId:actorAutomatico},{operacionId:uuidEstable('cm-recordatorio',[hoy,e.id]),tipo:'RECORDATORIO',eventoId:e.id,destinatarios:us.map(x=>x.correo).sort()});}}
-    }
-   }
-  }
+  if(actorAutomatico){const ahora=new Date(),hoy=diaEcuador(ahora),hora=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Guayaquil',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(ahora),minuto=hoy+' '+hora;if(minuto!==ultimoPlan){ultimoPlan=minuto;await programarServiciosCentro(pool,{clave,actorId:actorAutomatico,hoy,hora});}}
   // OAuth tiene su propio vencimiento y consumo de un solo uso en el retorno.
   // TIMESTAMP se compara y escribe con la hora de la misma sesión MySQL.
   await pool.execute("UPDATE ims_cm_trabajo SET estado='ERROR',resultado=?,actualizado_en=CURRENT_TIMESTAMP(6) WHERE tipo<>'GOOGLE_OAUTH' AND estado='EJECUTANDO' AND actualizado_en<DATE_SUB(CURRENT_TIMESTAMP(6),INTERVAL 15 MINUTE)",[JSON.stringify({mensaje:'No se confirmó este trabajo. Revisa el resultado antes de repetir un envío.'})]);
@@ -52,6 +44,7 @@ export function iniciarTrabajadorCentro({pool,clave,actorAutomatico,enviar,googl
   try{
    if(job.tipo==='GOOGLE_DELTA')r=await prepararDeltaGoogle(pool,p,clave,job.id,{...(clienteHojas?{cliente:clienteHojas}:{}),onProgress:async n=>{await pool.execute('UPDATE ims_cm_trabajo SET progreso=?,actualizado_en=CURRENT_TIMESTAMP(6) WHERE id=?',[n,job.id]);}});
    else if(job.tipo==='GOOGLE_APLICAR')r=await aplicarDeltaGoogle(pool,p,clave,{...s,operacionId:uuidEstable('google-aplicar-trabajo',job.id)});
+   else if(job.tipo==='REPORTES_CLIENTES')r=await publicarReportesClientes(pool,p,clave,job.id);
    else if(['AUDITORIA','PUBLICACION'].includes(job.tipo))r=await consolidarCentro(pool,p,{operacionId:uuidEstable('cm-consolidacion',job.id),publicar:job.tipo==='PUBLICACION'});
    else if(job.tipo==='CALENDARIO_LOTE'){
     const config=await obtenerConector(pool,'GOOGLE_CALENDAR',clave),firma=hash(config),eventos=await transaccionOperativa(pool,p,async c=>{const pf=await perfilCentro(c,p);exigir(pf.permisos.recordatorios,'SIN_PERMISO','Permiso de calendario revocado.');const sedes=s.sede?[s.sede]:pf.sedes;exigir(sedes.length&&sedes.every(x=>pf.sedes.includes(x)),'SIN_PERMISO','Sede no autorizada.');const [rs]=await c.execute('SELECT * FROM ims_cm_evento WHERE sede IN ('+sedes.map(()=>'?').join(',')+') AND fecha_inicio BETWEEN ? AND ? ORDER BY fecha_inicio,id LIMIT 2001',[...sedes,s.desde,s.hasta]);exigir(rs.length<=2000,'SOLICITUD_INVALIDA','Selecciona un periodo menor de la agenda.');return rs;});
@@ -64,8 +57,8 @@ export function iniciarTrabajadorCentro({pool,clave,actorAutomatico,enviar,googl
    }else{
     const e=await transaccionOperativa(pool,p,async c=>{const pf=await perfilCentro(c,p);exigir(pf.permisos.recordatorios,'SIN_PERMISO','Permiso revocado.');const [[e]]=await c.execute('SELECT * FROM ims_cm_evento WHERE id=?',[s.eventoId]);exigir(e&&pf.sedes.includes(e.sede),'SIN_PERMISO','Evento no autorizado.');return e;});
     const date=x=>x instanceof Date?x.toISOString().slice(0,10):x;e.fecha_inicio=date(e.fecha_inicio);e.fecha_fin=date(e.fecha_fin);
-    if(job.tipo==='RECORDATORIO'){exigir(!e.eliminado,'SOLICITUD_INVALIDA','El evento fue eliminado.');r=await correo({id:job.id,destinatarios:s.destinatarios,asunto:'Recordatorio de inventario · '+e.cliente,texto:[e.cliente+' · '+e.titulo,'Fecha: '+e.fecha_inicio,'Responsable: '+e.responsable_nombre,'Estado: '+e.estado,e.observacion,'Centro de Mando · ITSANET IMS'].join('\n')});}
-    else r=await google(await obtenerConector(pool,'GOOGLE_CALENDAR',clave),e);
+    if(job.tipo==='RECORDATORIO'){if(s.automatico){const [us]=await pool.execute('SELECT DISTINCT u.correo FROM ims_auth_usuario u JOIN ims_op_actor a ON a.id=u.actor_id AND a.activo=1 JOIN ims_cm_acceso ac ON ac.actor_id=a.id WHERE ac.sede=?',[e.sede]);const activos=new Set(us.map(u=>u.correo));s.destinatarios=s.destinatarios.filter(x=>activos.has(x));exigir(s.destinatarios.length,'SIN_PERMISO','El destinatario automático ya no está activo en la sede.');}exigir(!e.eliminado,'SOLICITUD_INVALIDA','El evento fue eliminado.');r=await correo({id:job.id,destinatarios:s.destinatarios,asunto:'Recordatorio de inventario · '+e.cliente,texto:[e.cliente+' · '+e.titulo,'Fecha: '+e.fecha_inicio,'Responsable: '+e.responsable_nombre,'Estado: '+e.estado,e.observacion,'Centro de Mando · ITSANET IMS'].join('\n')});}
+    else{const cfg=await obtenerConector(pool,'GOOGLE_CALENDAR',clave);r=job.tipo==='CALENDARIO_CAMBIO'&&!cfg.sincronizarAgenda?{omitido:true,motivo:'SINCRONIZACION_AUTOMATICA_DESACTIVADA'}:await google(cfg,e);}
    }
    await pool.execute("UPDATE ims_cm_trabajo SET estado='COMPLETO',resultado=?,actualizado_en=CURRENT_TIMESTAMP(6) WHERE id=?",[JSON.stringify(r),job.id]);
   }catch(e){await pool.execute("UPDATE ims_cm_trabajo SET estado='ERROR',resultado=?,actualizado_en=CURRENT_TIMESTAMP(6) WHERE id=?",[JSON.stringify({mensaje:e.codigo?e.message:'No se pudo confirmar el trabajo. Revisa su estado antes de repetirlo.'}),job.id]);}
@@ -75,4 +68,15 @@ export function iniciarTrabajadorCentro({pool,clave,actorAutomatico,enviar,googl
  const tick=()=>{if(!ocupado&&!cerrado)enCurso=ejecutar();return enCurso;};
  const timer=setInterval(tick,intervalo);timer.unref();void tick();
  return {ejecutar:tick,cerrar:()=>{cerrado=true;clearInterval(timer);return enCurso;}};
+}
+
+export async function programarServiciosCentro(pool,{clave,actorId,hoy=diaEcuador(),hora='00:00'}){
+ const p={actorId};if(hora>='18:30')await solicitarTrabajo(pool,p,{operacionId:uuidEstable('cm-diario',[hoy,'18:30']),tipo:'PUBLICACION'});
+ let cfg=null;try{cfg=await obtenerConector(pool,'GOOGLE_CALENDAR',clave);}catch{}
+ if(cfg?.sincronizarAgenda)await solicitarTrabajo(pool,p,{operacionId:uuidEstable('cm-agenda-diaria',[hoy,cfg.cuenta,cfg.calendario]),tipo:'CALENDARIO_LOTE',desde:hoy.slice(0,4)+'-01-01',hasta:(Number(hoy.slice(0,4))+1)+'-12-31'});
+ if(hora>='18:45'&&cfg?.lecturaProgramada&&cfg.hojasLectura)await solicitarTrabajo(pool,p,{operacionId:uuidEstable('cm-google-revision',[hoy,cfg.cuenta]),tipo:'GOOGLE_DELTA'});
+ if(hora>='19:00'&&cfg?.reportesSheets)await solicitarTrabajo(pool,p,{operacionId:uuidEstable('cm-reportes-clientes',[hoy,cfg.cuenta]),tipo:'REPORTES_CLIENTES'});
+ if(hora<'08:00'||hora>='17:30')return;let correo=null;try{correo=(await cuentaCorreo(pool,clave)).config;}catch{}if(!correo?.automaticos)return;
+ const es=await transaccionOperativa(pool,p,async c=>{const pf=await perfilCentro(c,p);if(!pf.permisos.recordatorios||!pf.sedes.length)return [];const [rs]=await c.execute("SELECT id,sede FROM ims_cm_evento WHERE eliminado=0 AND estado<>'Entregado' AND fecha_inicio BETWEEN ? AND ? AND sede IN ("+pf.sedes.map(()=>'?').join(',')+") ORDER BY fecha_inicio,id LIMIT 200",[hoy,sumarDias(hoy,3),...pf.sedes]);return rs;});
+ for(const e of es){const [us]=await pool.execute("SELECT DISTINCT u.actor_id,u.correo FROM ims_auth_usuario u JOIN ims_op_actor a ON a.id=u.actor_id AND a.activo=1 JOIN ims_cm_acceso ac ON ac.actor_id=a.id AND ac.sede=? JOIN ims_cm_perfil pf ON pf.actor_id=a.id WHERE pf.rol IN ('ADMIN','COORDINADOR','LIDER') OR EXISTS(SELECT 1 FROM ims_cm_equipo q WHERE q.evento_id=? AND q.actor_id=a.id AND q.estado='ACTIVO')",[e.sede,e.id]);for(const u of us)await solicitarTrabajo(pool,p,{operacionId:uuidEstable('cm-recordatorio-persona',[hoy,e.id,u.actor_id]),tipo:'RECORDATORIO',eventoId:e.id,destinatarios:[u.correo],automatico:true});}
 }

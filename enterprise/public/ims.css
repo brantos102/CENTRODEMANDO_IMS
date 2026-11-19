@@ -41,3 +41,10 @@ body.ims-terminal.ims-seleccionado .barra-usuario .sobrelinea,body.ims-terminal.
 
 body[data-ims-vista=tabla] .ims-recorrido-conteo{display:none}
 @media(max-width:650px){#ims-scan-form button{grid-column:1/-1;width:100%;min-height:46px;white-space:normal}#ims-scan-form .scan-rafaga{grid-column:1/-1}}
+
+/* Terminal: acciones principales visibles, herramientas secundarias agrupadas. */
+body.ims-terminal #ims-tabs{gap:5px}body.ims-terminal #ims-tabs button{white-space:nowrap}body.ims-terminal #ims-tabs button[data-vista="mapa"],body.ims-terminal #ims-tabs button[data-vista="supervision"]{display:none}body.ims-terminal #ims-tabs #ims-cambiar{margin-left:auto}body.ims-terminal #ims-header-operativo .ims-header-acciones .boton{white-space:nowrap}.ims-herramientas{border:1px solid var(--borde,#d4dfee);border-radius:14px;padding:10px 14px;margin:10px 0}.ims-herramientas summary{cursor:pointer;font-weight:600}.ims-herramientas[open]{padding-bottom:14px}body.ims-terminal #ims-ranking-panel{display:none}body.ims-terminal #wms-contexto,body.ims-terminal #wms-avance{display:none}body.ims-terminal #ims-panel-conteo>p.nota{display:none}body.ims-terminal .ims-scan-bar{position:sticky;top:0;z-index:5}body.ims-terminal #ims-panel-conteo>header{gap:10px}@media(max-width:700px){body.ims-terminal #ims-tabs{justify-content:flex-start;flex-wrap:nowrap;overflow-x:auto}.ims-herramientas .wms-tools{flex-wrap:wrap}}
+
+body.ims-terminal.ims-seleccionado>.suite-nav{display:none}body.ims-terminal.ims-seleccionado>.suite-header{display:none}
+
+body.ims-terminal #filtros-lineas>details{grid-column:1 / -1;width:100%;margin:0}body.ims-terminal #filtros-lineas>details .wms-tools{display:flex;gap:10px;flex-wrap:wrap}body.ims-terminal #filtros-lineas>details label{min-width:130px;flex:1}

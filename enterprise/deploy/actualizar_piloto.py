@@ -209,7 +209,9 @@ def comprobar_interfaz(transporte, release):
                 ('/assets/app.mjs','app.mjs'),('/assets/interfaz.mjs','interfaz.mjs'),
                 ('/assets/evidencias-ui.mjs','evidencias-ui.mjs'),('/assets/ruta-destino.mjs','ruta-destino.mjs'),
                 ('/catalogos','catalogos.html'),('/assets/catalogos.mjs','catalogos.mjs'),
-                ('/centro','centro.html'),('/assets/centro.mjs','centro.mjs')]
+                ('/centro','centro.html'),('/assets/centro.mjs','centro.mjs'),
+                ('/assets/centro.css','centro.css'),('/assets/cantidades.mjs','cantidades.mjs'),
+                ('/assets/comun-centro.mjs','comun-centro.mjs')]
     for ruta, nombre in archivos:
         status, _, raw = transporte('GET',ruta)
         exigir(status == 200 and sha(raw) == sha((Path(release)/'enterprise/public'/nombre).read_bytes()),

@@ -33,6 +33,7 @@ export const SERVICIOS_GOOGLE={
  'https://www.googleapis.com/auth/calendar.events':'Calendar',
  'https://www.googleapis.com/auth/drive.file':'Drive',
  'https://www.googleapis.com/auth/spreadsheets.readonly':'Sheets',
+ 'https://www.googleapis.com/auth/spreadsheets':'Sheets (reportes)',
  'https://www.googleapis.com/auth/script.projects.readonly':'Apps Script'
 };
 export function diagnosticoOAuth(error,etapa='RETORNO'){

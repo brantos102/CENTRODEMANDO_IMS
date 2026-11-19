@@ -1,3 +1,5 @@
+import {encolarCambioCalendario} from './agenda-automatica.mjs';
+import {monitorEnConexion} from './monitor.mjs';
 import {archivoLegado} from './legado.mjs';
 import {randomUUID} from 'node:crypto';
 import {transaccionOperativa} from '../mysql/operacion-nativa.mjs';
@@ -62,7 +64,7 @@ export async function consultarCentro(pool,p,recurso,query={}){
   }
   const [trabajos]=await c.execute('SELECT id,tipo,estado,progreso,resultado,actualizado_en FROM ims_cm_trabajo WHERE actor_id=? ORDER BY creado_en DESC LIMIT 10',[p.actorId]);
   const [[pub]]=await c.execute('SELECT COUNT(*) AS n FROM ims_cm_publicacion');
-  return {indicadores:indicadores(es,panel),eventos:es,actualizadoEn:new Date().toISOString(),publicados:Number(pub.n),trabajos:trabajos.map(x=>({...x,resultado:parse(x.resultado)})),panel:panel.map(({datos,...r})=>r),kpiOrigen:'PANEL_DEL_CORTE_ELEGIDO'};
+  return {monitor:await monitorEnConexion(c,p,pf),indicadores:indicadores(es,panel),eventos:es,actualizadoEn:new Date().toISOString(),publicados:Number(pub.n),trabajos:trabajos.map(x=>({...x,resultado:parse(x.resultado)})),panel:panel.map(({datos,...r})=>r),kpiOrigen:'PANEL_DEL_CORTE_ELEGIDO'};
  }
  if(recurso==='calidad'){
   exigir(pf.rol==='ADMIN','SIN_PERMISO','La revisión de datos corresponde al administrador.');
@@ -105,7 +107,7 @@ export async function permisosEquipo(c,id){
   await c.execute("INSERT INTO ims_nat_perfil(actor_id,inventario_id,cliente_id,rol) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE rol=CASE WHEN rol='SUPERVISOR' OR VALUES(rol)='SUPERVISOR' THEN 'SUPERVISOR' WHEN rol='OPERADOR' OR VALUES(rol)='OPERADOR' THEN 'OPERADOR' ELSE VALUES(rol) END",[q.actor_id,q.inventario_id,q.cliente_id,rol]);
  }
 }
-export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion}){
+export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion,claveCentro}){
  exigir(s&&typeof s==='object'&&!Array.isArray(s));uuid(s.operacionId);
  // No se guarda contraseña ni su resumen criptográfico en la bitácora.
  const digest=hash({tipo,...s,contrasena:undefined,actual:undefined});
@@ -195,6 +197,7 @@ export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion}){
    exigir(pf.rol==='ADMIN'&&pf.sedes.includes(s.sede),'SIN_PERMISO','Carga de códigos reservada al administrador.');const cliente=texto(s.cliente,255,true),filas=codigosDesdeFilas(s.filas,s.mes);
    for(const f of filas){const [[old]]=await c.execute('SELECT meses FROM ims_cm_codigo WHERE sede=? AND cliente=? AND sku=? FOR UPDATE',[s.sede,cliente,f.sku]);const meses=[...new Set([...(old?parse(old.meses):[]).filter(x=>!filas.mesesAfectados.includes(x)),...f.meses])].sort((a,b)=>a-b);await c.execute(`INSERT INTO ims_cm_codigo(id,sede,cliente,sku,abc,meses,origen) VALUES (?,?,?,?,?,?,'NATIVO') ON DUPLICATE KEY UPDATE abc=VALUES(abc),meses=VALUES(meses),origen='NATIVO'`,[randomUUID(),s.sede,cliente,f.sku,f.abc,JSON.stringify(meses)]);}resultado={cargados:filas.length};
   }else exigir(false);
+  if(['evento','accion','vincular'].includes(tipo)&&resultado.eventoId)await encolarCambioCalendario(c,resultado.eventoId,claveCentro);
   await c.execute('INSERT INTO ims_cm_auditoria(actor_id,operacion_id,tipo,hash,resultado,antes,despues) VALUES (?,?,?,?,?,?,?)',[p.actorId,s.operacionId,tipo,digest,JSON.stringify(resultado),JSON.stringify(antes),JSON.stringify(despues)]);
   return {...resultado,repetida:false};
  });

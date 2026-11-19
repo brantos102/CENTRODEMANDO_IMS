@@ -1,3 +1,4 @@
+import {datosReporteCliente,reporteClienteCSV} from '../centro/clientes-reportes.mjs';
 import {diagnosticoOcupacion} from '../centro/ocupacion-diagnostico.mjs';
 import {diagnosticoOAuth} from '../centro/google-diagnostico.mjs';
 import {sincronizarEvidencia} from '../centro/drive-evidencias.mjs';
@@ -141,6 +142,8 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         if(perfil.perfil.cambiar_clave&&!['perfil','clave'].includes(ruta))throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
         if(req.method==='POST'&&ruta==='presencia')return json(res,200,await presenciaInventario(pool,principal,await leerJson(req),{guardar:true}));
         if(req.method==='GET'&&ruta==='ranking')return json(res,200,await rankingInventario(pool,principal,opciones(url,['inventario']).inventario));
+        const clienteReporte=/^clientes\/([a-f0-9-]+)\/(reporte|reporte.csv)$/.exec(ruta);
+        if(req.method==='GET'&&clienteReporte){const q=opciones(url,['anio','sede']),filtro={anio:q.anio||undefined,sede:q.sede};if(clienteReporte[2]==='reporte.csv'){const r=await reporteClienteCSV(pool,principal,clienteReporte[1],filtro);res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);}const r=await datosReporteCliente(pool,principal,clienteReporte[1],filtro);return json(res,200,{...r,filas:r.filas.slice(0,200),totalFilas:r.filas.length,muestraLimitada:r.filas.length>200});}
         if(req.method==='GET'&&ruta==='ocupacion-inventario')return json(res,200,await consultarOcupacionInventario(pool,principal,opciones(url,['inventario']).inventario));
         if(req.method==='GET'&&ruta==='ocupacion')return json(res,200,await consultarOcupacion(pool,principal,opciones(url,['sede']).sede));
         if(req.method==='POST'&&ruta==='ocupacion/actualizar'){const body=await leerJson(req);if(Object.keys(body).length)throw new ErrorAuth('SOLICITUD_INVALIDA','La consulta SQL es fija y se configura en el servidor.',400);return json(res,200,await actualizarOcupacion(pool,principal,claveCentro,leerOcupacion?{leer:leerOcupacion}:{}));}
@@ -188,10 +191,10 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         }
         if(req.method==='POST'&&ruta==='inventarios'){
           if(url.search)throw new ErrorAuth('SOLICITUD_INVALIDA','Parámetros inválidos.',400);
-          return json(res,200,await crearDesdeCentro({pool,principal,solicitud:await leerJson(req,32*1024*1024),obtenerVista:gestorERP?(actor,id)=>gestorERP.paraCrear(actor,id):undefined}));
+          return json(res,200,await crearDesdeCentro({pool,principal,claveCentro,solicitud:await leerJson(req,32*1024*1024),obtenerVista:gestorERP?(actor,id)=>gestorERP.paraCrear(actor,id):undefined}));
         }
         if(req.method==='POST'&&ruta==='consolidar')return json(res,200,await consolidarCentro(pool,principal,await leerJson(req)));
-        if(req.method==='POST'&&['evento','accion','vincular','carpeta','archivar','perfil','clave','usuario','usuario-estado','usuario-clave','usuario-rol','codigos'].includes(ruta))return json(res,200,await mutarCentro({pool,principal,tipo:ruta,solicitud:await leerJson(req)}));
+        if(req.method==='POST'&&['evento','accion','vincular','carpeta','archivar','perfil','clave','usuario','usuario-estado','usuario-clave','usuario-rol','codigos'].includes(ruta))return json(res,200,await mutarCentro({pool,principal,claveCentro,tipo:ruta,solicitud:await leerJson(req)}));
         return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
       }
       if(url.pathname.startsWith('/api/erp/')){

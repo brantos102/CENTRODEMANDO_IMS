@@ -1,6 +1,7 @@
 import {exigir,fecha,hash} from './dominio.mjs';
 import {cantidadExacta} from '../dominio/conteo.mjs';
 import {normalizar as norm} from '../migracion/modelo.mjs';
+export const SCOPE_REPORTES='https://www.googleapis.com/auth/spreadsheets';
 export const SCOPE_HOJAS='https://www.googleapis.com/auth/spreadsheets.readonly';
 export const MAESTRO_UIO='1Cq2AqRVAZJYmj_zs_zg8C63FPrgRBtJHaNcHWXygaPk';
 const ID=/^[A-Za-z0-9_-]{20,120}$/;

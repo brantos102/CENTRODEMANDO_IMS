@@ -143,3 +143,19 @@ Primero pulsar **Guardar conexión privada** y después **Consultar y actualizar
 - OCUPACION_SIN_CONFIGURAR: guardar la conexión privada antes de consultar.
 
 El corte anterior permanece si falla la lectura. No se modifican las existencias de SQL Server ni las capturas de los inventarios MySQL. No existe una conexión empresarial real desde las pruebas de desarrollo: el resultado final se comprueba en el servidor IMS.
+
+
+## Automatizaciones de ITSANET IMS · revisión 19 de noviembre
+
+Cada automatización tiene un control explícito en Conexiones. Las conexiones existentes conservan sus opciones anteriores; instalar código no activa envíos nuevos por sí solo.
+
+- **Sincronizar cronograma**: crea una tarea en la misma transacción al crear, editar o cambiar una tarea del cronograma. El trabajador sincroniza Calendar con ID estable. Además, programa una puesta al día diaria. Un cambio de calendario crea una nueva sincronización para ese destino.
+- **Recordatorios diarios**: entre las 08:00 y las 17:30 de Ecuador, programa un correo por destinatario, evento y día para los conteos de hoy y los próximos tres días. Incluye equipo asignado y líderes, coordinadores y administradores de la misma sede. Una cuenta nueva entra en la siguiente planificación; las cuentas desactivadas se comprueban antes de enviar. No se remiten contraseñas.
+- **Lectura de novedades de Google**: desde las 18:45, prepara una revisión diaria de UIO/GYE. La aplicación conserva las capturas MySQL y la aplicación del plan requiere selección revisada. Los planes caducan a las dos horas: si se revisa al día siguiente hay que pulsar Leer y revisar novedades de Google para obtener uno vigente.
+- **Reportes Sheets**: desde las 19:00, actualiza los reportes de los clientes del HISTORIAL_REPORTES de UIO. Incluye los inventarios Entregados del año en MySQL y utiliza los mismos archivos de Google. La hoja IMS_CONSOLIDADO se verifica antes de sustituir su contenido; las otras hojas y los permisos del archivo permanecen. No se crea un archivo distinto para cada actualización. Los reportes de GYE requieren su historial de destinos autorizado.
+
+Para escribir los reportes, activar la opción correspondiente y volver a autorizar Google: solicita spreadsheets de escritura. Tener Sheets de solo lectura no basta para publicar. La cuenta anterior permanece hasta completar el consentimiento nuevo. No se amplían permisos automáticamente por instalar la revisión.
+
+El proceso conserva los triggers existentes de Apps Script. La planificación del servidor usa trabajos persistentes e identificadores para evitar duplicados. El estado y las incidencias se consultan en Trabajos y descargas. Los reportes disponibles en Google pueden contener avances posteriores a la última importación de MySQL: revisar/aplicar las novedades y entregar los inventarios en IMS antes de esperar esos datos en su consolidado.
+
+Firebase se ha evaluado como opción futura para push con el navegador cerrado. Para esta entrega se utilizan los avisos internos de próximos conteos, Gmail y Calendar; no se afirma que haya un proyecto Firebase configurado ni dispositivos inscritos.
