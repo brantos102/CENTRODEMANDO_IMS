@@ -1,0 +1,60 @@
+{
+  "fecha": "2026-11-23",
+  "zona_horaria": "America/Guayaquil",
+  "revision_base": "df8e8cad1f73e735c6b95a0fbb7e1bfb47a1af11",
+  "datos_de_prueba": "SINTETICOS",
+  "node_22": {
+    "pruebas": 285,
+    "aprobadas": 285,
+    "omitidas": 0
+  },
+  "python": {
+    "pruebas": 172,
+    "aprobadas": 172
+  },
+  "mysql": {
+    "pruebas_distintas": 109,
+    "aprobadas": 109,
+    "archivos": [
+      "api.integration.mjs",
+      "centro.integration.mjs",
+      "conteos.integration.mjs",
+      "creacion-erp.integration.mjs",
+      "nativa.integration.mjs"
+    ],
+    "privilegios_nativos_ejecutados": true
+  },
+  "chromium": {
+    "flujos_distintos": 31,
+    "corrida_completa": 30,
+    "compatibilidad_borrador_anterior_adicional": 1,
+    "aprobados": 31
+  },
+  "instalador": {
+    "archivos_interfaz_verificados": 30
+  },
+  "casos": [
+    "Tres lecturas de una unidad conservadas durante peticiones en curso",
+    "Agrupación de stock 1+2 con captura total 3 sin borrar filas originales",
+    "Separación por todos los atributos comerciales y cliente ERP",
+    "Capturas previas conservadas; versión obsoleta rechazada",
+    "Fallo intermedio revierte el grupo completo",
+    "Respuesta de commit perdida recuperada idempotentemente",
+    "Conteo ciego protegido también en la respuesta HTTP",
+    "Stock de otro cliente y sede rechazados antes de crear",
+    "Carga API más CSV con los triggers de stock activos",
+    "Cliente pendiente impide activar hasta cargar sus líneas",
+    "Preferencias de tema y módulos por cuenta en el navegador",
+    "Recordatorios diarios solo a líderes activos asignados",
+    "Administrador, coordinador, operario, auditor y líder no asignado excluidos",
+    "Revocación posterior filtra destinatarios de trabajos en cola",
+    "Formulario de recordatorio sin destinatarios arbitrarios",
+    "Borrador antiguo sin firma de grupo requiere revisión",
+    "Guardado masivo conserva selección de borradores fuera del filtro actual"
+  ],
+  "acciones_en_produccion_ejecutadas": false,
+  "envios_reales_de_correo": false,
+  "fuentes_google_modificadas": false,
+  "inventarios_reales_modificados": false,
+  "observacion_produccion": "La instalación df8e8ca fue confirmada por el usuario. No se ha recibido confirmación de incorporación completa de novedades Google posteriores al resumen del 19 de noviembre."
+}

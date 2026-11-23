@@ -18,7 +18,7 @@ async function insertar(c,tabla,columnas,rows){
 /** Una transacción: inventario, permisos, stock, procedencia, activación y auditoría.
  * La solicitud nunca contiene existencias ni IDs de clientes del navegador.
  * La confirmación persistida se recupera antes de requerir la caché temporal. */
-export async function crearInventarioERP({pool,principal:p,solicitud,obtenerVista,conexion}){
+export async function crearInventarioERP({pool,principal:p,solicitud,obtenerVista,conexion,prepararSinActivar=false}){
  const s=solicitudCrearERP(solicitud),digest=hash(s),ejecutar=conexion?(_pool,_p,fn)=>fn(conexion):transaccionOperativa;
  for(let intento=0;intento<3;intento++)try{return await ejecutar(pool,p,async c=>{
   // Las claves únicas de evento y consulta impiden dos creaciones por reintento.
@@ -44,7 +44,7 @@ export async function crearInventarioERP({pool,principal:p,solicitud,obtenerVist
   for(const cli of new Set(clientes.values())){
    await c.execute('INSERT INTO ims_op_inventario_cliente VALUES (?,?)',[id,cli]);await c.execute('INSERT INTO ims_op_permiso VALUES (?,?,?,1)',[p.actorId,id,cli]);await c.execute("INSERT INTO ims_nat_perfil VALUES (?,?,?,'SUPERVISOR')",[p.actorId,id,cli]);
   }
-  const result={ok:true,operacionId:s.operacionId,consultaId:s.consultaId,inventarioId:id,sede:v.sede,codigo:s.codigo,filas:s.filasEsperadas,unidades:s.unidadesEsperadas,borrador:false,version:'1',publicacionKpi:false,contenidoSha256:contenido};
+  const result={ok:true,operacionId:s.operacionId,consultaId:s.consultaId,inventarioId:id,sede:v.sede,codigo:s.codigo,filas:s.filasEsperadas,unidades:s.unidadesEsperadas,borrador:prepararSinActivar,version:prepararSinActivar?'0':'1',publicacionKpi:false,contenidoSha256:contenido};
   await c.execute('INSERT INTO ims_nat_evento(actor_id,operacion_id,tipo,inventario_id,payload_sha256,resultado,antes,despues) VALUES (?,?,?,?,?,?,?,?)',[p.actorId,s.operacionId,'crear_erp',id,digest,JSON.stringify(result),'null',JSON.stringify(result)]);
   await c.execute('INSERT INTO ims_erp_inventario(inventario_id,actor_id,operacion_id,consulta_id,payload_sha256,contenido_sha256,consulta_en,filas,unidades,seleccion,cuentas) VALUES (?,?,?,?,?,?,?,?,?,?,?)',[id,p.actorId,s.operacionId,s.consultaId,digest,contenido,new Date(v.creadaEn).toISOString().slice(0,23).replace('T',' '),s.filasEsperadas,s.unidadesEsperadas,JSON.stringify(v.seleccion),JSON.stringify(v.cuentas)]);
   // Lotes limitados también por bytes; una descripción larga no excede max_allowed_packet.
@@ -66,7 +66,7 @@ export async function crearInventarioERP({pool,principal:p,solicitud,obtenerVist
     const original=preparadas[offset+i];exigir(hash({origen:{referencia:r.referencia,etiqueta:r.etiqueta,codigo:r.codigo_cliente_erp,cliente:r.cliente_nombre},fila})===hash({origen:original.origen,fila:original.fila}),'GUARDADO_RECHAZADO','El contenido SQL no coincide con la extracción. No se confirmó el inventario.');
    }
   }
-  await c.execute('UPDATE ims_nat_inventario SET borrador=0,version=1 WHERE inventario_id=?',[id]);
+  if(!prepararSinActivar)await c.execute('UPDATE ims_nat_inventario SET borrador=0,version=1 WHERE inventario_id=?',[id]);
   return {...result,repetida:false};
  });}catch(e){if(e.cause?.code==='ER_DUP_ENTRY'&&intento<2)continue;throw e;}
 }

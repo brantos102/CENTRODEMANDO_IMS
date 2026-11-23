@@ -11,16 +11,17 @@ function lista(v){
  return [...new Set(r)].sort();
 }
 export function seleccionERP(s,conexiones){
- exigir(s&&typeof s==='object'&&!Array.isArray(s)&&Object.keys(s).every(k=>['consultaId','sede','referencias','modo','skus','posiciones','incluirVariantes'].includes(k))&&UUID.test(s.consultaId)&&['UIO','GYE'].includes(s.sede));
+ exigir(s&&typeof s==='object'&&!Array.isArray(s)&&Object.keys(s).every(k=>['consultaId','sede','referencias','modo','skus','posiciones','incluirVariantes','alcance'].includes(k))&&UUID.test(s.consultaId)&&['UIO','GYE'].includes(s.sede));
  exigir(['SKU','POSICIONES'].includes(s.modo)&&typeof s.incluirVariantes==='boolean'&&Array.isArray(s.referencias)&&s.referencias.length<=64);
+ exigir(s.alcance===undefined||s.alcance==='CUENTAS');
  const skus=lista(s.skus),posiciones=lista(s.posiciones);
  exigir(s.modo==='SKU'?posiciones.length===0:skus.length===0&&posiciones.length>0&&!s.incluirVariantes);
  const disponibles=conexiones.filter(c=>c.sede===s.sede),refs=s.referencias;
  exigir(refs.every(r=>typeof r==='string'&&/^[a-f0-9]{24}$/.test(r)&&disponibles.some(c=>c.referencia===r))&&new Set(refs).size===refs.length);
  // Por posiciones se recorren TODAS las cuentas habilitadas de la sede.
- const elegidas=s.modo==='POSICIONES'?disponibles:disponibles.filter(c=>refs.includes(c.referencia));
+ const elegidas=s.modo==='POSICIONES'&&s.alcance!=='CUENTAS'?disponibles:disponibles.filter(c=>refs.includes(c.referencia));
  exigir(elegidas.length>0);
- return {consultaId:s.consultaId,sede:s.sede,modo:s.modo,skus,posiciones,incluirVariantes:s.incluirVariantes,referencias:elegidas.map(c=>c.referencia).sort()};
+ return {consultaId:s.consultaId,sede:s.sede,...(s.alcance?{alcance:s.alcance}:{}),modo:s.modo,skus,posiciones,incluirVariantes:s.incluirVariantes,referencias:elegidas.map(c=>c.referencia).sort()};
 }
 export function filaSeleccionadaERP(r,s){
  if(s.modo==='SKU'){const sku=canon(r['COD. PRODUCTO']);return !s.skus.length||s.skus.some(k=>sku===k||s.incluirVariantes&&sku.startsWith(k));}

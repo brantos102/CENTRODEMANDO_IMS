@@ -1,3 +1,5 @@
+import {destinatariosRecordatorio} from '../centro/recordatorios.mjs';
+import {guardarConteoGrupo} from '../mysql/conteos-grupo.mjs';
 import {definirSedeArchivoGoogle} from '../centro/google-delta.mjs';
 import {datosReporteCliente,reporteClienteCSV} from '../centro/clientes-reportes.mjs';
 import {diagnosticoOcupacion} from '../centro/ocupacion-diagnostico.mjs';
@@ -131,6 +133,10 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         if(url.pathname==='/api/sesion/cerrar'){
           await cerrarSesion(pool,principal);if(centroHabilitado)try{await pool.execute('DELETE FROM ims_cm_presencia WHERE actor_id=?',[principal.actorId]);}catch{}res.setHeader('Set-Cookie',cookie('',true));return json(res,200,{ok:true});
         }
+        if(url.pathname==='/api/conteos/grupo'){
+          if(soloLectura||!operacionNativa)throw new ErrorAuth('SOLO_LECTURA','Captura nativa no habilitada.',403);
+          return json(res,200,await guardarConteoGrupo({pool,principal,solicitud:await leerJson(req)}));
+        }
         if(url.pathname==='/api/conteos'){
           if(soloLectura)throw new ErrorAuth('SOLO_LECTURA','Este piloto permite únicamente consultar inventarios.',403);
           return json(res,200,await guardarConteo({pool,principal,solicitud:await leerJson(req),soloNativos:operacionNativa}));
@@ -142,6 +148,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         const perfil=await consultarCentro(pool,principal,'perfil');
         if(perfil.perfil.cambiar_clave&&!['perfil','clave'].includes(ruta))throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
         if(req.method==='POST'&&ruta==='presencia')return json(res,200,await presenciaInventario(pool,principal,await leerJson(req),{guardar:true}));
+        if(req.method==='GET'&&ruta==='recordatorio-destinatarios')return json(res,200,await destinatariosRecordatorio(pool,principal,opciones(url,['evento']).evento));
         if(req.method==='GET'&&ruta==='ranking')return json(res,200,await rankingInventario(pool,principal,opciones(url,['inventario']).inventario));
         const clienteReporte=/^clientes\/([a-f0-9-]+)\/(reporte|reporte.csv)$/.exec(ruta);
         if(req.method==='GET'&&clienteReporte){const q=opciones(url,['anio','sede']),filtro={anio:q.anio||undefined,sede:q.sede};if(clienteReporte[2]==='reporte.csv'){const r=await reporteClienteCSV(pool,principal,clienteReporte[1],filtro);res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);}const r=await datosReporteCliente(pool,principal,clienteReporte[1],filtro);return json(res,200,{...r,filas:r.filas.slice(0,200),totalFilas:r.filas.length,muestraLimitada:r.filas.length>200});}
@@ -275,7 +282,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       }
       if(req.method==='GET'&&url.pathname==='/api/inventarios')return json(res,200,await listarInventarios(pool,principal,opciones(url,['buscar','sede','cliente'])));
       const m=/^\/api\/inventarios\/([a-f0-9-]+)\/lineas$/.exec(url.pathname);
-      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url,['buscar','posicion','cliente','sku','captura','resultado']),{operacionNativa}));
+      if(req.method==='GET'&&m)return json(res,200,await listarLineas(pool,principal,m[1],opciones(url,['buscar','posicion','cliente','sku','captura','resultado','agrupar']),{operacionNativa}));
       return json(res,404,{error:'RUTA_NO_DISPONIBLE'});
     }catch(e){
       if(e.status===413)res.setHeader('Connection','close');

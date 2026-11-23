@@ -15,17 +15,17 @@ export async function crearPoolConteos(env){
  * por el adaptador de autenticación, nunca de req.body ni de localStorage.
  * La base vuelve a comprobar actor y permiso para cada operación/reintento.
  */
-export async function guardarConteo({pool,principal,solicitud,soloNativos=false}){
+export async function guardarConteo({pool,principal,solicitud,soloNativos=false,conexion}){
   exigir(principal?.actorId,'NO_AUTENTICADO','Se requiere una sesión validada.');
   const {payload:p,hash}=normalizarSolicitud(principal.actorId,solicitud);
-  for(let intento=0;intento<3;intento++){
-    const c=await pool.getConnection();let abierta=false,confirmando=false,destruir=false;
+  for(let intento=0;intento<(conexion?1:3);intento++){
+    const c=conexion??await pool.getConnection();let abierta=false,confirmando=false,destruir=false;
     try{
       const [[db]]=await c.query('SELECT DATABASE() AS nombre, CURRENT_USER() AS usuario');
       exigir(/^centromando_ims(?:_[a-z0-9_]+)?$/.test(db.nombre||'')&&db.nombre.length<=64&&!/^root@/i.test(db.usuario||''),
         'BASE_NO_PERMITIDA','Se requiere base y usuario exclusivos de Centro de Mando.');
-      await c.query("SET time_zone = '+00:00'");
-      await c.beginTransaction();abierta=true;
+      if(!conexion)await c.query("SET time_zone = '+00:00'");
+      if(!conexion){await c.beginTransaction();abierta=true;}
       const [[actor]]=await c.execute('SELECT activo FROM ims_op_actor WHERE id=? FOR SHARE',[p.actorId]);
       exigir(actor&&Number(actor.activo)===1,'SIN_PERMISO','Acceso no autorizado.');
       // El adaptador HTTP siempre aporta el hash de la sesión validada.
@@ -53,7 +53,7 @@ export async function guardarConteo({pool,principal,solicitud,soloNativos=false}
       if(previa){
         exigir(previa.payload_sha256===hash,'OPERACION_REUTILIZADA','El identificador ya pertenece a otra solicitud.');
         const resultado=JSON.parse(previa.resultado);
-        await c.rollback();abierta=false;
+        if(!conexion)await c.rollback();abierta=false;
         return {...resultado,repetida:true};
       }
       if(soloNativos){const [[prevNative]]=await c.execute('SELECT operacion_id FROM ims_nat_evento WHERE actor_id=? AND operacion_id=? FOR SHARE',[p.actorId,p.operacionId]);exigir(!prevNative,'OPERACION_REUTILIZADA','El identificador ya pertenece a otra operación.');}
@@ -69,7 +69,7 @@ export async function guardarConteo({pool,principal,solicitud,soloNativos=false}
         [p.actorId,p.operacionId,p.inventarioId,p.lineaId,hash,JSON.stringify(resultado)]);
       await c.execute('INSERT INTO ims_op_auditoria (id,actor_id,operacion_id,antes,despues) VALUES (?,?,?,?,?)',
         [randomUUID(),p.actorId,p.operacionId,JSON.stringify(antes),JSON.stringify(despues)]);
-      confirmando=true;await c.commit();confirmando=false;abierta=false;
+      if(!conexion){confirmando=true;await c.commit();confirmando=false;abierta=false;}
       return {...resultado,repetida:false};
     }catch(error){
       if(abierta){try{await c.rollback();}catch{destruir=true;}abierta=false;}
@@ -77,13 +77,13 @@ export async function guardarConteo({pool,principal,solicitud,soloNativos=false}
         destruir=true;
         throw new ErrorConteo('CONFIRMACION_PENDIENTE','No se pudo confirmar la respuesta; reintenta con el mismo identificador de operación.',{cause:error});
       }
-      if(error instanceof ErrorConteo)throw error;
+      if(conexion||error instanceof ErrorConteo)throw error;
       // La unicidad protege operaciones que compiten en líneas distintas.
       // Siempre se revierte la transacción completa antes de volver a leer.
       if(['ER_LOCK_DEADLOCK','ER_LOCK_WAIT_TIMEOUT','ER_DUP_ENTRY'].includes(error.code)&&intento<2)continue;
       throw new ErrorConteo('GUARDADO_RECHAZADO','No se guardó la operación. Reintenta con su mismo identificador.',{cause:error});
     }finally{
-      if(destruir)c.destroy();else c.release();
+      if(!conexion){if(destruir)c.destroy();else c.release();}
     }
   }
 }

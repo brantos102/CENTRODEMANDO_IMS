@@ -60,3 +60,8 @@ test('una extracción a la vez y límite de selección: no se publican filas al 
  let liberar;const espera=new Promise(r=>liberar=r),cs=registro().conexiones,g=crearGestorVistasERP({conexiones:cs,maxFilas:1,fetchImpl:async url=>{await espera;return new Response(url.endsWith('gettoken')?'{"token":"t"}':JSON.stringify([stock('BELIA'),stock('BELIA','OTRO')]));}}),s=solicitud(cs[0]);
  g.iniciar('a',s,async()=>{});assert.throws(()=>g.iniciar('b',solicitud(cs[0]),async()=>{}));liberar();const r=await terminar(g,'a',s.consultaId);assert.equal(r.estado,'ERROR');assert.equal(r.filas,undefined);
 });
+
+test('crear por posiciones con alcance de cuentas consulta solo las elegidas y no reutiliza la vista global',async()=>{
+ const cs=registro().conexiones,c=cs[1],id=randomUUID(),s=solicitud(c,{consultaId:id,modo:'POSICIONES',posiciones:['A'],incluirVariantes:false,alcance:'CUENTAS'}),v=seleccionERP(s,cs);assert.deepEqual(v.referencias,[c.referencia]);
+ const llamadas=[],g=crearGestorVistasERP({conexiones:cs,fetchImpl:async(url,o)=>{llamadas.push(o?.headers?.userid);return Response.json(url.endsWith('gettoken')?{token:'sintetico'}:[stock('ALU')]);}});g.iniciar('a',s,async()=>{});const r=await terminar(g,'a',id);assert.equal(r.cuentas.length,1);assert.equal(r.filas.length,1);assert.equal(llamadas.filter(Boolean).length,1);assert.throws(()=>g.iniciar('a',{...s,alcance:undefined},async()=>{}),e=>e.codigo==='OPERACION_REUTILIZADA');assert.throws(()=>seleccionERP({...s,referencias:[]},cs));
+});

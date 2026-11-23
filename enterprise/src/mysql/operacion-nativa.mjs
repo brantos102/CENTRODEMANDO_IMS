@@ -163,6 +163,8 @@ export async function ejecutarOperacion({pool,principal:p,tipo,solicitud:s,conex
    result={inventarioId:n.id,lineas:ids,version:await nuevaVersion(c,n)};
   }else if(tipo==='activar'){
    exigir(n.borrador&&n.estado==='EN_PROCESO','INVENTARIO_NO_EDITABLE','El stock ya fue activado.');
+   const [[pendientes]]=await c.execute('SELECT COUNT(*) n FROM ims_op_inventario_cliente ic WHERE ic.inventario_id=? AND NOT EXISTS(SELECT 1 FROM ims_op_linea l WHERE l.inventario_id=ic.inventario_id AND l.cliente_id=ic.cliente_id)',[n.id]);
+   exigir(Number(pendientes.n)===0,'SOLICITUD_INVALIDA','Falta cargar el stock de un cliente seleccionado. Adjunta su CSV o registra sus líneas antes de activar.');
    const [[v]]=await c.execute('SELECT COUNT(*) AS n,MAX(numero) AS maximo,SUM(depot) AS total FROM ims_nat_linea WHERE inventario_id=?',[n.id]);
    exigir(Number.isInteger(s.filasEsperadas)&&s.filasEsperadas>0&&Number(v.n)===s.filasEsperadas&&Number(v.maximo)===s.filasEsperadas&&decimal(v.total)===decimal(s.depotEsperado),
     'SOLICITUD_INVALIDA','La cantidad de filas o suma de stock no coincide. El borrador se conserva.');

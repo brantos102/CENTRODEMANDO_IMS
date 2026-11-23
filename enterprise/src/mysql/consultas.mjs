@@ -1,3 +1,4 @@
+import {agruparConteo,ETAPAS} from '../dominio/grupos-conteo.mjs';
 import {politicaConteo} from './politica-conteo.mjs';
 import {resultadoWms} from '../dominio/analisis-wms.mjs';
 import {ErrorAuth} from '../auth/credenciales.mjs';
@@ -40,13 +41,21 @@ export async function listarLineas(pool,principal,inventarioId,opciones,{operaci
  const buscar=textoBusqueda(opciones?.buscar),posicion=textoBusqueda(opciones?.posicion),sku=textoBusqueda(opciones?.sku),cliente=opciones?.cliente||'',captura=opciones?.captura||'',res=opciones?.resultado||'';
  if(cliente&&!UUID.test(cliente)||!['','POR_CONTAR','CONTADO','RECUENTO','HEREDADO'].includes(captura)||!['','PENDIENTE','CORRECTO','FALTANTE','SOBRANTE'].includes(res))throw new ErrorAuth('SOLICITUD_INVALIDA','Filtro de tabla inválido.',400);
  if(res&&!visible)throw new ErrorAuth('SIN_PERMISO','El conteo ciego no permite filtrar por diferencias contra el stock.',403);
+ if(opciones?.agrupar!==undefined&&!['','0','1'].includes(opciones.agrupar))throw new ErrorAuth('SOLICITUD_INVALIDA','Agrupación inválida.',400);
+ if(nativo&&opciones?.agrupar==='1'){
+  const grupos=await gruposAutorizados(pool,principal,inventarioId,{visible}),todos=grupos.map(g=>g.vista),canon=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es'),incluye=(a,b)=>canon(a).includes(canon(b));
+  const ts={lineas:todos.length,filasOrigen:grupos.reduce((a,g)=>a+g.miembros.length,0),contadas:0,pendientes:0,c2:0,c3:0,recuentos:0,...(visible?{correctas:0,diferencias:0}:{})};
+  for(const r of todos){ts[r.conteo_1===null?'pendientes':'contadas']++;if(r.conteo_2!==null)ts.c2++;if(r.conteo_final!==null)ts.c3++;if(r.conteo_1!==null&&r.conteo_2!==null&&r.conteo_1!==r.conteo_2&&r.conteo_final===null)ts.recuentos++;if(visible){if(r.resultado==='CORRECTO')ts.correctas++;if(['FALTANTE','SOBRANTE'].includes(r.resultado))ts.diferencias++;}}
+  const filtrados=todos.filter(r=>(!buscar||['sku','posicion','descripcion','serie','lote'].some(k=>incluye(r[k],buscar)))&&(!sku||incluye(r.sku,sku))&&(!posicion||String(r.posicion??'').trim()===posicion)&&(!cliente||r.cliente_id===cliente)&&(!res||r.resultado===res)&&(!captura||({POR_CONTAR:r.conteo_1===null,CONTADO:r.conteo_1!==null,RECUENTO:r.conteo_1!==null&&r.conteo_2!==null&&r.conteo_1!==r.conteo_2&&r.conteo_final===null,HEREDADO:ETAPAS.some((k,i)=>r[k]===null&&ETAPAS.slice(i+1).some(p=>r[p]!==null))})[captura]));
+  return {...resultado(filtrados.filter(r=>r.id>cursor),limite),...politica,agrupacion:true,totales:ts,filtradas:filtrados.length,clientes:[...new Map(todos.map(r=>[r.cliente_id,{id:r.cliente_id,nombre:r.cliente}])).values()].sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'))};
+ }
  const fisico="((CASE WHEN l.conteo_1 IS NULL THEN NULL WHEN l.conteo_2 IS NULL OR l.conteo_final IS NULL OR l.conteo_1=l.conteo_2 THEN l.conteo_1 ELSE l.conteo_final END)+COALESCE(x.ajuste,0))",estado=operacionNativa?`CASE WHEN ${fisico} IS NULL OR x.depot IS NULL THEN 'PENDIENTE' WHEN ${fisico}=x.depot THEN 'CORRECTO' WHEN ${fisico}>x.depot THEN 'SOBRANTE' ELSE 'FALTANTE' END`:"'PENDIENTE'";
  const base=`FROM ims_op_linea l JOIN ims_op_permiso p ON p.inventario_id=l.inventario_id AND p.cliente_id=l.cliente_id AND p.actor_id=? JOIN ims_op_actor a ON a.id=p.actor_id AND a.activo=1 JOIN ims_op_cliente c ON c.id=l.cliente_id LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id ${operacionNativa?'LEFT JOIN ims_nat_inventario n ON n.inventario_id=l.inventario_id LEFT JOIN ims_nat_perfil z ON z.actor_id=p.actor_id AND z.inventario_id=p.inventario_id AND z.cliente_id=p.cliente_id LEFT JOIN ims_nat_linea x ON x.linea_id=l.id':''} WHERE l.inventario_id=?`,params=[principal.actorId,inventarioId],fs=[];
  if(buscar){fs.push("(l.sku COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.descripcion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.posicion COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.serie COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!' OR d.lote COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!')");params.push(...Array(5).fill(patron(buscar)));}
  if(posicion){fs.push('TRIM(d.posicion)=?');params.push(posicion);}if(sku){fs.push("l.sku COLLATE utf8mb4_0900_ai_ci LIKE ? ESCAPE '!'");params.push(patron(sku));}if(cliente){fs.push('l.cliente_id=?');params.push(cliente);}
  if(captura==='POR_CONTAR')fs.push('l.conteo_1 IS NULL');if(captura==='CONTADO')fs.push('l.conteo_1 IS NOT NULL');if(captura==='RECUENTO')fs.push('l.conteo_1 IS NOT NULL AND l.conteo_2 IS NOT NULL AND l.conteo_1<>l.conteo_2 AND l.conteo_final IS NULL');if(captura==='HEREDADO')fs.push('((l.conteo_1 IS NULL AND (l.conteo_2 IS NOT NULL OR l.conteo_final IS NOT NULL)) OR (l.conteo_2 IS NULL AND l.conteo_final IS NOT NULL))');if(res){fs.push(`(${estado})=?`);params.push(res);}
  const filtro=fs.length?' AND '+fs.map(f=>'('+f+')').join(' AND '):'',permiso=operacionNativa?"(p.puede_contar=1 AND n.borrador=0 AND z.rol IN ('SUPERVISOR','OPERADOR'))":'p.puede_contar';
- const [rows]=await pool.execute(`SELECT l.id,l.inventario_id,l.cliente_id,l.sku,l.version,l.conteo_1,l.conteo_2,l.conteo_final,l.observacion,l.nueva_posicion,${permiso} puede_contar,c.nombre cliente,d.posicion,d.descripcion,d.serie,d.lote,d.unidad ${visible?',x.depot,x.ajuste,x.categoria':''} ${base} ${filtro} AND l.id>? ORDER BY l.id LIMIT ${limite+1}`,[...params,cursor]);
+ const [rows]=await pool.execute(`SELECT l.id,l.inventario_id,l.cliente_id,l.sku,l.version,l.conteo_1,l.conteo_2,l.conteo_final,l.observacion,l.nueva_posicion,${permiso} puede_contar,c.nombre cliente,d.posicion,d.descripcion,d.serie,d.lote,d.unidad ${operacionNativa?',x.abc,x.despacho,x.partida,x.categoria,x.estado_mercancia':''} ${visible?',x.depot,x.ajuste':''} ${base} ${filtro} AND l.id>? ORDER BY l.id LIMIT ${limite+1}`,[...params,cursor]);
  const [[t]]=await pool.execute(`SELECT COUNT(*) lineas,SUM(l.conteo_1 IS NOT NULL) contadas,SUM(l.conteo_1 IS NULL) pendientes,SUM(l.conteo_2 IS NOT NULL) c2,SUM(l.conteo_final IS NOT NULL) c3,SUM(l.conteo_1 IS NOT NULL AND l.conteo_2 IS NOT NULL AND l.conteo_1<>l.conteo_2 AND l.conteo_final IS NULL) recuentos ${visible?`,SUM((${estado})='CORRECTO') correctas,SUM((${estado}) IN ('FALTANTE','SOBRANTE')) diferencias`:''} ${base}`,[principal.actorId,inventarioId]);
  const [[filtradas]]=filtro?await pool.execute(`SELECT COUNT(*) total ${base} ${filtro}`,params):[[{total:t.lineas}]], [clientes]=await pool.execute(`SELECT DISTINCT c.id,c.nombre ${base} ORDER BY c.nombre,c.id`,[principal.actorId,inventarioId]);
  return {...resultado(rows.map(r=>({...r,version:String(r.version),puede_contar:!!r.puede_contar,...(visible?resultadoWms(r):{})})),limite),...politica,totales:Object.fromEntries(Object.entries(t).map(([k,v])=>[k,Number(v||0)])),filtradas:Number(filtradas.total),clientes};
@@ -74,4 +83,21 @@ export async function consultarResumen(pool,principal){
     if(tx){try{await c.rollback();}catch{destruir=true;}}
     if(destruir)c.destroy();else c.release();
   }
+}
+
+/** Lee la identidad completa antes de paginar. Nunca se agrupa una página parcial. */
+export async function gruposAutorizados(c,p,id,{visible=false}={}){
+ const [rs]=await c.execute(`SELECT l.*,cli.nombre cliente,d.posicion,d.descripcion,d.serie,d.lote,d.unidad,
+ x.depot,x.ajuste,x.abc,x.despacho,x.partida,x.categoria,x.estado_mercancia,e.codigo_cliente_erp,
+ (a.puede_contar=1 AND n.borrador=0 AND z.rol IN ('SUPERVISOR','OPERADOR')) puede_contar
+ FROM ims_op_linea l JOIN ims_op_cliente cli ON cli.id=l.cliente_id
+ JOIN ims_op_permiso a ON a.inventario_id=l.inventario_id AND a.cliente_id=l.cliente_id AND a.actor_id=?
+ JOIN ims_op_actor u ON u.id=a.actor_id AND u.activo=1
+ JOIN ims_nat_inventario n ON n.inventario_id=l.inventario_id
+ LEFT JOIN ims_nat_perfil z ON z.actor_id=a.actor_id AND z.inventario_id=a.inventario_id AND z.cliente_id=a.cliente_id
+ JOIN ims_nat_linea x ON x.linea_id=l.id LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id
+ LEFT JOIN ims_erp_linea e ON e.linea_id=l.id AND e.inventario_id=l.inventario_id
+ WHERE l.inventario_id=? ORDER BY l.id LIMIT 100001`,[p.actorId,id]);
+ if(rs.length>100000)throw new ErrorAuth('SOLICITUD_INVALIDA','Este inventario requiere una revisión del límite de líneas antes de agrupar.',400);
+ return agruparConteo(rs.map(r=>({...r,version:String(r.version)})),{visible});
 }
