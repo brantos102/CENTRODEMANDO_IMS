@@ -30,7 +30,9 @@ export function agruparConteo(filas,{visible=false}={}){
 export function distribuirConteo(miembros,etapa,cantidad){
  const k=ETAPAS[etapa-1],total=decimal(cantidadExacta(cantidad)),fijas=miembros.filter(m=>m[k]!==null),pendientes=miembros.filter(m=>m[k]===null);
  if(!pendientes.length)throw new ErrorConteo('ETAPA_COMPLETA','La etapa ya está confirmada.');
- if(miembros.some(m=>ETAPAS.slice(0,etapa-1).some(p=>m[p]===null)||ETAPAS.slice(etapa).some(p=>m[p]!==null)))throw new ErrorConteo('ETAPA_INVALIDA','Completa o revisa las etapas anteriores antes de contar este grupo.');
+ // Una fila ya confirmada puede ir más avanzada que sus equivalentes.
+ // Validar su historial, pero exigir secuencia solo a las filas que se escriben.
+ if(miembros.some(m=>ETAPAS.some((k,i)=>m[k]===null&&ETAPAS.slice(i+1).some(p=>m[p]!==null)))||pendientes.some(m=>ETAPAS.slice(0,etapa-1).some(p=>m[p]===null)||ETAPAS.slice(etapa).some(p=>m[p]!==null)))throw new ErrorConteo('ETAPA_INVALIDA','Completa o revisa las etapas anteriores antes de contar este grupo.');
  let restante=total-fijas.reduce((a,m)=>a+decimal(m[k]),0n);
  if(restante<0n)throw new ErrorConteo('CANTIDAD_INVALIDA','El total es menor que las capturas ya confirmadas. Solicita revisión al líder; se conservan esas capturas.');
  return pendientes.map((m,i)=>{const esperado=decimal(m.depot)??0n,n=i===pendientes.length-1?restante:(restante<esperado?restante:esperado);restante-=n;return {linea:m,cantidad:textoDecimal(n)};});

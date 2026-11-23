@@ -1,3 +1,4 @@
+import {resumenIncorporacionGoogle} from './estado-google.mjs';
 import {planificarCodigos} from './programacion-codigos.mjs';
 import {encolarCambioCalendario} from './agenda-automatica.mjs';
 import {monitorEnConexion} from './monitor.mjs';
@@ -30,7 +31,19 @@ export async function consultarCentro(pool,p,recurso,query={}){
  return transaccionOperativa(pool,p,async c=>{
  let pf=await perfilCentro(c,p);if(['dashboard','eventos','analitica'].includes(recurso)&&query.sede){exigir(pf.sedes.includes(query.sede),'SIN_PERMISO','Sede no autorizada.');pf={...pf,sedes:[query.sede]};}
  if(recurso==='sincronizacion'){
-  exigir(pf.rol==='ADMIN','SIN_PERMISO','El estado de fuentes corresponde al administrador.');const [jobs]=await c.execute("SELECT tipo,estado,resultado,actualizado_en,ultima_confirmacion FROM (SELECT tipo,estado,resultado,actualizado_en,ROW_NUMBER() OVER(PARTITION BY tipo ORDER BY actualizado_en DESC,id DESC) orden,MAX(CASE WHEN estado='COMPLETO' THEN actualizado_en END) OVER(PARTITION BY tipo) ultima_confirmacion FROM ims_cm_trabajo WHERE tipo IN ('GOOGLE_DELTA','GOOGLE_APLICAR','CENTRO_REVISION','CENTRO_APLICAR','CALENDARIO_CAMBIO','CALENDARIO_LOTE','REPORTES_CLIENTES')) j WHERE orden=1");const utc=v=>v instanceof Date?v.toISOString():v?String(v).replace(' ','T')+'Z':null;return {operaciones:jobs.map(j=>{let d={};try{d=parse(j.resultado);}catch{}return {tipo:j.tipo,estado:j.estado,ultimoIntento:utc(j.actualizado_en),ultimaConfirmacion:utc(j.ultima_confirmacion),incidencias:d.incidencias?.length||0,conflictos:(d.grupos||[]).reduce((n,g)=>n+Number(g.conflictos||0),0),gruposAplicables:(d.grupos||[]).filter(g=>g.aplicable).length,archivosConfirmados:d.archivosConfirmados??null,capturasAgregadas:d.capturasAgregadas??null};}),nota:'Leer no equivale a incorporar. Las capturas nuevas de Sheets requieren revisar y aplicar sus grupos; se conservan las capturas locales.'};
+  exigir(pf.rol==='ADMIN','SIN_PERMISO','El estado de fuentes corresponde al administrador.');
+  const [[cuentas]]=await c.execute(`SELECT
+   COUNT(DISTINCT CASE WHEN cm.rol='LIDER' THEN a.id END) lideresActivos,
+   COUNT(DISTINCT CASE WHEN cm.rol='OPERARIO' THEN a.id END) operariosActivos,
+   COUNT(DISTINCT CASE WHEN cm.cambiar_clave=1 THEN a.id END) pendientesCambioClave,
+   COUNT(DISTINCT CASE WHEN cm.cambiar_clave=0 AND EXISTS(SELECT 1 FROM ims_op_permiso p
+    JOIN ims_op_inventario i ON i.id=p.inventario_id AND i.sede=ac.sede AND i.estado='EN_PROCESO'
+    JOIN ims_nat_inventario n ON n.inventario_id=i.id AND n.borrador=0
+    JOIN ims_nat_perfil z ON z.inventario_id=p.inventario_id AND z.actor_id=p.actor_id AND z.cliente_id=p.cliente_id AND z.rol IN ('OPERADOR','SUPERVISOR')
+    WHERE p.actor_id=a.id AND p.puede_contar=1) THEN a.id END) conAccesoDeCaptura
+   FROM ims_op_actor a JOIN ims_cm_perfil cm ON cm.actor_id=a.id AND cm.rol IN ('LIDER','OPERARIO')
+   JOIN ims_cm_acceso ac ON ac.actor_id=a.id WHERE a.activo=1 AND ac.sede IN (${pf.sedes.length?marcador(pf.sedes):"''"})`,pf.sedes);
+  const [jobs]=await c.execute("SELECT id,tipo,estado,resultado,actualizado_en,ultima_confirmacion FROM (SELECT id,tipo,estado,resultado,actualizado_en,ROW_NUMBER() OVER(PARTITION BY tipo ORDER BY actualizado_en DESC,id DESC) orden,MAX(CASE WHEN estado='COMPLETO' THEN actualizado_en END) OVER(PARTITION BY tipo) ultima_confirmacion FROM ims_cm_trabajo WHERE tipo IN ('GOOGLE_DELTA','GOOGLE_APLICAR','CENTRO_REVISION','CENTRO_APLICAR','CALENDARIO_CAMBIO','CALENDARIO_LOTE','REPORTES_CLIENTES')) j WHERE orden=1");const utc=v=>v instanceof Date?v.toISOString():v?String(v).replace(' ','T')+'Z':null;return {incorporacionGoogle:{...resumenIncorporacionGoogle(jobs,{hoy:diaEcuador(),sedes:pf.sedes}),cuentasOperacion:Object.fromEntries(Object.entries(cuentas).map(([k,v])=>[k,Number(v||0)]))},operaciones:jobs.map(j=>{let d={};try{d=parse(j.resultado);}catch{}return {tipo:j.tipo,estado:j.estado,ultimoIntento:utc(j.actualizado_en),ultimaConfirmacion:utc(j.ultima_confirmacion),incidencias:d.incidencias?.length||0,conflictos:(d.grupos||[]).reduce((n,g)=>n+Number(g.conflictos||0),0),gruposAplicables:(d.grupos||[]).filter(g=>g.aplicable).length,archivosConfirmados:d.archivosConfirmados??null,capturasAgregadas:d.capturasAgregadas??null};}),nota:'Leer no equivale a incorporar. Las capturas nuevas de Sheets requieren revisar y aplicar sus grupos; se conservan las capturas locales.'};
  }
  if(recurso==='contexto'){
   const [clientes]=await c.execute('SELECT id,nombre FROM ims_op_cliente ORDER BY nombre');

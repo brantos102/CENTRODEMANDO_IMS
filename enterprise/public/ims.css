@@ -81,3 +81,5 @@ body.ims-terminal #ims-scan-form .scan-rafaga{display:flex;align-items:center;ga
 
 /* El fondo raíz también sigue el tema cuando el mapa usa capas absolutas. */
 html:has(body.suite-ims:not(.claro)){background:#0b1220;color-scheme:dark}body.suite-ims{min-height:100vh}html:has(body.suite-ims.claro){background:#f2f5fa;color-scheme:light}.ims-terminal:not(.claro) .ims-logo{color:#e8effc!important}
+
+body.ims-terminal #lineas .captura-inline .conteo-detalle{font-size:12px;font-weight:700;padding:8px 10px;white-space:nowrap;min-height:34px}.conteo-etapa-ayuda{font-size:11px;color:var(--s-muted)}

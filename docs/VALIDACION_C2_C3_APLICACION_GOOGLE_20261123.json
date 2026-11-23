@@ -1,0 +1,60 @@
+{
+  "fecha": "2026-11-23",
+  "zona_horaria": "America/Guayaquil",
+  "revision_base": "0300e2b11dc6430dd20218fc1ebeb35fcf5f885e",
+  "datos_pruebas": "SINTETICOS",
+  "node22": {
+    "pruebas": 290,
+    "aprobadas": 290,
+    "omitidas": 0
+  },
+  "python": {
+    "pruebas": 172,
+    "aprobadas": 172
+  },
+  "mysql": {
+    "pruebas": 70,
+    "aprobadas": 70,
+    "omitidas": 0,
+    "archivos": [
+      "centro.integration.mjs",
+      "google-delta.integration.mjs"
+    ]
+  },
+  "chromium": {
+    "flujos": 32,
+    "aprobados": 32,
+    "omitidos": 0
+  },
+  "casos": [
+    "C2 completa la fila pendiente aunque otra equivalente tenga C3 confirmado",
+    "C3 conserva los conteos y la versión de la fila ya finalizada",
+    "Historial C3 sin C2 permanece para revisión",
+    "Escáner permite elegir explícitamente Usar C2 o Usar C3",
+    "Reintentos recuperan la misma operación sin registrar otra etapa",
+    "Selección reciente excluye inventarios anteriores, futuros, bloqueados y con conflictos",
+    "GOOGLE_DELTA y GOOGLE_APLICAR se distinguen por plan y resultado",
+    "Aplicación parcial conserva las novedades recientes aún no incorporadas",
+    "Resumen omite tokens, claves y archivos Google y limita clientes a las sedes autorizadas",
+    "Importación devuelve evento para asignar equipo desde IMS",
+    "Asignar líder otorga permiso de captura en el inventario importado",
+    "Resumen cuenta cuentas activas y acceso de captura sin exponer nombres o correos",
+    "Recordatorios continúan restringidos a líderes activos asignados"
+  ],
+  "evidencia_google_compartida_por_usuario": {
+    "tipo": "GOOGLE_DELTA",
+    "creadoEn": "2026-11-23T16:40:43.595Z",
+    "archivosIntentados": 16,
+    "archivosConfirmados": 14,
+    "fuentesPendientesDeIniciar": 2,
+    "gruposRecientesSinConflictos": 3,
+    "lineasRecientes": 551,
+    "capturasRecientes": 597,
+    "conflictosAnteriores": 304,
+    "resultadoGoogleAplicarRealRecibido": false
+  },
+  "acciones_produccion_ejecutadas": false,
+  "inventarios_reales_modificados": false,
+  "fuentes_google_modificadas": false,
+  "correos_reales_enviados": false
+}

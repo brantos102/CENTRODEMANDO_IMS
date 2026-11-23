@@ -21,3 +21,13 @@ test('distribución conserva cero, decimales y precisión superior a IEEE754 sin
 test('cola conserva tres lecturas durante una petición pendiente y continúa tras un error',async()=>{
  const cola=crearColaLecturas();let liberar;const espera=new Promise(r=>liberar=r);let total='0';const ps=Array.from({length:3},(_,i)=>cola.agregar(async()=>{if(!i)await espera;total=sumarLectura(total,'1');}));liberar();await Promise.all(ps);assert.equal(total,'3');await assert.rejects(cola.agregar(()=>{throw Error('fallo');}));await cola.agregar(()=>{total=sumarLectura(total,'1');});await cola.terminar();assert.equal(total,'4');
 });
+test('C2 y C3 completan las filas pendientes aunque otra fila equivalente ya tenga sus tres conteos',()=>{
+ const completo=fila('a','1',{conteo_1:'1.000000000',conteo_2:'2.000000000',conteo_final:'1.000000000'}),parcial=fila('b','2',{conteo_1:'2.000000000'});
+ const rs=distribuirConteo([completo,parcial],2,'5');assert.deepEqual(rs.map(r=>[r.linea.id,r.cantidad]),[['b','3.000000000']]);parcial.conteo_2=rs[0].cantidad;
+ assert.deepEqual(distribuirConteo([completo,parcial],3,'3').map(r=>[r.linea.id,r.cantidad]),[['b','2.000000000']]);assert.equal(completo.conteo_final,'1.000000000');
+});
+test('C1 de una fila pendiente no queda bloqueado por otra equivalente ya completa; un historial con huecos sí requiere revisión',()=>{
+ const completo=fila('a','1',{conteo_1:'1.000000000',conteo_2:'2.000000000',conteo_final:'1.000000000'});
+ assert.deepEqual(distribuirConteo([completo,fila('b','2')],1,'3').map(r=>[r.linea.id,r.cantidad]),[['b','2.000000000']]);
+ assert.throws(()=>distribuirConteo([fila('a','1',{conteo_1:'1',conteo_final:'1'}),fila('b','2',{conteo_1:'2'})],2,'3'),e=>e.codigo==='ETAPA_INVALIDA');
+});
