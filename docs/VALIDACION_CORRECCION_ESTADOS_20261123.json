@@ -1,0 +1,30 @@
+{
+  "formato": "ims-validacion-correccion-check-estados-v1",
+  "fecha": "2026-11-23",
+  "revision_base": "6d4291d35cec257fb1836c01e05606d323960589",
+  "causa_reproducida": "CHECK_CLAUSE contiene comillas escapadas y prefijo de caracteres; el validador anterior no extraía estados",
+  "validacion": {
+    "python": {
+      "pruebas": 172,
+      "fallos": 0
+    },
+    "mysql_integracion_preparador_python": {
+      "pruebas": 1,
+      "fallos": 0,
+      "comillas_escapadas_reales_comprobadas": true,
+      "ampliacion_atomica": true,
+      "filas_conservadas": true,
+      "segunda_ejecucion_sin_alter": true,
+      "restriccion_activada": true,
+      "estado_invalido_rechazado": true
+    },
+    "condiciones_adicionales_y_otros_estados_rechazados": true
+  },
+  "limites": {
+    "datos_sinteticos": true,
+    "servidor_real_actualizado_desde_desarrollo": false,
+    "datos_empresariales_modificados": false,
+    "apache_modificado": false,
+    "puertos_externos_abiertos": []
+  }
+}

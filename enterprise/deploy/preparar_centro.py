@@ -51,15 +51,45 @@ def validar_privilegios(admin=p.admin_mysql,completo=False):
     todos=admin(f'SHOW GRANTS FOR {op.ACCOUNT};')
     p.exigir(globales==[['USAGE']] and not esquemas and all(('`'+op.DB+'`.') in r[0] or r[0].startswith('GRANT USAGE ON *.*') for r in todos),'Privilegios fuera de la base propia.')
 
+def estados_restriccion(clausula):
+    # CHECK_CLAUSE puede escapar las dos comillas de cada literal y añadir
+    # el juego de caracteres. Solo se admite la expresión completa estado IN.
+    texto=str(clausula).strip()
+    while texto.startswith('(') and texto.endswith(')'):
+        profundidad=0
+        for i,c in enumerate(texto):
+            if c=='(':profundidad+=1
+            elif c==')':profundidad-=1
+            if profundidad==0:break
+        if i!=len(texto)-1:break
+        texto=texto[1:-1].strip()
+    expresion=re.fullmatch(r"(?i:(?:`estado`|estado)\s+in)\s*\((.*)\)",texto,re.S)
+    p.exigir(expresion is not None,'La restricción de estados tiene una expresión no reconocida; se conserva sin modificar.')
+    estados=set()
+    for token in expresion[1].split(','):
+        literal=re.fullmatch(r"(?i:_(?:utf8mb4|utf8mb3|utf8|latin1|ascii|binary)\s*)?(?P<comilla>\\?')(?P<estado>[A-Z_]+)(?P=comilla)",token.strip())
+        p.exigir(literal is not None,'La restricción de estados tiene un literal no reconocido; se conserva sin modificar.')
+        estados.add(literal['estado'])
+    return estados
+
+
 def preparar_estado_sin_consolidar(admin=p.admin_mysql):
-    filas=admin("SELECT CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA='"+op.DB+"' AND CONSTRAINT_NAME='ck_ims_op_estado';")
-    p.exigir(len(filas)==1,'No se identificó la restricción de estados del inventario.')
-    estados=set(re.findall(r"'([A-Z_]+)'",filas[0][0]))
+    consulta=("SELECT c.CHECK_CLAUSE,t.ENFORCED FROM information_schema.CHECK_CONSTRAINTS c "
+              "JOIN information_schema.TABLE_CONSTRAINTS t ON t.CONSTRAINT_SCHEMA=c.CONSTRAINT_SCHEMA AND t.CONSTRAINT_NAME=c.CONSTRAINT_NAME "
+              "WHERE c.CONSTRAINT_SCHEMA='"+op.DB+"' AND c.CONSTRAINT_NAME='ck_ims_op_estado' "
+              "AND t.TABLE_NAME='ims_op_inventario' AND t.CONSTRAINT_TYPE='CHECK';")
+    def leer():
+        filas=admin(consulta)
+        p.exigir(len(filas)==1 and len(filas[0])==2,'No se identificó la restricción de estados del inventario.')
+        p.exigir(filas[0][1]=='YES','La restricción de estados no está activada; se conserva sin modificar.')
+        return estados_restriccion(filas[0][0])
     anteriores={'EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO'}
     nuevos=anteriores|{'CERRADO_SIN_CONSOLIDAR'}
-    p.exigir(estados in (anteriores,nuevos),'La restricción de estados difiere del esquema autorizado.')
+    estados=leer()
+    p.exigir(estados in (anteriores,nuevos),'La restricción contiene otros estados; se conserva sin modificar.')
     if estados==anteriores:
         admin('ALTER TABLE `'+op.DB+"`.`ims_op_inventario` DROP CHECK ck_ims_op_estado, ADD CONSTRAINT ck_ims_op_estado CHECK (estado IN ('EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO','CERRADO_SIN_CONSOLIDAR'));")
+        p.exigir(leer()==nuevos,'No se confirmó la ampliación de estados del inventario.')
 
 def preparar(repo,datos,revision):
     validar_privilegios()

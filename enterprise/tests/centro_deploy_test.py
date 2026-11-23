@@ -49,14 +49,37 @@ class CentroDeployTest(unittest.TestCase):
   self.assertEqual(cm.CM_TABLES['ims_cm_catalogo_fila'],'SELECT, INSERT')
   self.assertEqual(cm.CM_TABLES['ims_cm_catalogo_actual'],'SELECT, INSERT, UPDATE')
  def test_ampliacion_de_estados_es_idempotente_y_no_cambia_datos(self):
-  prev="(`estado` in (_utf8mb4'EN_PROCESO',_utf8mb4'EN_VALIDACION',_utf8mb4'ENTREGADO',_utf8mb4'CANCELADO'))"
-  llamadas=[]
+  anterior="(`estado` in (_utf8mb4'EN_PROCESO',_utf8mb4'EN_VALIDACION',_utf8mb4'ENTREGADO',_utf8mb4'CANCELADO'))"
+  ampliada=anterior.replace("'CANCELADO'", "'CANCELADO',_utf8mb4'CERRADO_SIN_CONSOLIDAR'")
+  llamadas=[];estado=[anterior]
   def admin(q):
    llamadas.append(q)
-   return [[prev]] if q.startswith('SELECT') else []
+   if q.startswith('SELECT'):return [[estado[0],'YES']]
+   estado[0]=ampliada
+   return []
   cm.preparar_estado_sin_consolidar(admin)
-  self.assertEqual(len(llamadas),2);self.assertIn('DROP CHECK',llamadas[1]);self.assertNotIn('UPDATE ',llamadas[1])
-  llamadas.clear();prev=prev.replace("'CANCELADO'", "'CANCELADO','CERRADO_SIN_CONSOLIDAR'")
-  cm.preparar_estado_sin_consolidar(admin);self.assertEqual(len(llamadas),1)
-  prev="estado IN ('OTRO_ESTADO')"
+  self.assertEqual(len(llamadas),3);self.assertIn('DROP CHECK',llamadas[1]);self.assertNotIn('UPDATE ',llamadas[1])
+  self.assertIn("t.TABLE_NAME='ims_op_inventario'",llamadas[0])
+  llamadas.clear();cm.preparar_estado_sin_consolidar(admin);self.assertEqual(len(llamadas),1)
+  estado[0]="estado IN ('OTRO_ESTADO')"
   with self.assertRaises(op.p.PilotoError):cm.preparar_estado_sin_consolidar(admin)
+ def test_representaciones_reales_de_mysql_con_comillas_escapadas(self):
+  esperados={'EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO'}
+  for prefijo in ['', '_latin1', '_utf8mb4', '_utf8mb3', '_ascii', '_binary']:
+   for comilla in ["'", "\\'"]:
+    with self.subTest(prefijo=prefijo,comilla=comilla):
+     valores=','.join(prefijo+comilla+x+comilla for x in sorted(esperados))
+     self.assertEqual(cm.estados_restriccion('((`estado` in ('+valores+')))'),esperados)
+ def test_no_admite_condiciones_adicionales_otra_columna_o_literals_ambiguos(self):
+  base="estado IN ('EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO')"
+  for clausula in [base+' OR 1=1',base+' AND estado IS NOT NULL',base.replace('estado','otra_columna'),base.replace("'CANCELADO'", "'CANCELADO\\\\'"),base+'; SELECT 1']:
+   with self.subTest(clausula=clausula):
+    with self.assertRaises(op.p.PilotoError):cm.estados_restriccion(clausula)
+ def test_no_modifica_restriccion_desactivada_o_ausente_ni_confirma_un_alter_no_aplicado(self):
+  anterior="estado IN ('EN_PROCESO','EN_VALIDACION','ENTREGADO','CANCELADO')"
+  for filas in [[],[[anterior,'NO']],[[anterior,'YES'],[anterior,'YES']]]:
+   llamadas=[]
+   def admin(q):llamadas.append(q);return filas
+   with self.assertRaises(op.p.PilotoError):cm.preparar_estado_sin_consolidar(admin)
+   self.assertTrue(all(q.startswith('SELECT') for q in llamadas))
+  with self.assertRaises(op.p.PilotoError):cm.preparar_estado_sin_consolidar(lambda q:[[anterior,'YES']] if q.startswith('SELECT') else [])
