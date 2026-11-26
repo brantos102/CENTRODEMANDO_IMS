@@ -13,3 +13,12 @@ test('solo una aplicación confirmada del mismo plan descuenta los grupos realme
 test('el resumen respeta la sede y no refleja fechas o campos arbitrarios de un resultado',()=>{
  assert.equal(resumenIncorporacionGoogle([revision],{...s,sedes:['GYE']}).periodoReciente.novedadesPorAplicar.length,0);const r=resumenIncorporacionGoogle([{...revision,resultado:{...revision.resultado,creadoEn:'NO_PUBLICAR_SECRETO'}}],s);assert.equal(r.revision.fecha,null);assert.ok(!JSON.stringify(r).includes('NO_PUBLICAR_SECRETO'));
 });
+test('varias selecciones y un reintento del plan conservan los grupos incorporados sin duplicar totales',()=>{
+ const aplicada=(i,gs,estado='COMPLETO')=>({id:String(i).repeat(8)+'-2222-4222-8222-222222222222',tipo:'GOOGLE_APLICAR',estado,resultado:{planId,gruposAplicados:gs}});
+ const gs=recientes.map((g,i)=>({...g,nuevo:true,capturas:[282,211,104][i]}));
+ const primera=aplicada(1,[gs[0]]),segunda=aplicada(2,[gs[1]]),reintento=aplicada(3,[{...gs[0],yaAplicado:true},gs[2]]);
+ const r=resumenIncorporacionGoogle([revision,reintento],{...s,aplicaciones:[primera,segunda,reintento,aplicada(4,gs,'ERROR')]});
+ assert.equal(r.periodoReciente.novedadesPorAplicar.length,0);assert.deepEqual(r.aplicacionesDeRevision,{trabajosCompletos:3,gruposIncorporados:3,inventariosNuevos:3,capturasAgregadas:597});
+ const fallo=resumenIncorporacionGoogle([revision,aplicada(5,[],'ERROR')],{...s,aplicaciones:[primera,segunda]});
+ assert.equal(fallo.aplicacion.correspondeARevision,false);assert.equal(fallo.periodoReciente.novedadesPorAplicar.length,1);
+});

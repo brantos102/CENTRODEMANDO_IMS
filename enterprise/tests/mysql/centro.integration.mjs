@@ -13,9 +13,44 @@ import {iniciarGoogleOAuth,completarGoogleOAuth,SCOPES_GOOGLE} from '../../src/c
 import {guardarConector,consultarConectores,cifrar} from '../../src/centro/conectores.mjs';
 import {createHash} from 'node:crypto';
 import {inflateRawSync} from 'node:zlib';
+import {consultarCierreOperativo} from '../../src/centro/cierre-operativo.mjs';
 import {readFile} from 'node:fs/promises';
 if(process.env.IMS_MYSQL_PRUEBAS!=='1'||!/^centromando_ims_pruebas(?:_[a-z0-9]+)?$/.test(process.env.MYSQL_DATABASE||''))throw Error('Solo datos sintéticos.');
 let pool,root,runtime;
+test('cierre comprueba clientes por separado y excluye Google de las capturas locales',async t=>{
+ const f=await fixtureCentro(pool,t,{apiPool:runtime}),p={actorId:f.actor},r=await crearDesdeCentro({pool:runtime,principal:p,solicitud:f.solicitud});
+ const segundo=randomUUID();await pool.execute('INSERT INTO ims_op_cliente VALUES (?,?)',[segundo,'CLIENTE_CIERRE_'+segundo]);await pool.execute('INSERT INTO ims_op_inventario_cliente VALUES (?,?)',[r.inventarioId,segundo]);
+ const lider=await mutarCentro({pool:runtime,principal:p,tipo:'usuario',solicitud:{operacionId:randomUUID(),correo:randomUUID()+'@sintetico.invalid',nombre:'Líder cierre',rol:'LIDER',sedes:['UIO'],contrasena:'Clave_sintetica_2026!'}});
+ await pool.execute('UPDATE ims_cm_perfil SET cambiar_clave=0 WHERE actor_id=?',[lider.actorId]);
+ await pool.execute("INSERT INTO ims_cm_equipo VALUES (?,?,'RESPONSABLE','ACTIVO')",[r.eventoId,lider.actorId]);
+ await pool.execute('INSERT INTO ims_op_permiso VALUES (?,?,?,1)',[lider.actorId,r.inventarioId,f.cli.id]);await pool.execute("INSERT INTO ims_nat_perfil VALUES (?,?,?,'SUPERVISOR')",[lider.actorId,r.inventarioId,f.cli.id]);
+ const [[l]]=await pool.execute('SELECT id FROM ims_op_linea WHERE inventario_id=?',[r.inventarioId]);
+ for(const [etapa,origen] of [[1,'GOOGLE'],[2,'LOCAL'],[3,'LOCAL']])await pool.execute("INSERT INTO ims_op_operacion(actor_id,operacion_id,inventario_id,linea_id,payload_sha256,resultado,creado_en) VALUES (?,?,?,?,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',?,'2026-11-26 14:00:00')",[f.actor,randomUUID(),r.inventarioId,l.id,JSON.stringify({etapa,origen,cantidad:'0'})]);
+ const c=await runtime.getConnection(),ejecutadas=[];const lector=new Proxy(c,{get(o,k){if(k==='execute')return async(sql,args)=>{ejecutadas.push(sql);assert.match(sql,/^SELECT\b/);return o.execute(sql,args);};const v=Reflect.get(o,k);return typeof v==='function'?v.bind(o):v;}});
+ try{
+  await c.query('SET TRANSACTION READ ONLY');await c.beginTransaction();
+  const a=await consultarCierreOperativo(lector,{sedes:['UIO'],hoy:'2026-11-26',ahora:new Date('2026-11-26T15:00:00Z')}),i=a.recientes.find(x=>x.inventarioId===r.inventarioId);
+  assert.equal(i.clientes,2);assert.equal(i.clientesSinLider,1);assert.equal(i.clientesSinEquipoHabilitado,1);assert.equal(a.baseDatos.medicion,'RESERVADA_AL_ADMIN_DE_AMBAS_SEDES');
+  assert.equal(a.capturasLocales30Dias.c1,0);assert.equal(a.capturasLocales30Dias.c2,1);assert.equal(a.capturasLocales30Dias.c3,1);assert.equal(a.datosInventarioModificados,false);assert.ok(!JSON.stringify(a).includes('password_hash'));assert.ok(ejecutadas.length>3);await c.rollback();
+ }finally{c.release();}
+ await pool.execute('INSERT INTO ims_op_permiso VALUES (?,?,?,1)',[lider.actorId,r.inventarioId,segundo]);await pool.execute("INSERT INTO ims_nat_perfil VALUES (?,?,?,'OPERADOR')",[lider.actorId,r.inventarioId,segundo]);
+ const auth=await f.login(),api=await f.req('/api/centro/cierre',auth);assert.equal(api.response.status,200);let i=api.data.recientes.find(x=>x.inventarioId===r.inventarioId);assert.equal(i.clientesSinLider,0);
+ await pool.execute("UPDATE ims_cm_equipo SET estado='EXCLUIDO' WHERE evento_id=? AND actor_id=?",[r.eventoId,lider.actorId]);const excluido=await f.req('/api/centro/cierre',auth);assert.equal(excluido.data.recientes.find(x=>x.inventarioId===r.inventarioId).clientesSinLider,2);
+ await pool.execute("UPDATE ims_cm_equipo SET estado='ACTIVO' WHERE evento_id=? AND actor_id=?",[r.eventoId,lider.actorId]);
+ await pool.execute('UPDATE ims_cm_perfil SET cambiar_clave=1 WHERE actor_id=?',[lider.actorId]);const nuevo=await f.req('/api/centro/cierre',auth);i=nuevo.data.recientes.find(x=>x.inventarioId===r.inventarioId);assert.equal(i.clientesSinLider,2);
+ await pool.execute("UPDATE ims_cm_perfil SET rol='OPERARIO' WHERE actor_id=?",[f.actor]);assert.equal((await f.req('/api/centro/cierre',auth)).response.status,403);
+});
+
+test('cierre separa conflictos antiguos y lectura vencida y conserva aplicaciones parciales confirmadas',async t=>{
+ const f=await fixtureCentro(pool,t),planId=randomUUID(),ids=['a','b'].map(c=>c.repeat(64)),grupos=ids.map((grupoId,i)=>({sede:'UIO',grupoId,codigo:'RECIENTE_'+i,fechaInicio:'2026-11-25',filas:1,capturasNuevas:1,aplicable:true,conflictos:0}));
+ const lectura={creadoEn:'2026-11-26T12:00:00Z',grupos:[...grupos,{sede:'UIO',grupoId:'c'.repeat(64),codigo:'ANTIGUO',fechaInicio:'2024-12-03',conflictos:304}],incidencias:[{codigo:'GOOGLE_INVENTARIO_PENDIENTE'}]};
+ await pool.execute("INSERT INTO ims_cm_trabajo(id,actor_id,tipo,estado,parametros,resultado,actualizado_en) VALUES (?,?,'GOOGLE_DELTA','COMPLETO','{}',?,'2030-01-01 00:00:00')",[planId,f.actor,JSON.stringify(lectura)]);
+ for(const grupoId of ids)await pool.execute("INSERT INTO ims_cm_trabajo(id,actor_id,tipo,estado,parametros,resultado,actualizado_en) VALUES (?,?,'GOOGLE_APLICAR','COMPLETO','{}',?,'2030-01-01 00:00:00')",[randomUUID(),f.actor,JSON.stringify({planId,gruposAplicados:[{sede:'UIO',grupoId,nuevo:true,capturas:1}]})]);
+ const c=await runtime.getConnection();try{
+  let r=await consultarCierreOperativo(c,{sedes:['UIO','GYE'],hoy:'2026-11-26',ahora:new Date('2026-11-26T14:00:00Z')});assert.equal(r.google.periodoReciente.novedadesPorAplicar.length,0);assert.equal(r.google.aplicacionesDeRevision.gruposIncorporados,2);assert.equal(r.google.conflictosAnteriores,304);assert.equal(r.google.revision.fuentesPendientesDeIniciar,1);assert.ok(!r.pendientes.some(p=>['CONFLICTOS_RECIENTES','LECTURA_GOOGLE_DESACTUALIZADA','NOVEDADES_RECIENTES_SIN_INCORPORAR','FUENTES_GOOGLE_POR_REVISAR'].includes(p.codigo)));assert.ok(r.baseDatos.datosBytes>0);
+  r=await consultarCierreOperativo(c,{sedes:['UIO'],hoy:'2026-11-28',ahora:new Date('2026-11-28T14:00:00Z')});assert.ok(r.pendientes.some(p=>p.codigo==='LECTURA_GOOGLE_DESACTUALIZADA'));
+ }finally{c.release();}
+});
 before(async()=>{pool=await crearPoolConteos(process.env);await esquemaCentro(pool);root=await mysql.createConnection({host:'127.0.0.1',port:Number(process.env.MYSQL_PORT||3306),database:process.env.MYSQL_DATABASE,user:'root',password:process.env.IMS_TEST_ROOT_PASSWORD});const clave=process.env.IMS_RUNTIME_PASSWORD;assert.match(clave,/^[a-f0-9]{48,64}$/);await root.query("CREATE USER IF NOT EXISTS 'ims_cm_operacion'@'%' IDENTIFIED BY '"+clave+"'");
  const grants={ims_cm_evidencia:'SELECT,INSERT',ims_cm_drive_objeto:'SELECT,INSERT,UPDATE',ims_cm_codigo_origen:'SELECT,INSERT',ims_cm_layout:'SELECT,INSERT',ims_cm_layout_actual:'SELECT,INSERT,UPDATE',ims_cm_ocupacion_corte:'SELECT,INSERT',ims_cm_ocupacion_fila:'SELECT,INSERT',ims_cm_ocupacion_actual:'SELECT,INSERT,UPDATE',ims_cm_presencia:'SELECT,INSERT,UPDATE,DELETE',ims_cm_catalogo_archivo:'SELECT,INSERT',ims_cm_catalogo:'SELECT,INSERT',ims_cm_catalogo_fila:'SELECT,INSERT',ims_cm_catalogo_actual:'SELECT,INSERT,UPDATE',ims_cm_conector:'SELECT,INSERT,UPDATE',ims_cm_archivo:'SELECT,INSERT,DELETE',ims_op_actor:'SELECT,INSERT',ims_op_cliente:'SELECT',ims_op_inventario:'SELECT,INSERT',ims_op_inventario_cliente:'SELECT,INSERT',ims_op_permiso:'SELECT,INSERT,UPDATE,DELETE',ims_op_linea:'SELECT,INSERT',ims_op_detalle_linea:'SELECT,INSERT',ims_op_operacion:'SELECT,INSERT',ims_op_auditoria:'SELECT,INSERT',ims_auth_usuario:'SELECT,INSERT',ims_auth_sesion:'SELECT,INSERT,UPDATE',ims_auth_limite:'SELECT,INSERT,UPDATE,DELETE',ims_nat_ambito:'SELECT,INSERT,DELETE',ims_nat_inventario:'SELECT,INSERT',ims_nat_perfil:'SELECT,INSERT,UPDATE,DELETE',ims_nat_linea:'SELECT,INSERT',ims_nat_evento:'SELECT,INSERT',ims_erp_inventario:'SELECT,INSERT',ims_erp_linea:'SELECT,INSERT',ims_nat_serie:'SELECT,INSERT',ims_nat_hallazgo:'SELECT,INSERT',ims_cm_perfil:'SELECT,INSERT,UPDATE',ims_cm_acceso:'SELECT,INSERT,DELETE',ims_cm_evento:'SELECT,INSERT,UPDATE',ims_cm_equipo:'SELECT,INSERT,UPDATE',ims_cm_vinculo:'SELECT,INSERT',ims_cm_carpeta:'SELECT,INSERT',ims_cm_documento:'SELECT,INSERT,UPDATE',ims_cm_panel:'SELECT',ims_cm_codigo:'SELECT,INSERT,UPDATE',ims_cm_fuente:'SELECT',ims_cm_legado:'SELECT',ims_cm_auditoria:'SELECT,INSERT',ims_cm_trabajo:'SELECT,INSERT,UPDATE',ims_cm_publicacion:'SELECT,INSERT,UPDATE',ims_cm_linea_historica:'SELECT',ims_cm_archivo_legado:'SELECT'};
  for(const[t,g]of Object.entries(grants))await root.query(`GRANT ${g} ON \`${process.env.MYSQL_DATABASE}\`.\`${t}\` TO 'ims_cm_operacion'@'%'`);

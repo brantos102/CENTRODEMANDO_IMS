@@ -149,3 +149,20 @@ $('centro-migracion-aplicar').onclick=async()=>{if(!planCentro)return;const b=$(
 
 async function copiarIncorporacionGoogle(){try{const r=await api('/api/centro/sincronizacion'),texto=JSON.stringify(r.incorporacionGoogle,null,2);await navigator.clipboard.writeText(texto);aviso('Resumen de revisión e incorporación copiado. No incluye claves ni filas de inventario.');}catch(e){fallo(e);}}
 $('fuentes-copiar-incorporacion').onclick=copiarIncorporacionGoogle;
+
+// Consulta administrativa: sin aplicar planes, cambiar estados ni enviar avisos.
+$('fuentes-cierre').onclick=async()=>{
+ const b=$('fuentes-cierre');b.disabled=true;
+ try{
+  const r=await api('/api/centro/cierre'),d=nodo('div'),cuentas=r.cuentasOperacion;
+  d.append(nodo('p',r.pendientes.length?r.pendientes.length+' puntos requieren atención antes del cierre.':'Los datos y accesos consultados no muestran pendientes. Falta confirmar la validación en campo.'),
+   nodo('p','Periodo: '+r.periodo.desde+' a '+r.periodo.hasta+' · '+cuentas.lideresActivos+' líderes activos · '+cuentas.operariosActivos+' operarios activos · '+cuentas.conAccesoDeCaptura+' personas con acceso a captura.'),
+   nodo('p','Capturas locales del periodo: C1 '+r.capturasLocales30Dias.c1+' · C2 '+r.capturasLocales30Dias.c2+' · C3 '+r.capturasLocales30Dias.c3+'. Las incorporaciones de Google se consultan por separado.'));
+  const aplicada=r.google.aplicacion;d.append(nodo('p',aplicada?'Último intento de incorporación Google: '+aplicada.estado+' · '+aplicada.inventariosNuevos+' inventarios nuevos · '+aplicada.capturasAgregadas+' capturas agregadas.':'No hay una incorporación de Google registrada.'));
+  const pendientes=nodo('div');tabla(pendientes,['Pendiente','Acción'],r.pendientes.map(x=>[x.cantidad?x.cantidad+(x.cantidad===1?' caso':' casos'):'Por confirmar',x.accion]));d.append(pendientes,nodo('h3','Inventarios recientes y equipo habilitado'));
+  const recientes=nodo('div');tabla(recientes,['Sede','Inventario','Estado','Asignación'],r.recientes.map(i=>[i.sede,i.codigo,i.borrador?'Stock pendiente':({EN_PROCESO:'En conteo',EN_VALIDACION:'En validación'}[i.estado]||i.estado),i.clientesSinLider||i.clientesSinEquipoHabilitado?i.clientesSinLider+(i.clientesSinLider===1?' cliente sin líder':' clientes sin líder')+' · '+i.clientesSinEquipoHabilitado+' sin equipo habilitado':'Equipo habilitado para todos los clientes']));d.append(recientes);
+  if(r.google.revision?.fuentesPendientesDeIniciar)d.append(nodo('p',r.google.revision.fuentesPendientesDeIniciar+' fuentes pendientes de iniciar se conservan separadas.'));
+  if(r.google.conflictosAnteriores)d.append(nodo('p',r.google.conflictosAnteriores+' conflictos de inventarios anteriores se conservan para revisión separada.'));
+  d.append(nodo('p',r.validacionEnCampo));const copiar=nodo('button','Copiar informe para soporte');copiar.type='button';copiar.onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(r,null,2));aviso('Informe de cierre copiado. No incluye contraseñas ni datos de conexión.');}catch(e){fallo(e);}};d.append(copiar);detalle('Cierre operativo',d);
+ }catch(e){fallo(e);}finally{b.disabled=false;}
+};

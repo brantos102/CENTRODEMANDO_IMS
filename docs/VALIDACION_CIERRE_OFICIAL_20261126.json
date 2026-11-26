@@ -1,0 +1,62 @@
+{
+  "formato": "ims-validacion-cierre-20261126-v1",
+  "fecha": "2026-11-26",
+  "revisionBase": "8d54c0b6debdbc1314ab7b6183e41736b8c6dcef",
+  "entorno": "SINTETICO_AISLADO_NO_PRODUCCION",
+  "resultados": {
+    "node22": {
+      "pruebas": 291,
+      "fallos": 0
+    },
+    "python": {
+      "suiteCompleta": 176,
+      "fallos": 0,
+      "diagnosticoFinalDirigido": 5,
+      "pruebasUnicasValidadas": 177
+    },
+    "mysql": {
+      "centro": 62,
+      "googleDelta": 10,
+      "totalUnicas": 72,
+      "fallos": 0,
+      "asignacionFinalReverificada": true,
+      "motor": "MySQL 8.0.46"
+    },
+    "navegador": {
+      "flujosCompletos": 33,
+      "fallos": 0,
+      "modalFinalReverificado": true,
+      "movil": true,
+      "motor": "Chromium"
+    },
+    "sintaxis": {
+      "javascript": true,
+      "python": true,
+      "bash": true
+    },
+    "gitDiffCheck": true
+  },
+  "verificado": [
+    "C2/C3 en grupos de avance mixto",
+    "Tres lecturas de una unidad y guardado masivo",
+    "API restringida al cliente principal y adicionales",
+    "Recordatorios solo a líderes activos asignados",
+    "Aplicaciones parciales del mismo plan sin perder grupos confirmados",
+    "Cierre administrativo protegido por rol y sede",
+    "Acceso por cliente y asignación vigente; excluidos y cambio de clave pendiente no se anuncian listos",
+    "El informe no crea trabajos ni modifica capturas",
+    "Sesión de comprobación cerrada incluso ante respuesta rechazada",
+    "Memoria medida separada del límite; CPU como muestra; esquema completo medido con conexión separada",
+    "Resumen privado 0600 sin sobrescribir ni seguir enlaces"
+  ],
+  "evidenciaVisual": "capturas/cierre-operativo-sintetico-20261126.png",
+  "produccion": {
+    "conexionServidorDisponible": false,
+    "nuevaRevisionInstalada": false,
+    "googleAplicarConfirmado": false,
+    "consumoRealServidorMedido": false,
+    "datosOperativosModificadosDesdeEstasPruebas": false,
+    "notificacionesRealesEnviadas": false
+  },
+  "pendiente": "Instalar la revisión, obtener el informe del servidor y confirmar con los líderes el registro y la entrega antes del inicio general."
+}

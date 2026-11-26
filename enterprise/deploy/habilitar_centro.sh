@@ -38,3 +38,6 @@ else
 fi
 python3 deploy/actualizar_piloto.py --revision "$imsRevision" --conteos-esperados 352 --filas-esperadas 97822 --operacion-nativa --erp-consulta --erp-creacion --centro
 python3 deploy/activar_usuarios_centro.py
+if ! python3 deploy/verificar_cierre.py --revision "$imsRevision"; then
+  echo '{"instalacion_finalizada":true,"informe_cierre_confirmado":false,"accion":"Revisar el diagnóstico de cierre de la revisión instalada."}'
+fi
