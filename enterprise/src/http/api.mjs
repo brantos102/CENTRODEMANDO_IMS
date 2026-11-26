@@ -195,7 +195,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           const r=await reporteInventario(pool,principal,reporte[1],reporte[2]);res.writeHead(200,{'Content-Type':r.tipo,'Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);
         }
         if(req.method==='POST'&&ruta==='google/sede-archivo')return json(res,200,await definirSedeArchivoGoogle(pool,principal,claveCentro,await leerJson(req)));
-        if(req.method==='GET'&&['cierre','sincronizacion','contexto','perfil','usuarios','dashboard','eventos','analitica','codigos','auditoria','legado','archivo-legado','inventario','calidad'].includes(ruta)){
+        if(req.method==='GET'&&['revision-google','cierre','sincronizacion','contexto','perfil','usuarios','dashboard','eventos','analitica','codigos','auditoria','legado','archivo-legado','inventario','calidad'].includes(ruta)){
           const q=opciones(url,['sede','cliente','buscar','mes','desde','hasta','fuente','inventario','hoja']);return json(res,200,await consultarCentro(pool,principal,ruta,q));
         }
         if(req.method==='POST'&&ruta==='inventarios'){

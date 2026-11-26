@@ -40,6 +40,17 @@ export async function consultarCentro(pool,p,recurso,query={}){
   exigir(pf.rol==='ADMIN','SIN_PERMISO','El informe de cierre corresponde al administrador.');
   return consultarCierreOperativo(c,{sedes:pf.sedes});
  }
+ if(recurso==='revision-google'){
+  exigir(pf.rol==='ADMIN','SIN_PERMISO','La validación de fuentes corresponde al administrador.');
+  const [[j]]=await c.execute("SELECT id,actor_id,resultado,creado_en>DATE_SUB(UTC_TIMESTAMP(),INTERVAL 2 HOUR) vigente FROM ims_cm_trabajo WHERE tipo='GOOGLE_DELTA' AND estado='COMPLETO' AND actor_id=? ORDER BY creado_en DESC,id DESC LIMIT 1",[p.actorId]);
+  if(!j)return {lectura:null};const r=parse(j.resultado);
+  if(!Array.isArray(r?.grupos)||!r.grupos.every(g=>pf.sedes.includes(g.sede)))return {lectura:null};
+  const [apps]=await c.execute("SELECT resultado FROM ims_cm_auditoria WHERE actor_id=? AND tipo='google-delta-aplicar' AND JSON_UNQUOTE(JSON_EXTRACT(resultado,'$.planId'))=? LIMIT 1001",[j.actor_id,j.id]);
+  exigir(apps.length<=1000,'SOLICITUD_INVALIDA','Prepara una nueva lectura para actualizar esta revisión.');
+  const aplicados=[...new Set(apps.flatMap(a=>parse(a.resultado).gruposAplicados||[]).filter(g=>pf.sedes.includes(g.sede)).map(g=>g.grupoId))];
+  const campos=['planId','creadoEn','grupos','incidencias','lecturaCompleta','gruposConConflictos','totalConflictos','gruposAplicables','archivosIntentados','archivosConfirmados','archivosLeidos','cerradosConservados','lineas','datosOperativosModificados','fuentesGoogleModificadas'];
+  return {lectura:Object.fromEntries(campos.filter(k=>Object.hasOwn(r,k)).map(k=>[k,r[k]])),aplicados,soloConsulta:!Number(j.vigente),motivo:!Number(j.vigente)?'LECTURA_ANTERIOR':null};
+ }
  if(recurso==='contexto'){
   const [clientes]=await c.execute('SELECT id,nombre FROM ims_op_cliente ORDER BY nombre');
   const [carpetas]=pf.sedes.length?await c.execute(`SELECT * FROM ims_cm_carpeta WHERE sede IN (${marcador(pf.sedes)}) ORDER BY nombre`,pf.sedes):[[]];

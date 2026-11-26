@@ -17,6 +17,16 @@ import {consultarCierreOperativo} from '../../src/centro/cierre-operativo.mjs';
 import {readFile} from 'node:fs/promises';
 if(process.env.IMS_MYSQL_PRUEBAS!=='1'||!/^centromando_ims_pruebas(?:_[a-z0-9]+)?$/.test(process.env.MYSQL_DATABASE||''))throw Error('Solo datos sintéticos.');
 let pool,root,runtime;
+test('validación recupera la lectura propia y sus incorporaciones sin Google; respeta sede, rol y vencimiento',async t=>{
+ const f=await fixtureCentro(pool,t,{apiPool:runtime}),otro=await fixtureCentro(pool,t,{apiPool:runtime}),id=randomUUID(),grupo='a'.repeat(64),r={planId:id,creadoEn:new Date().toISOString(),grupos:[{sede:'UIO',grupoId:grupo,codigo:'LECTURA_PROPIA'}],incidencias:[],config:{token:'NO_PUBLICAR_CONFIG'}};
+ await pool.execute("INSERT INTO ims_cm_trabajo(id,actor_id,tipo,estado,parametros,resultado) VALUES (?,?,'GOOGLE_DELTA','COMPLETO','{}',?)",[id,f.actor,JSON.stringify(r)]);
+ await pool.execute("INSERT INTO ims_cm_auditoria(actor_id,operacion_id,tipo,hash,resultado,antes,despues) VALUES (?,?,'google-delta-aplicar',?,?, 'null','null')",[f.actor,randomUUID(),'a'.repeat(64),JSON.stringify({planId:id,gruposAplicados:[{sede:'UIO',grupoId:grupo}]})]);
+ const auth=await f.login();let res=await f.req('/api/centro/revision-google',auth);assert.equal(res.response.status,200);assert.equal(res.data.lectura.planId,id);assert.deepEqual(res.data.aplicados,[grupo]);assert.equal(res.data.soloConsulta,false);assert.ok(!JSON.stringify(res.data).includes('NO_PUBLICAR_CONFIG'));
+ const otroAuth=await otro.login();assert.equal((await otro.req('/api/centro/revision-google',otroAuth)).data.lectura,null);
+ await pool.execute('UPDATE ims_cm_trabajo SET creado_en=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 3 HOUR) WHERE id=?',[id]);res=await f.req('/api/centro/revision-google',auth);assert.equal(res.data.soloConsulta,true);assert.equal(res.data.motivo,'LECTURA_ANTERIOR');
+ await pool.execute("DELETE FROM ims_cm_acceso WHERE actor_id=? AND sede='UIO'",[f.actor]);assert.equal((await f.req('/api/centro/revision-google',auth)).data.lectura,null);
+ await pool.execute("UPDATE ims_cm_perfil SET rol='LIDER' WHERE actor_id=?",[f.actor]);assert.equal((await f.req('/api/centro/revision-google',auth)).response.status,403);assert.equal((await f.req('/api/centro/revision-google')).response.status,401);
+});
 test('cierre comprueba clientes por separado y excluye Google de las capturas locales',async t=>{
  const f=await fixtureCentro(pool,t,{apiPool:runtime}),p={actorId:f.actor},r=await crearDesdeCentro({pool:runtime,principal:p,solicitud:f.solicitud});
  const segundo=randomUUID();await pool.execute('INSERT INTO ims_op_cliente VALUES (?,?)',[segundo,'CLIENTE_CIERRE_'+segundo]);await pool.execute('INSERT INTO ims_op_inventario_cliente VALUES (?,?)',[r.inventarioId,segundo]);

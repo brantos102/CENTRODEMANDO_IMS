@@ -1,0 +1,67 @@
+{
+  "formato": "ims-validacion-interfaz-operativa-v1",
+  "fecha": "2026-11-26",
+  "revisionBase": "e37fdec4188d1b7ff2392005934eab7b10521aff",
+  "entorno": "SINTETICO_AISLADO",
+  "resultados": {
+    "node22": {
+      "pruebas": 303,
+      "fallos": 0
+    },
+    "python": {
+      "pruebas": 177,
+      "fallos": 0
+    },
+    "mysql": {
+      "centro": 63,
+      "googleDelta": 10,
+      "total": 73,
+      "fallos": 0
+    },
+    "chromium": {
+      "suiteCompleta": 37,
+      "navegacionEntreAreasAdicional": 1,
+      "flujosUnicos": 38,
+      "fallosFinales": 0,
+      "reverificados": [
+        "Importación confirmada y selección deshabilitada tras aplicar",
+        "Sede de una fuente corregida sin perder el mensaje de confirmación",
+        "Menú en gestión, Centro y terminal de conteo",
+        "Enlaces de cabecera conservan el inventario",
+        "Perfil operativo y personalización",
+        "Validación en día, noche y móvil"
+      ]
+    },
+    "assetsHTTPSExigidosPorInstalador": 32,
+    "gitDiffCheck": true
+  },
+  "comprobaciones": [
+    "La última lectura guardada se consulta sin volver a acceder a Google",
+    "Solo administración accede al resultado de validación y a las conexiones",
+    "Lectura guardada ligada a cuenta y sedes; el vencimiento conserva el resultado para consulta",
+    "La incorporación anterior sigue visible aunque la nueva lectura corresponda a otro plan",
+    "Dos diferencias recientes se separan de 304 diferencias anteriores en el escenario sintético",
+    "Comparación de cantidades exactas por etapa sin abreviar capturas",
+    "Selección conserva su alcance y evita reactivar un grupo ya incorporado",
+    "Menú muestra las funciones del rol y orienta al perfil si la clave inicial sigue pendiente",
+    "Modo día/noche por cuenta y presentación móvil sin desbordamiento horizontal",
+    "Recordatorios describen únicamente a líderes de conteo activos asignados"
+  ],
+  "capturas": [
+    "capturas/validacion-intuitiva-sintetica-20261126.png",
+    "capturas/validacion-intuitiva-movil-20261126.png",
+    "capturas/validacion-intuitiva-noche-20261126.png",
+    "capturas/menu-operario-movil-sintetico-20261126.png"
+  ],
+  "servidorCorporativo": {
+    "ultimaRevisionAcreditada": "e37fdec4188d1b7ff2392005934eab7b10521aff",
+    "nuevaInterfazInstaladaDesdeEsteEntorno": false,
+    "datosInventarioRealesModificados": false,
+    "notificacionesRealesEnviadas": false
+  },
+  "pendientesOperativosSegunUltimoInforme": {
+    "conflictosRecientes": 2,
+    "cuentasPendientesCambioClave": 5,
+    "inventariosRecientesSinEquipoListo": 8
+  }
+}
