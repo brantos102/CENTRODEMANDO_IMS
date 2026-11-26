@@ -71,6 +71,7 @@ export async function consultarCierreOperativo(c,{sedes,hoy=diaEcuador(),ahora=n
  if(google.periodoReciente.novedadesPorAplicar.length)pendientes.push({codigo:'NOVEDADES_RECIENTES_SIN_INCORPORAR',cantidad:google.periodoReciente.novedadesPorAplicar.length,accion:'Revisar y aplicar la selección reciente; si el plan venció, volver a leer.'});
  if(google.periodoReciente.gruposConConflictos)pendientes.push({codigo:'CONFLICTOS_RECIENTES',cantidad:google.periodoReciente.gruposConConflictos,accion:'Conciliar las diferencias de los inventarios recientes sin sustituir capturas locales.'});
  if(!cuentas.lideresActivos)pendientes.push({codigo:'LIDERES_SIN_HABILITAR',accion:'Crear o activar las cuentas de los líderes de conteo.'});
+ if(cuentas.pendientesCambioClave)pendientes.push({codigo:'CUENTAS_PENDIENTES_CAMBIO_CLAVE',cantidad:cuentas.pendientesCambioClave,accion:'Cada persona debe iniciar sesión y cambiar su clave inicial en Centro → Mi perfil antes de contar. Si no conoce su clave temporal, administración puede restablecerla desde Usuarios.'});
  const conPendientes=recientes.filter(r=>Number(r.borrador)||Number(r.clientesSinLider)||Number(r.clientesSinEquipoHabilitado));
  if(conPendientes.length)pendientes.push({codigo:'INVENTARIOS_RECIENTES_SIN_EQUIPO_LISTO',cantidad:conPendientes.length,accion:'Completar stock pendiente y asignar líder y colaboradores; deben terminar el cambio de clave inicial.'});
  return {formato:'ims-cierre-operativo-v1',generadoEn:ahora.toISOString(),sedes,periodo:{desde,hasta:hoy},

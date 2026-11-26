@@ -37,7 +37,7 @@ test('cierre comprueba clientes por separado y excluye Google de las capturas lo
  const auth=await f.login(),api=await f.req('/api/centro/cierre',auth);assert.equal(api.response.status,200);let i=api.data.recientes.find(x=>x.inventarioId===r.inventarioId);assert.equal(i.clientesSinLider,0);
  await pool.execute("UPDATE ims_cm_equipo SET estado='EXCLUIDO' WHERE evento_id=? AND actor_id=?",[r.eventoId,lider.actorId]);const excluido=await f.req('/api/centro/cierre',auth);assert.equal(excluido.data.recientes.find(x=>x.inventarioId===r.inventarioId).clientesSinLider,2);
  await pool.execute("UPDATE ims_cm_equipo SET estado='ACTIVO' WHERE evento_id=? AND actor_id=?",[r.eventoId,lider.actorId]);
- await pool.execute('UPDATE ims_cm_perfil SET cambiar_clave=1 WHERE actor_id=?',[lider.actorId]);const nuevo=await f.req('/api/centro/cierre',auth);i=nuevo.data.recientes.find(x=>x.inventarioId===r.inventarioId);assert.equal(i.clientesSinLider,2);
+ await pool.execute('UPDATE ims_cm_perfil SET cambiar_clave=1 WHERE actor_id=?',[lider.actorId]);const nuevo=await f.req('/api/centro/cierre',auth);i=nuevo.data.recientes.find(x=>x.inventarioId===r.inventarioId);assert.equal(i.clientesSinLider,2);assert.ok(nuevo.data.pendientes.some(x=>x.codigo==='CUENTAS_PENDIENTES_CAMBIO_CLAVE'));
  await pool.execute("UPDATE ims_cm_perfil SET rol='OPERARIO' WHERE actor_id=?",[f.actor]);assert.equal((await f.req('/api/centro/cierre',auth)).response.status,403);
 });
 

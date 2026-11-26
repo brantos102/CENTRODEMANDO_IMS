@@ -1,0 +1,51 @@
+{
+  "formato": "ims-validacion-cuota-google-20261126-v1",
+  "revisionBase": "4d5b416043d6a53c951e094f7e58fd95cb349fb4",
+  "fecha": "2026-11-26",
+  "problemaConfirmado": "HTTP 429 en las fuentes compartidas por el usuario; lectura parcial en el servidor real",
+  "servidorReal": {
+    "revisionInstaladaConfirmada": "4d5b416043d6a53c951e094f7e58fd95cb349fb4",
+    "memoriaServicioMiB": 50.88671875,
+    "picoMemoriaMiB": 82.87890625,
+    "baseMySQLGiBIncluidasCopias": 5.2978363037109375,
+    "particionLibreGiB": 34.067779541015625,
+    "cuentasPendientesCambioClave": 5,
+    "googleAplicarConfirmado": false
+  },
+  "pruebas": {
+    "entorno": "SINTETICO_AISLADO",
+    "node22": {
+      "pruebas": 299,
+      "fallos": 0
+    },
+    "mysql": {
+      "centro": 62,
+      "googleDelta": 10,
+      "fallos": 0
+    },
+    "chromium": {
+      "flujos": 35,
+      "fallos": 0,
+      "incluyeCambioClaveYCapturaLiderC1C2C3": true,
+      "incluyeDiagnosticoParcialMovil": true
+    }
+  },
+  "controlesVerificados": [
+    "Lecturas concurrentes espaciadas al menos 1100 ms",
+    "HTTP 429 y errores temporales recuperables con un máximo de cuatro intentos",
+    "Retry-After se respeta sin recortar una espera larga para consultar antes",
+    "403 y 404 se conservan sin reintentos",
+    "Certificados rechazados se conservan sin deshabilitar TLS",
+    "Solo GET a Sheets para reintentos; no se admiten destinos ajenos",
+    "El lector real recupera una página del panel ante un 429 simulado",
+    "Lectura parcial sin novedades se identifica como cobertura incompleta",
+    "Incidencias con fila, HTTP y acción sin IDs ni mensajes privados de Google",
+    "Líder cambia su contraseña inicial y registra C1 cero, C2 y C3; antes del cambio se bloquea la captura",
+    "Cuentas con clave pendiente y asignaciones excluidas se distinguen en el cierre"
+  ],
+  "sinPruebaContraGoogleRealDesdeEsteEntorno": true,
+  "cuentasRealesModificadas": false,
+  "capturasRealesModificadas": false,
+  "notificacionesRealesEnviadas": false,
+  "pendiente": "Instalar la corrección, preparar una nueva lectura, aplicar la selección revisada, completar las claves y la asignación del equipo y verificar la operación real."
+}

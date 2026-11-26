@@ -2,6 +2,8 @@
 
 26 de noviembre de 2026 · Ecuador
 
+**Actualización:** se recibió la confirmación de instalación de `4d5b416` y la medición real del servidor. Los rechazos de Google compartidos después corresponden a HTTP 429. Véase [cierre real y corrección de cuota](CIERRE_REAL_Y_CUOTA_GOOGLE_20261126.md). La sección de evidencia pendiente de este documento describe el estado anterior a recibir ese informe.
+
 ## Resultado preparado
 
 Esta actualización reúne las correcciones de creación y conteo publicadas el 23 de noviembre y agrega una comprobación del cierre. No asigna un porcentaje de producción a partir del número de pruebas aprobadas.

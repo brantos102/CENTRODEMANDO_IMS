@@ -1,3 +1,4 @@
+import {detalleIncidenciaGoogle} from './lectura-google.mjs';
 import {sumarDias} from './dominio.mjs';
 const n=v=>Number.isSafeInteger(v)&&v>=0?v:0;
 const parse=v=>{try{return typeof v==='string'?JSON.parse(v):v||{};}catch{return {};}};
@@ -15,10 +16,10 @@ export function resumenIncorporacionGoogle(jobs,{hoy,sedes,aplicaciones=[]}){
  const aplicados=new Set(incorporados.keys());
  const recientes=grupos.filter(g=>typeof g.fechaInicio==='string'&&g.fechaInicio>=desde&&g.fechaInicio<=hoy),sinAplicar=recientes.filter(g=>g.aplicable&&!aplicados.has(g.grupoId));
  return {formato:'ims-google-incorporacion-resumen-v1',consulta:hoy,
-  revision:lectura?{tipo:'GOOGLE_DELTA',trabajoId:id(lectura.id),estado:lectura.estado,fecha:fecha(r.creadoEn??lectura.actualizado_en),archivosIntentados:n(r.archivosIntentados??r.archivosLeidos),archivosConfirmados:Number.isSafeInteger(r.archivosConfirmados)?r.archivosConfirmados:null,fuentesPendientesDeIniciar:incidencias.filter(i=>i.codigo==='GOOGLE_INVENTARIO_PENDIENTE').length,otrasIncidencias:incidencias.filter(i=>i.codigo!=='GOOGLE_INVENTARIO_PENDIENTE').length}:null,
+  revision:lectura?{tipo:'GOOGLE_DELTA',trabajoId:id(lectura.id),estado:lectura.estado,fecha:fecha(r.creadoEn??lectura.actualizado_en),archivosIntentados:n(r.archivosIntentados??r.archivosLeidos),archivosConfirmados:Number.isSafeInteger(r.archivosConfirmados)?r.archivosConfirmados:null,fuentesPendientesDeIniciar:incidencias.filter(i=>i.codigo==='GOOGLE_INVENTARIO_PENDIENTE').length,otrasIncidencias:incidencias.filter(i=>i.codigo!=='GOOGLE_INVENTARIO_PENDIENTE').length,detalleIncidencias:incidencias.map(detalleIncidenciaGoogle)}:null,
   aplicacion:aplicada?{tipo:'GOOGLE_APLICAR',trabajoId:id(aplicada.id),estado:aplicada.estado,planId:id(a.planId),fecha:fecha(aplicada.actualizado_en),correspondeARevision:coincide,inventariosNuevos:n(a.inventariosNuevos),capturasAgregadas:n(a.capturasAgregadas),incidencias:Array.isArray(a.incidencias)?a.incidencias.length:0}:null,
   aplicacionesDeRevision:{trabajosCompletos:confirmadas.length,gruposIncorporados:incorporados.size,inventariosNuevos:[...incorporados.values()].filter(g=>g.nuevo===true).length,capturasAgregadas:[...incorporados.values()].reduce((s,g)=>s+n(g.capturas),0)},
-  periodoReciente:{desde,hasta:hoy,novedadesPorAplicar:sinAplicar.map(g=>({codigo:String(g.codigo??'').slice(0,255),fechaInicio:g.fechaInicio,accion:g.accion==='CREAR'?'CREAR':'COMPLETAR_CAPTURAS',lineas:n(g.filas),capturas:n(g.capturasNuevas),conflictos:n(g.conflictos)})),gruposConConflictos:recientes.filter(g=>n(g.conflictos)>0).length},
+  periodoReciente:{desde,hasta:hoy,comprobacion:incidencias.some(i=>i.codigo!=='GOOGLE_INVENTARIO_PENDIENTE')?'INCOMPLETA_POR_FUENTES_NO_CONFIRMADAS':'FUENTES_REVISADAS',novedadesPorAplicar:sinAplicar.map(g=>({codigo:String(g.codigo??'').slice(0,255),fechaInicio:g.fechaInicio,accion:g.accion==='CREAR'?'CREAR':'COMPLETAR_CAPTURAS',lineas:n(g.filas),capturas:n(g.capturasNuevas),conflictos:n(g.conflictos)})),gruposConConflictos:recientes.filter(g=>n(g.conflictos)>0).length},
   conflictosAnteriores:grupos.filter(g=>g.fechaInicio<desde).reduce((a,g)=>a+n(g.conflictos),0),
   nota:'GOOGLE_DELTA revisa; GOOGLE_APLICAR incorpora. Los archivos pendientes de iniciar y los conflictos anteriores se conservan para revisión separada.'};
 }
