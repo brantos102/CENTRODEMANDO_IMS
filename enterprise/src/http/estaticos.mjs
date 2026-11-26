@@ -1,6 +1,10 @@
 import {readFile} from 'node:fs/promises';
 const ROOT=new URL('../../public/',import.meta.url);
 const FILES={
+  '/assets/itsa-marca.svg':['itsa-marca.svg','image/svg+xml'],
+  '/assets/vendor/SchibstedGrotesk.ttf':['vendor/SchibstedGrotesk.ttf','font/ttf'],
+  '/assets/iconos.mjs':['iconos.mjs','text/javascript; charset=utf-8'],
+  '/assets/administracion-ui.mjs':['administracion-ui.mjs','text/javascript; charset=utf-8'],
   '/assets/revision-google.mjs':['revision-google.mjs','text/javascript; charset=utf-8'],
   '/assets/navegacion-ui.mjs':['navegacion-ui.mjs','text/javascript; charset=utf-8'],
   '/assets/monitor-filtros.mjs':['monitor-filtros.mjs','text/javascript; charset=utf-8'],'/assets/ayuda-ims.mjs':['ayuda-ims.mjs','text/javascript; charset=utf-8'],
@@ -55,6 +59,6 @@ export async function servirEstatico(req,res,url,{centroHabilitado=false}={}){
   const [file,type]=centroHabilitado&&url.pathname==='/'?FILES['/centro']:FILES[url.pathname],body=await readFile(new URL(file,ROOT));
   res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
     'Referrer-Policy':'no-referrer','Content-Length':body.length,
-    'Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
+    'Content-Security-Policy':"frame-src 'self'; default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; base-uri 'none'; frame-ancestors "+(file==='crear.html'?"'self'":"'none'")+"; form-action 'self'"});
   res.end(req.method==='HEAD'?undefined:body);return true;
 }

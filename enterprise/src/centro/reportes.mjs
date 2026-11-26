@@ -1,3 +1,4 @@
+import {politicaConteo} from '../mysql/politica-conteo.mjs';
 import {transaccionOperativa} from '../mysql/operacion-nativa.mjs';
 import {perfilCentro} from './servicio.mjs';
 import {exigir,uuid,hash,diaEcuador} from './dominio.mjs';
@@ -15,7 +16,7 @@ export function excel(filas,nombre='INVENTARIOS'){
 export function ics(eventos){const safe=x=>String(x??'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ITSANET//Centro de Mando//ES','CALSCALE:GREGORIAN',...eventos.flatMap(e=>['BEGIN:VEVENT','UID:'+e.id+'@centromando.itsanet','DTSTART;VALUE=DATE:'+e.fecha_inicio.replaceAll('-',''),'SUMMARY:'+safe(e.cliente+' · '+e.titulo),'DESCRIPTION:'+safe(e.observacion),'END:VEVENT']),'END:VCALENDAR',''].join('\r\n');}
 export async function filasInventario(c,p,id,{administrativo=false}={}){
  uuid(id);
- const [[n]]=await c.execute('SELECT i.*,n.fecha_inicio,n.fecha_entrega,n.borrador,n.version FROM ims_op_inventario i LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE i.id=?',[id]);exigir(n,'SIN_PERMISO','Inventario no autorizado.');
+ const [[n]]=await c.execute('SELECT i.*,n.fecha_inicio,n.fecha_entrega,n.borrador,n.mostrar_depot,n.version FROM ims_op_inventario i LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE i.id=?',[id]);exigir(n,'SIN_PERMISO','Inventario no autorizado.');
  const [[faltas]]=await c.execute('SELECT COUNT(*) n FROM ims_op_inventario_cliente ic WHERE ic.inventario_id=? AND NOT EXISTS(SELECT 1 FROM ims_op_permiso p WHERE p.inventario_id=ic.inventario_id AND p.cliente_id=ic.cliente_id AND p.actor_id=?)',[id,p.actorId]);exigir(administrativo||Number(faltas.n)===0,'SIN_PERMISO','El reporte requiere autorización para todos los clientes del inventario.');
  const rows=[];let desde='';
  for(;;){const [r]=await c.execute(`SELECT l.*,cli.nombre cliente,d.posicion,d.descripcion,d.serie,d.lote,d.unidad,x.numero,x.depot,x.ajuste,x.motivo,x.justificacion,x.abc,x.despacho,x.partida,x.categoria,x.estado_mercancia,h.depot legado_depot,h.ajuste legado_ajuste,h.fecha_inicio legado_inicio,h.fecha_fin legado_fin,h.datos legado_datos FROM ims_op_linea l JOIN ims_op_cliente cli ON cli.id=l.cliente_id LEFT JOIN ims_op_detalle_linea d ON d.linea_id=l.id LEFT JOIN ims_nat_linea x ON x.linea_id=l.id LEFT JOIN ims_cm_linea_historica h ON h.linea_id=l.id WHERE l.inventario_id=? AND l.id>? ORDER BY l.id LIMIT 500`,[id,desde]);if(!r.length)break;
@@ -38,8 +39,15 @@ async function libroInventario(c,p,n,filas,t){
  catch(e){if(!['SIN_PERMISO','SOLICITUD_INVALIDA'].includes(e.codigo))throw e;notas.push(['HISTORIAL ORIGINAL NO INCLUIDO',e.message]);}
  hojas.push({nombre:'COBERTURA',filas:notas});return xlsxLibro(hojas);
 }
+export async function datosReporteAutorizado(c,p,id){
+ const pf=await perfilCentro(c,p);exigir(pf.modulos.reportes!==false,'SIN_PERMISO','Reportes deshabilitados para tu cuenta.');const {inventario:n,filas}=await filasInventario(c,p,id);exigir(pf.sedes.includes(n.sede),'SIN_PERMISO','Sede no autorizada.');let ciego=false;
+ if(n.version!==null&&n.version!==undefined){const [perfiles]=await c.execute('SELECT rol FROM ims_nat_perfil WHERE inventario_id=? AND actor_id=?',[id,p.actorId]);ciego=(await politicaConteo(c,{...p,centroHabilitado:true},{perfiles,mostrar_depot:n.mostrar_depot,esNativo:true})).conteoCiego;}
+ else ciego=!pf.permisos.exportar;
+ if(ciego)for(const f of filas){f.depot=null;f.ajuste=null;f.motivo='';f.justificacion='';f.resultado={fisico:null,desfase:null,resultado:'CONTEO CIEGO'};}
+ return {inventario:n,filas,tabla:tablaInventario(n,filas),ciego};
+}
 export async function reporteInventario(pool,p,id,formato='csv'){
- return transaccionOperativa(pool,p,async c=>{const pf=await perfilCentro(c,p);exigir(pf.permisos.exportar,'SIN_PERMISO','Tu rol no exporta reportes.');const {inventario:n,filas}=await filasInventario(c,p,id);exigir(pf.sedes.includes(n.sede),'SIN_PERMISO','Sede no autorizada.');const t=tablaInventario(n,filas);return {nombre:(n.codigo_operativo.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9_.-]/g,'_').slice(0,120)||'inventario')+'_'+id+(formato==='excel'?'.xlsx':'.csv'),tipo:formato==='excel'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'text/csv; charset=utf-8',contenido:formato==='excel'?await libroInventario(c,p,n,filas,t):csv(t)};});
+ return transaccionOperativa(pool,p,async c=>{const {inventario:n,filas,tabla:t,ciego}=await datosReporteAutorizado(c,p,id);return {nombre:(n.codigo_operativo.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9_.-]/g,'_').slice(0,120)||'inventario')+'_'+id+(formato==='excel'?'.xlsx':'.csv'),tipo:formato==='excel'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'text/csv; charset=utf-8',contenido:formato==='excel'?(ciego?xlsxLibro([{nombre:'CONTEOS_AUTORIZADOS',filas:t},{nombre:'COBERTURA',filas:[['ALCANCE','Conteo ciego: se omiten cantidades teóricas, diferencias y hojas originales.'],['INVENTARIO',n.codigo_operativo],['IDENTIDAD',n.id],['EMITIDO UTC',new Date().toISOString()]]}]):await libroInventario(c,p,n,filas,t)):csv(t)};});
 }
 export async function consolidarCentro(pool,p,s){
  uuid(s.operacionId);return transaccionOperativa(pool,p,async c=>{

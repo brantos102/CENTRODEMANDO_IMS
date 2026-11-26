@@ -25,7 +25,7 @@ CM_TABLES={
  'ims_cm_presencia':'SELECT, INSERT, UPDATE, DELETE',
  'ims_cm_catalogo_archivo':'SELECT, INSERT',
  'ims_cm_catalogo':'SELECT, INSERT','ims_cm_catalogo_fila':'SELECT, INSERT','ims_cm_catalogo_actual':'SELECT, INSERT, UPDATE',
- 'ims_cm_conector':'SELECT, INSERT, UPDATE','ims_cm_archivo':'SELECT, INSERT, DELETE',
+ 'ims_cm_politica_ui':'SELECT, UPDATE','ims_cm_conector':'SELECT, INSERT, UPDATE','ims_cm_archivo':'SELECT, INSERT, DELETE',
  'ims_cm_perfil':'SELECT, INSERT, UPDATE','ims_cm_acceso':'SELECT, INSERT, DELETE',
  'ims_cm_evento':'SELECT, INSERT, UPDATE','ims_cm_equipo':'SELECT, INSERT, UPDATE',
  'ims_cm_vinculo':'SELECT, INSERT','ims_cm_carpeta':'SELECT, INSERT','ims_cm_documento':'SELECT, INSERT, UPDATE',
@@ -96,7 +96,7 @@ def preparar(repo,datos,revision):
     preparar_estado_sin_consolidar()
     cfg=configuracion(datos);sol=json.loads(p.privado(datos/'piloto/solicitud.json').read_text());actor=sol['lector']['actorId']
     # DDL aditivo en la base propia; no cambia tablas operativas existentes.
-    sql=(repo/'enterprise/sql/013_centro_mando.sql').read_text()+'\n'+(repo/'enterprise/sql/015_layout_ocupacion.sql').read_text()+'\n'+(repo/'enterprise/sql/016_evidencias_drive.sql').read_text()
+    sql=(repo/'enterprise/sql/013_centro_mando.sql').read_text()+'\n'+(repo/'enterprise/sql/015_layout_ocupacion.sql').read_text()+'\n'+(repo/'enterprise/sql/016_evidencias_drive.sql').read_text()+'\n'+(repo/'enterprise/sql/017_administracion_ui.sql').read_text()
     p.exigir(all(t.startswith('ims_cm_') for t in re.findall(r'CREATE TABLE IF NOT EXISTS (\w+)',sql)),'Esquema incompatible.')
     p.admin_mysql('USE `'+op.DB+'`;\n'+sql)
     archivo=p.privado(datos/'entrada/ims-abiertos-f0799052d8b942138c0ac3106980d740.zip')

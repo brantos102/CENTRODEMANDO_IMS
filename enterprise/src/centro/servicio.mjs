@@ -1,3 +1,4 @@
+import {leerPoliticaUI,modulosEfectivos,validarPoliticaUI} from './politica-ui.mjs';
 import {leerEstadoGoogle} from './estado-google.mjs';
 import {cuentasOperacion,consultarCierreOperativo} from './cierre-operativo.mjs';
 import {planificarCodigos} from './programacion-codigos.mjs';
@@ -14,7 +15,7 @@ export async function perfilCentro(c,p,bloquear=false){
  const [[r]]=await c.execute(`SELECT p.rol,p.rol_wms,p.telefono,p.cambiar_clave,p.version FROM ims_cm_perfil p WHERE p.actor_id=? ${bloquear?'FOR UPDATE':'FOR SHARE'}`,[p.actorId]);
  exigir(r,'SIN_PERMISO','Tu cuenta aún no tiene un perfil del Centro de Mando.');
  const [as]=await c.execute('SELECT sede FROM ims_cm_acceso WHERE actor_id=?',[p.actorId]);
- return {...r,sedes:as.map(x=>x.sede),permisos:permisos(r.rol)};
+ const {politica,version}=await leerPoliticaUI(c),modulos=modulosEfectivos(politica,r.rol,p.actorId),per=permisos(r.rol);for(const [k,m]of Object.entries({crear:'crear',usuarios:'usuarios',analitica:'analitica',exportar:'reportes',recordatorios:'notificaciones'}))per[k]=per[k]&&modulos[m];return {...r,sedes:as.map(x=>x.sede),permisos:per,modulos,politicaVersion:version};
 }
 const marcador=a=>a.map(()=>'?').join(',');
 async function cargarEventos(c,pf){
@@ -31,6 +32,10 @@ async function personas(c,pf){
 export async function consultarCentro(pool,p,recurso,query={}){
  return transaccionOperativa(pool,p,async c=>{
  let pf=await perfilCentro(c,p);if(['dashboard','eventos','analitica'].includes(recurso)&&query.sede){exigir(pf.sedes.includes(query.sede),'SIN_PERMISO','Sede no autorizada.');pf={...pf,sedes:[query.sede]};}
+ if(recurso==='documentos-inventario'){
+  const {datosReporteAutorizado}=await import('./reportes.mjs'),d=await datosReporteAutorizado(c,p,uuid(query.inventario)),[clientes]=await c.execute('SELECT cl.nombre FROM ims_op_inventario_cliente ic JOIN ims_op_cliente cl ON cl.id=ic.cliente_id WHERE ic.inventario_id=?',[d.inventario.id]);const [[j]]=await c.execute("SELECT resultado,actualizado_en FROM ims_cm_trabajo WHERE tipo='REPORTES_CLIENTES' AND estado='COMPLETO' ORDER BY actualizado_en DESC LIMIT 1");const rs=j?parse(j.resultado).reportes||[]:[];return {inventarioId:d.inventario.id,codigo:d.inventario.codigo_operativo,estado:d.inventario.estado,lineas:d.filas.length,conteoCiego:d.ciego,clientes:clientes.map(x=>x.nombre),enlacesSheets:d.ciego||d.inventario.sede!=='UIO'?[]:rs.filter(r=>clientes.some(c=>c.nombre===r.cliente)&&/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,120}\/edit#gid=\d+$/.test(r.url)).map(r=>({cliente:r.cliente,url:r.url,filas:r.filas,confirmadoEn:j.actualizado_en})),notaSheets:'Los enlaces corresponden al último consolidado confirmado de inventarios entregados. La consulta no publica ni comparte archivos.'};
+ }
+ if(recurso==='politica-ui'){exigir(pf.rol==='ADMIN'&&['UIO','GYE'].every(s=>pf.sedes.includes(s)),'SIN_PERMISO','La política global requiere administración de UIO y GYE.');return {...await leerPoliticaUI(c),usuarios:await personas(c,pf)};}
  if(recurso==='sincronizacion'){
   exigir(pf.rol==='ADMIN','SIN_PERMISO','El estado de fuentes corresponde al administrador.');
   const cuentas=await cuentasOperacion(c,pf.sedes);
@@ -94,7 +99,7 @@ export async function consultarCentro(pool,p,recurso,query={}){
   const sedes=pf.sedes.length?pf.sedes:['SIN_SEDE'];const [[inventarios]]=await c.execute(`SELECT COUNT(DISTINCT i.id) total,COUNT(DISTINCT CASE WHEN n.inventario_id IS NULL THEN i.id END) historicos,COUNT(DISTINCT n.inventario_id) nativos FROM ims_op_inventario i LEFT JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE i.sede IN (${marcador(sedes)})`,sedes);
   const [[lineas]]=await c.execute('SELECT COUNT(*) total,SUM(l.conteo_1 IS NOT NULL) c1,SUM(l.conteo_2 IS NOT NULL) c2,SUM(l.conteo_final IS NOT NULL) c3,SUM((l.conteo_1 IS NULL AND (l.conteo_2 IS NOT NULL OR l.conteo_final IS NOT NULL)) OR (l.conteo_2 IS NULL AND l.conteo_final IS NOT NULL)) etapasHeredadasParaRevisar FROM ims_op_linea l JOIN ims_op_inventario i ON i.id=l.inventario_id WHERE i.sede IN ('+marcador(sedes)+')',sedes);
   const [sinVinculo]=await c.execute('SELECT i.id,i.sede,i.codigo_operativo FROM ims_op_inventario i JOIN ims_nat_inventario n ON n.inventario_id=i.id WHERE i.sede IN ('+marcador(sedes)+') AND NOT EXISTS(SELECT 1 FROM ims_cm_vinculo v WHERE v.inventario_id=i.id) ORDER BY i.sede,i.codigo_operativo',sedes);
-  const [fuentes]=await c.execute('SELECT clave,filas,metadatos FROM ims_cm_fuente ORDER BY clave');return {inventarios,lineas,sinVinculo,fuentes:pf.sedes.includes('UIO')&&pf.sedes.includes('GYE')?fuentes.map(x=>({...x,metadatos:parse(x.metadatos)})):[],datosModificados:false,nota:'Las etapas heredadas se conservan como fueron capturadas. Un inventario sin vínculo puede ser una creación independiente válida.'};
+  const [clientes]=await c.execute(`SELECT cl.id,cl.nombre,i.sede,COUNT(DISTINCT i.id) inventarios,COUNT(DISTINCT CASE WHEN i.estado='ENTREGADO' THEN i.id END) entregados,COUNT(l.id) lineas,SUM(l.conteo_1 IS NOT NULL) c1,COUNT(DISTINCT pub.inventario_id) kpiPublicados FROM ims_op_inventario i JOIN ims_op_inventario_cliente ic ON ic.inventario_id=i.id JOIN ims_op_cliente cl ON cl.id=ic.cliente_id LEFT JOIN ims_op_linea l ON l.inventario_id=i.id AND l.cliente_id=ic.cliente_id LEFT JOIN ims_cm_publicacion pub ON pub.inventario_id=i.id WHERE i.sede IN (${marcador(sedes)}) GROUP BY cl.id,cl.nombre,i.sede ORDER BY i.sede,cl.nombre`,sedes);const [[ultimoReporte]]=await c.execute("SELECT resultado,actualizado_en FROM ims_cm_trabajo WHERE tipo='REPORTES_CLIENTES' AND estado='COMPLETO' ORDER BY actualizado_en DESC LIMIT 1");const reportes=ultimoReporte?parse(ultimoReporte.resultado).reportes||[]:[];for(const cl of clientes){const r=cl.sede==='UIO'?reportes.find(r=>r.cliente===cl.nombre):null;cl.sheetsConfirmado=!!r;cl.sheetsFilas=r?.filas??null;cl.sheetsFecha=r?ultimoReporte.actualizado_en:null;}const [fuentes]=await c.execute('SELECT clave,filas,metadatos FROM ims_cm_fuente ORDER BY clave');return {inventarios,lineas,clientes,sinVinculo,fuentes:pf.sedes.includes('UIO')&&pf.sedes.includes('GYE')?fuentes.map(x=>({...x,metadatos:parse(x.metadatos)})):[],datosModificados:false,nota:'Las etapas heredadas se conservan como fueron capturadas. Un inventario sin vínculo puede ser una creación independiente válida.'};
  }
  if(recurso==='codigos'){
   exigir(pf.sedes.includes(query.sede),'SIN_PERMISO','Sede no autorizada.');
@@ -143,7 +148,9 @@ export async function mutarCentro({pool,principal:p,tipo,solicitud:s,conexion,cl
    return {...r,repetida:true};
   }
   let resultado={},antes=null,despues=null;
-  if(tipo==='evento'){
+  if(tipo==='politica-ui'){
+   exigir(pf.rol==='ADMIN'&&['UIO','GYE'].every(s=>pf.sedes.includes(s)),'SIN_PERMISO','La política global requiere administración de UIO y GYE.');const politica=validarPoliticaUI(s.politica),[[old]]=await c.execute('SELECT version,datos FROM ims_cm_politica_ui WHERE id=1 FOR UPDATE');exigir(String(old.version)===String(s.version),'VERSION_DESACTUALIZADA','La política cambió. Vuelve a abrir Administración antes de guardar.');const ids=[...Object.keys(politica.usuarios),...politica.grupos.flatMap(g=>g.miembros)];const disponibles=new Set((await personas(c,pf)).map(u=>u.actor_id));exigir(ids.every(id=>disponibles.has(id)),'SIN_PERMISO','Hay cuentas fuera de las sedes administradas.');antes=parse(old.datos);despues=politica;await c.execute('UPDATE ims_cm_politica_ui SET datos=?,version=version+1,actualizado_por=?,actualizado_en=CURRENT_TIMESTAMP(6) WHERE id=1',[JSON.stringify(politica),p.actorId]);resultado={guardado:true,version:String(BigInt(old.version)+1n)};
+  }else if(tipo==='evento'){
    exigir(pf.permisos.crear,'SIN_PERMISO','Tu rol no crea eventos.');const e=evento(s);exigir(pf.sedes.includes(e.sede),'SIN_PERMISO','Sede no autorizada.');
    if(s.eventoId){uuid(s.eventoId);const [[old]]=await c.execute('SELECT * FROM ims_cm_evento WHERE id=? AND eliminado=0 FOR UPDATE',[s.eventoId]);exigir(old&&pf.sedes.includes(old.sede),'SIN_PERMISO','Evento no autorizado.');exigir(['ADMIN','COORDINADOR'].includes(pf.rol)||old.responsable_id===p.actorId||!old.responsable_id&&pf.permisos.crear,'SIN_PERMISO','Solo la coordinación o el responsable puede modificar esta tarea y sus colaboradores.');exigir(String(old.version)===String(s.version),'VERSION_DESACTUALIZADA','El evento cambió. Actualiza antes de guardar.');exigir(old.estado!=='Entregado','INVENTARIO_NO_EDITABLE','La entrega ya está registrada.');
     if(old.sede!==e.sede||old.cliente!==e.cliente){const [[v]]=await c.execute('SELECT COUNT(*) n FROM ims_cm_vinculo WHERE evento_id=?',[s.eventoId]);exigir(Number(v.n)===0,'INVENTARIO_NO_EDITABLE','El evento vinculado conserva su sede y cliente. Crea otro evento para una operación distinta.');}

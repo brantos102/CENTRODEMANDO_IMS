@@ -1,3 +1,4 @@
+import {moduloRuta} from '../centro/politica-ui.mjs';
 import {destinatariosRecordatorio} from '../centro/recordatorios.mjs';
 import {guardarConteoGrupo} from '../mysql/conteos-grupo.mjs';
 import {definirSedeArchivoGoogle} from '../centro/google-delta.mjs';
@@ -7,7 +8,7 @@ import {diagnosticoOAuth} from '../centro/google-diagnostico.mjs';
 import {sincronizarEvidencia} from '../centro/drive-evidencias.mjs';
 import {guardarEvidencia,listarEvidencias,leerEvidencia} from '../centro/evidencias.mjs';
 import {resguardarCodigoOrigen} from '../centro/codigo-origen.mjs';
-import {pdfAnalisis,pdfEtiqueta} from '../centro/pdf.mjs';
+import {pdfInventarioCompleto,pdfAnalisis,pdfEtiqueta} from '../centro/pdf.mjs';
 import {presenciaInventario,rankingInventario} from '../centro/presencia.mjs';
 import {consultarOcupacion,consultarOcupacionInventario,actualizarOcupacion} from '../centro/ocupacion.mjs';
 import {consultarLayout} from '../centro/layout.mjs';
@@ -126,7 +127,7 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
       if(centroHabilitado&&!url.pathname.startsWith('/api/centro/')&&url.pathname!=='/api/sesion/cerrar'){
         const perfil=await consultarCentro(pool,principal,'perfil');
         if(perfil.perfil.cambiar_clave)throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
-        principal.sedes=perfil.perfil.sedes;
+        principal.sedes=perfil.perfil.sedes;const modulo=moduloRuta(url.pathname,req.method);if(modulo&&perfil.perfil.modulos?.[modulo]===false)throw new ErrorAuth('SIN_PERMISO','Administración deshabilitó este módulo para tu cuenta.',403);
       }
       if(req.method==='POST'){
         if(!tokensIguales(req.headers['x-ims-csrf'],principal.csrf))throw new ErrorAuth('CSRF_INVALIDO','Vuelve a consultar la sesión.',403);
@@ -147,6 +148,8 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
         const ruta=url.pathname.slice('/api/centro/'.length);
         const perfil=await consultarCentro(pool,principal,'perfil');
         if(perfil.perfil.cambiar_clave&&!['perfil','clave'].includes(ruta))throw new ErrorAuth('CAMBIAR_CLAVE','Actualiza tu contraseña en Mi perfil para continuar.',403);
+        const modulo=moduloRuta(url.pathname,req.method);if(modulo&&perfil.perfil.modulos?.[modulo]===false)throw new ErrorAuth('SIN_PERMISO','Administración deshabilitó este módulo para tu cuenta.',403);
+        if(req.method==='POST'&&ruta==='politica-ui')return json(res,200,await mutarCentro({pool,principal,tipo:'politica-ui',solicitud:await leerJson(req)}));
         if(req.method==='POST'&&ruta==='presencia')return json(res,200,await presenciaInventario(pool,principal,await leerJson(req),{guardar:true}));
         if(req.method==='GET'&&ruta==='recordatorio-destinatarios')return json(res,200,await destinatariosRecordatorio(pool,principal,opciones(url,['evento']).evento));
         if(req.method==='GET'&&ruta==='ranking')return json(res,200,await rankingInventario(pool,principal,opciones(url,['inventario']).inventario));
@@ -189,13 +192,13 @@ export function crearApi({pool,publicUrl,soloLectura=false,operacionNativa=false
           res.writeHead(200,{'Content-Type':'text/calendar; charset=utf-8','Content-Disposition':'attachment; filename="calendario-itsanet.ics"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(contenido);
         }
         const pdf=/^inventarios\/([a-f0-9-]+)\/(pdf|etiqueta)$/.exec(ruta);
-        if(req.method==='GET'&&pdf){const contenido=pdf[2]==='pdf'?await pdfAnalisis(pool,principal,pdf[1]):await pdfEtiqueta(pool,principal,pdf[1],opciones(url,['posicion']).posicion,origin);res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="ims-'+pdf[1]+'-'+pdf[2]+'.pdf"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(contenido);}
+        if(req.method==='GET'&&pdf){const contenido=pdf[2]==='pdf'?await pdfInventarioCompleto(pool,principal,pdf[1]):await pdfEtiqueta(pool,principal,pdf[1],opciones(url,['posicion']).posicion,origin);res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="ims-'+pdf[1]+'-'+pdf[2]+'.pdf"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(contenido);}
         const reporte=/^inventarios\/([a-f0-9-]+)\/(csv|excel)$/.exec(ruta);
         if(req.method==='GET'&&reporte){
           const r=await reporteInventario(pool,principal,reporte[1],reporte[2]);res.writeHead(200,{'Content-Type':r.tipo,'Content-Disposition':'attachment; filename="'+r.nombre+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(r.contenido);
         }
         if(req.method==='POST'&&ruta==='google/sede-archivo')return json(res,200,await definirSedeArchivoGoogle(pool,principal,claveCentro,await leerJson(req)));
-        if(req.method==='GET'&&['revision-google','cierre','sincronizacion','contexto','perfil','usuarios','dashboard','eventos','analitica','codigos','auditoria','legado','archivo-legado','inventario','calidad'].includes(ruta)){
+        if(req.method==='GET'&&['documentos-inventario','politica-ui','revision-google','cierre','sincronizacion','contexto','perfil','usuarios','dashboard','eventos','analitica','codigos','auditoria','legado','archivo-legado','inventario','calidad'].includes(ruta)){
           const q=opciones(url,['sede','cliente','buscar','mes','desde','hasta','fuente','inventario','hoja']);return json(res,200,await consultarCentro(pool,principal,ruta,q));
         }
         if(req.method==='POST'&&ruta==='inventarios'){

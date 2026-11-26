@@ -25,7 +25,7 @@ async function confirmar(p){
  try{const r=await api(p.path,p.body);await olvidar(p);$('recuperar')?.setAttribute('hidden','');return r;}
  catch(e){if(e.status>=400&&e.status<500){await olvidar(p);$('recuperar')?.setAttribute('hidden','');}throw e;}
 }
-export async function prepararRecuperacion(){const b=$('recuperar');if(!b)return;try{b.hidden=!await pendiente();}catch(e){aviso(e.message,true);}b.onclick=async()=>{try{const p=await pendiente();if(!p)return;const r=await confirmar(p);aviso('Guardado confirmado.');if(r.inventarioId)window.location.href='/ims?inventario='+r.inventarioId;else window.location.reload();}catch(e){fallo(e);}};}
+export async function prepararRecuperacion(){const b=$('recuperar');if(!b)return;try{b.hidden=!await pendiente();}catch(e){aviso(e.message,true);}b.onclick=async()=>{try{const p=await pendiente();if(!p)return;const r=await confirmar(p);aviso('Guardado confirmado.');if(r.inventarioId){if(window.parent!==window&&location.pathname==='/crear'&&new URL(location.href).searchParams.get('integrado')==='1')window.parent.postMessage({tipo:'ims:creado',inventarioId:r.inventarioId,borrador:!!r.borrador},location.origin);else window.location.href=(r.borrador?'/operacion?inventario=':'/ims?inventario=')+r.inventarioId;}else window.location.reload();}catch(e){fallo(e);}};}
 export async function sesion(){
  estado.sesion=await api('/api/sesion');if(!estado.sesion.centroDisponible)throw Error('Esta versión todavía no tiene el Centro de Mando activado.');
  $('login')?.setAttribute('hidden','');$('usuario').textContent=estado.sesion.usuario.nombre||estado.sesion.usuario.correo;await prepararRecuperacion();return estado.sesion;

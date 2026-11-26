@@ -1,0 +1,74 @@
+{
+  "formato": "ims-entrega-visual-marca-validacion-v1",
+  "fecha": "2026-11-26",
+  "revisionBase": "2d9a47456a4b167b5abf3be175e4bef70d6b1560",
+  "entorno": "SINTETICO_AISLADO",
+  "pruebas": {
+    "node22": {
+      "total": 305,
+      "fallos": 0
+    },
+    "python": {
+      "total": 177,
+      "fallos": 0
+    },
+    "mysql": {
+      "centro": 65,
+      "googleDelta": 10,
+      "total": 75,
+      "fallos": 0
+    },
+    "navegador": {
+      "abiertos": 1,
+      "centro": 42,
+      "erp": 5,
+      "flujo": 13,
+      "nativa": 4,
+      "totalFlujosUnicos": 65,
+      "fallosFinales": 0,
+      "ajusteVisualFinalReverificado": 5,
+      "archivoPorArchivoCompleto": true
+    },
+    "assetsHTTPSExigidosPorInstalador": 36
+  },
+  "comprobado": [
+    "Identidad corporativa: logotipo del manual, Azul Real y tipografía Schibsted Grotesk local con OFL",
+    "Creación dentro del Centro para UIO/GYE y retorno a preparación del stock en blanco",
+    "Política auditada por rango, usuario y grupo; versión y control de acceso en API",
+    "Consulta disponible con captura deshabilitada; exportación ciega sin teórico",
+    "Cantidad escrita preservada durante actualización explícita de la tabla, con observación y nueva posición",
+    "Lecturas rápidas acumuladas y C1/C2/C3 conservan cantidades exactas",
+    "Series dentro del inventario y mensajes de consulta diferenciados de escritura",
+    "Visor dibuja únicamente estructuras solicitadas y conserva geometría de colisión del almacén",
+    "Paneles flotantes y ocupación desplegable; recorrido, selección, escalera y móvil",
+    "Actualización MySQL cada cinco minutos sin iniciar trabajos de Google ni envíos",
+    "Excel CSV y PDF completo autorizados; PDF hasta 20.000 líneas",
+    "Cobertura por cliente y enlaces del último consolidado Sheets confirmado",
+    "Notificaciones configurables; destinatarios limitados a líderes activos asignados"
+  ],
+  "esquemaAgregado": [
+    "ims_cm_politica_ui"
+  ],
+  "operacionReal": {
+    "ultimaRevisionAcreditadaPorUsuario": "e37fdec4188d1b7ff2392005934eab7b10521aff",
+    "instaladoDesdeEsteEntorno": false,
+    "datosInventarioModificados": false,
+    "fuentesGoogleModificadas": false,
+    "notificacionesEnviadas": false
+  },
+  "pendientesUltimoInformeCorporativo": {
+    "inventariosRecientesConConflictos": 2,
+    "cuentasPendientesCambioClave": 5,
+    "inventariosRecientesSinEquipoListo": 8
+  },
+  "manual": "manuales/Guia_entrega_visual_marca_IMS_20261126.pdf",
+  "capturas": [
+    "capturas/centro-marca-sintetico-20261126.png",
+    "capturas/creacion-modal-marca-sintetica-20261126.png",
+    "capturas/administracion-marca-sintetica-20261126.png",
+    "capturas/ims-3d-marca-sintetico-20261126.png",
+    "capturas/ims-conteo-marca-sintetico-20261126.png",
+    "capturas/series-modal-marca-sintetica-20261126.png",
+    "capturas/menu-marca-operario-sintetico-20261126.png"
+  ]
+}

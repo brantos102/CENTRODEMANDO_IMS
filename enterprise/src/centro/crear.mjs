@@ -21,6 +21,7 @@ export async function crearDesdeCentro({pool,principal:p,solicitud:s,obtenerVist
   const [catalogo]=await c.execute('SELECT id,nombre FROM ims_op_cliente');exigir(s.clientes.every(id=>catalogo.some(c=>c.id===id)),'SOLICITUD_INVALIDA','Cliente no registrado.');
   const op=tipo=>uuidEstable('cm-creacion',[s.operacionId,tipo]);
   let resultado;
+  if(s.fuente==='API')exigir(pf.modulos.stock!==false,'SIN_PERMISO','La extracción API está deshabilitada para tu cuenta.');
   if(s.fuente==='API'&&s.consultaId){
    exigir(typeof obtenerVista==='function','SOLICITUD_INVALIDA','Consulta primero la API.');const v=obtenerVista(p.actorId,s.consultaId);exigir(pf.sedes.includes(v.sede)&&v.sede===s.sede,'SIN_PERMISO','La sede seleccionada no coincide con la extracción.');
    const mismos=f=>{const encontrados=catalogo.filter(c=>f.clienteId?c.id===f.clienteId:c.nombre.trim().toUpperCase()===f.clienteNombre?.trim().toUpperCase());return encontrados.length===1&&s.clientes.includes(encontrados[0].id)&&encontrados[0].nombre.trim().toUpperCase()===f.clienteNombre?.trim().toUpperCase();};
@@ -66,6 +67,7 @@ export async function crearDesdeCentro({pool,principal:p,solicitud:s,obtenerVist
    await c.execute('UPDATE ims_nat_inventario SET borrador=?,version=1 WHERE inventario_id=?',[borrador?1:0,id]);
    resultado={...resultado,version:'1',borrador,filas:Number(check.n),unidades:textoDecimal(decimal(check.total)??0n),clientesPendientes:pendientes};
   }
+  if(s.fuente==='BLANCO')resultado={...resultado,borrador:true,filas:0,unidades:'0.000000000'};
   let destino={carpetaId:s.carpetaId};if(s.destinoAutomatico===true){const [[i]]=await c.execute('SELECT sede FROM ims_op_inventario WHERE id=?',[resultado.inventarioId]);const clienteId=uuid(s.clientePrincipalId);const [[permitido]]=await c.execute('SELECT 1 n FROM ims_op_inventario_cliente WHERE inventario_id=? AND cliente_id=?',[resultado.inventarioId,clienteId]);exigir(permitido,'SIN_PERMISO','El cliente principal debe pertenecer al inventario.');destino=await asegurarDestino(c,{sede:i.sede,fechaInicio:s.fechaInicio,clienteId});}
   await mutarCentro({pool,principal:p,conexion:c,claveCentro,tipo:'archivar',solicitud:{operacionId:op('carpeta'),inventarioId:resultado.inventarioId,carpetaId:destino.carpetaId}});
   let eventoId;

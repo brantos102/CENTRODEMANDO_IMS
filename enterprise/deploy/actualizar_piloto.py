@@ -211,7 +211,7 @@ def comprobar_interfaz(transporte, release):
                 ('/catalogos','catalogos.html'),('/assets/catalogos.mjs','catalogos.mjs'),
                 ('/centro','centro.html'),('/assets/centro.mjs','centro.mjs'),
                 ('/assets/centro.css','centro.css'),('/assets/cantidades.mjs','cantidades.mjs'),
-                ('/assets/comun-centro.mjs','comun-centro.mjs'),('/assets/ayuda-ims.mjs','ayuda-ims.mjs'),('/assets/interfaz.css','interfaz.css'),('/operacion','operacion.html'),('/assets/operacion.mjs','operacion.mjs'),('/crear','crear.html'),('/assets/crear.mjs','crear.mjs'),('/assets/monitor-filtros.mjs','monitor-filtros.mjs'),('/assets/revision-google.mjs','revision-google.mjs'),('/assets/navegacion-ui.mjs','navegacion-ui.mjs')]
+                ('/assets/comun-centro.mjs','comun-centro.mjs'),('/assets/ayuda-ims.mjs','ayuda-ims.mjs'),('/assets/interfaz.css','interfaz.css'),('/operacion','operacion.html'),('/assets/operacion.mjs','operacion.mjs'),('/crear','crear.html'),('/assets/crear.mjs','crear.mjs'),('/assets/monitor-filtros.mjs','monitor-filtros.mjs'),('/assets/revision-google.mjs','revision-google.mjs'),('/assets/navegacion-ui.mjs','navegacion-ui.mjs'),('/assets/iconos.mjs','iconos.mjs'),('/assets/administracion-ui.mjs','administracion-ui.mjs'),('/assets/itsa-marca.svg','itsa-marca.svg'),('/assets/vendor/SchibstedGrotesk.ttf','vendor/SchibstedGrotesk.ttf')]
     for ruta, nombre in archivos:
         status, _, raw = transporte('GET',ruta)
         exigir(status == 200 and sha(raw) == sha((Path(release)/'enterprise/public'/nombre).read_bytes()),
